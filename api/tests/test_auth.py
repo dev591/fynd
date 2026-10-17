@@ -264,3 +264,38 @@ def test_intake_and_old_pipeline_endpoints_need_login():
     assert client.post("/api/intake/transcribe", content=b"1").status_code == 401
     assert client.post("/run", json={"query": "hi"}).status_code == 401
     assert client.get("/stats").status_code == 401
+
+
+# ─── a secret that was published must never be trusted ───────────────────────
+
+def test_a_revoked_secret_is_ignored_so_tokens_signed_with_it_are_refused(monkeypatch):
+    """Stands in for the leaked secret: its hash is on the revoked list, so tokens it signs must not log anyone in."""
+    published = "this-secret-was-committed-to-a-public-repo-0123456789"
+    monkeypatch.setattr(auth, "REVOKED_SECRET_SHA256", {hashlib.sha256(published.encode()).hexdigest()})
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", published)
+    forged = token(sub="any-victim", secret=published)
+    # no other way to verify is configured, so the server says it cannot verify (503), and never lets the token in
+    assert client.get("/api/me", headers=hdr(forged)).status_code == 503
+    # with Supabase configured, the token goes to Supabase, which rejects a user that does not exist
+    monkeypatch.setenv("SUPABASE_URL", "https://proj.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "k")
+
+    class R:
+        status_code = 401
+        def json(self): return {}
+
+    monkeypatch.setattr(auth.httpx, "get", lambda *a, **k: R())
+    auth._remote_cache.clear()
+    assert client.get("/api/me", headers=hdr(forged)).status_code == 401
+
+
+def test_a_different_secret_is_still_trusted(monkeypatch):
+    monkeypatch.setattr(auth, "REVOKED_SECRET_SHA256", {hashlib.sha256(b"some-other-leaked-secret").hexdigest()})
+    assert client.get("/api/me", headers=hdr(token(sub="fine-user"))).status_code == 200
+
+
+def test_the_real_leaked_secret_is_on_the_revoked_list_by_hash_only():
+    import inspect
+    source = inspect.getsource(auth)
+    assert len(auth.REVOKED_SECRET_SHA256) >= 1 and all(len(h) == 64 for h in auth.REVOKED_SECRET_SHA256)
+    assert "gsGZ" not in source                                                       # the secret itself is nowhere in our code

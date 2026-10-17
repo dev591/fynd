@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import os
+import sys
 import time
 from typing import Optional
 
@@ -31,8 +32,29 @@ def _b64url(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
 
 
+# SHA-256 of a Supabase JWT secret that was committed to a public repository. It is never trusted again, even if it is
+# still in someone's .env: a leaked signing key lets anyone forge a login. Only the hash is kept here, not the secret.
+REVOKED_SECRET_SHA256 = {"5de92c42ba17dbf6b93723e78a2fbfe4b8374d9a67802086af51bf581a8b0b7c"}
+
+
 def _secret() -> str:
-    return os.environ.get("SUPABASE_JWT_SECRET", "")
+    raw = os.environ.get("SUPABASE_JWT_SECRET", "")
+    if raw and hashlib.sha256(raw.encode()).hexdigest() in REVOKED_SECRET_SHA256:
+        _warn_once()
+        return ""                          # fall back to asking Supabase to verify each token
+    return raw
+
+
+_warned = False
+
+
+def _warn_once() -> None:
+    global _warned
+    if not _warned:
+        _warned = True
+        print("WARNING: SUPABASE_JWT_SECRET is a secret that was published in a git repository. It is being IGNORED and "
+              "logins are verified by asking Supabase instead. Rotate the secret in Supabase "
+              "(Project Settings > JWT Keys) and update api/.env.", file=sys.stderr)
 
 
 def _url() -> str:

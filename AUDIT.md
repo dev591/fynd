@@ -106,3 +106,60 @@ Fix needs a server-side serializer for every buyer-facing and seller-facing resp
 - Anonymity touches almost every endpoint and screen. It is the largest item.
 - Moving the whole store to SQLite is a rewrite of `rfq_store.py`; doing it alongside masking risks breaking the demo path.
 - Browser rehearsal has never been run (extension not connected); everything was tested through the API and builds.
+
+
+---
+
+# Where things stand (updated Sun 18 Oct, ~02:50 IST)
+
+**238 API tests pass** (`cd api && python3 -m pytest -q`); the web app type-checks, lints and builds. A live HTTP rehearsal
+(`real server + real HTTP`, including a server restart and the real 30-second clock) passes end to end.
+Status key now: **done**, **partial**, **not built**.
+
+## v2 brief, section by section
+
+| § | Item | Now | Notes |
+|---|---|---|---|
+| 3 | Roles `buyer`+`seller`, header toggle, server-side checks | **done** | toggle only when the account holds both; every route checks the role (403 `role_required`) |
+| 4 | Request → inbox → quote → anonymous compare → reveal → order | **done** | personal sample request on the empty state |
+| 4.1 | Need-by **date** | **done** | date picker converts to days for the engine |
+| 5 | Anonymity (6 required tests and more) | **done** | server-side `views.py`; scan of every buyer/seller response; shared page carries no identity |
+| 5 | Reveal: per request+seller, idempotent, logged, repeat seller free, 3 free then 402 | **done** | mock upgrade labelled dev; no payment |
+| 6 | Stock cap, priority modes, winner under every mode, what-you-give-up | **done** | `BALANCED_TOLERANCE`; crossover-at-151 now tested |
+| 7 | Data model additions | **done** | roles, windows, reveals, notices, delivery, exceptions, known suppliers; photo_path **not built** |
+| 8 | API additions | **mostly done** | `/api/ai/*` names added beside the older paths. Quote-by-id reveal uses the alias as id |
+| 9 | Buyer intake (chat, voice), confirm card, strict schema, 8 s fallback | **done** | ElevenLabs for speech-to-text (your choice) |
+| 9 | Seller assistant + number check, item-match warning | **done** | offers/promises rejected as well as wrong numbers |
+| 9 | Golden tests (15 + 8), invented values = 0 | **done** | live model: 0 invented |
+| 9 | Paste WhatsApp **text** | **done** | screenshots **not built** |
+| 11.1 | Last order vs today | **done** | labelled synthetic history; your own last order replaces it |
+| 11.2 | Savings vs spreadsheet + running total | **done** | "on demo data" |
+| 11.3 | Seller activity feed incl. declined | **done** | |
+| 11.4 | Decision one-pager | **done** | evidence table, JSON download, share link, delivery outcome |
+| 11.5 | Live voice agent | **not built** | needs a decision, see below |
+| 12 | Quote windows, notifications, reminders, injectable clock | **done** | in-app bell; email not built; demo timing via `DEMO_WINDOW_MINUTES` |
+| 13 | Trust items | **partial** | delivery record + pay-on-delivery label done. "Talk to us" and a "checked by Crossover" badge deliberately **not built** (no one to staff them; the badge would claim an inspection nobody performs) |
+| 14 | Honesty copy | **done** | badges say what was checked; wizard registry step is labelled simulated; site-wide synthetic marker; no customer/revenue/pilot wording |
+
+## Beyond the v2 brief (from the problem statement and the team brief)
+
+Exception dialog with written reason + named approver (blank refused); spreadsheet mode that shows the naive pick and the rupee
+difference; observed / derived / assumed tags; cash tied up in extra units and cost per usable unit; **GST normalisation** (the
+brief's worked example is a test); **CSV and JSON import** with row-level errors; SQLite (WAL) persistence with a reset script.
+
+## Decisions made on your behalf (all reversible)
+
+1. Kept our API as the base; the teammate's `origin/backend` is not merged (different data model, no landed-cost fields, a published JWT secret).
+2. After a window closes, new sellers cannot start a quote but sellers who already quoted can still revise, so the negotiation loop survives.
+3. Negotiation stays human: a pending target stops autopilot; a named person sends targets and seller revisions are manual.
+4. Removed the QR / invite-link screen: buyers never receive seller invite links (they would let a buyer act as the seller).
+5. The shared demo request is gone. Reveals and quotas are per buyer, so every sample request belongs to one buyer.
+
+## Open items that need a person
+
+1. **Rotate the Supabase JWT secret.** The one in `api/.env` is the value published in the teammate's repo. The app now ignores it by hash and asks Supabase to verify logins, but the secret must still be rotated (Project Settings → JWT Keys).
+2. **Push.** Local commits are ahead of `origin/main`; nothing is pushed since the earlier approved push.
+3. **Browser rehearsal.** Never run in a real browser (the Chrome extension was not connected). Everything was verified through the API, type-checks, builds and a live HTTP run. Please click through the demo path once.
+4. **Live voice agent** would need the ElevenLabs agents SDK (a new dependency) and an agent created in your ElevenLabs account. Not started.
+5. Real-model speed varies (2 to 7 seconds). The 8 s limit means an occasional intake call falls back to the form.
+6. The teammate's branch has committed `node_modules`, a database file and the leaked secret; ask them to clean it before merging anything.

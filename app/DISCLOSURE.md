@@ -33,3 +33,25 @@ None installed yet. Record component, author, license here before adding any.
 
 ## Backend skeleton (`/Volumes/dev/fynd/api`, pre-hackathon, generic)
 Python 3.13: fastapi, uvicorn, pydantic, httpx, pytest (MIT/BSD/Apache). Layered pipeline, LRU+TTL exact cache, brute-force semantic cache with placeholder embedder, model-cascade stub with offline mock provider, SSE trace stream, stats. No domain logic, no real LLM calls.
+
+## Built on Sun 18 Oct (v2: the request-and-quote network)
+Written with Claude Code (Anthropic), reviewed by the team. No new frontend packages were added; `qrcode.react` (added by a
+teammate for an earlier invite-link screen) was **removed** because nothing uses it any more.
+
+Frontend: role toggle and guards, real Supabase sign-up and sign-in (Supabase's REST auth is called directly, no SDK),
+anonymous compare with reveal and a mock paywall, exception dialog, spreadsheet mode, evidence tags, CSV/JSON/pasted-message
+import, quote windows with a buyer bell, delivery record, decision one-pager with JSON download, seller inbox/verdict/catalog/
+autopilot. Backend: everything under `api/app` apart from the pre-hackathon pipeline skeleton.
+
+AI and external services (all called from the server; keys never reach the browser):
+| Service | Use | Notes |
+|---|---|---|
+| OpenAI Responses API, model `gpt-6-luna` (from env) | intake, pasted-message reading, seller wording, item-match, explainer | strict JSON schema; output is verified by code before anyone sees it |
+| ElevenLabs speech-to-text, `scribe_v2` | voice intake transcription | transcript then goes through the same checks as typed text |
+| Supabase Auth | sign-up, sign-in, token checks | project URL and anon key are public values; no service key is used |
+
+Python packages: unchanged from the pre-hackathon list (fastapi, uvicorn, pydantic, httpx, pytest). The OpenAI and ElevenLabs calls use
+`httpx`; there is no vendor SDK. SQLite comes from the standard library.
+
+Data: every seller, product, price and history entry is synthetic and labelled so. No claim of customers, revenue or a pilot is made
+anywhere in the product.

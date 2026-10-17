@@ -235,3 +235,40 @@ def test_brief_endpoint_names_and_env_names_work_alongside_the_old_ones(monkeypa
         assert r.status_code == 200 and "draft" in r.json()
     for path in ("/api/ai/transcribe", "/api/intake/transcribe"):
         assert client.post(path, content=b"\x00\x01", headers={"content-type": "audio/webm"}).status_code == 200
+
+
+def test_env_loader_ignores_inline_comments_so_a_copied_example_file_stays_blank(tmp_path, monkeypatch):
+    import os
+    from app.env import load_env
+    f = tmp_path / ".env"
+    f.write_text('BLANK=            # https://<project>.supabase.co\n'
+                 'ONLY_COMMENT=# nothing here\n'
+                 'KEEP=real-value   # and a note\n'
+                 'QUOTED="two words"  # note\n'
+                 'HASH_INSIDE=pa#ss\n'
+                 'SPACED = padded \n')
+    for k in ("BLANK", "ONLY_COMMENT", "KEEP", "QUOTED", "HASH_INSIDE", "SPACED"):
+        monkeypatch.delenv(k, raising=False)
+    load_env(f)
+    assert "BLANK" not in os.environ and "ONLY_COMMENT" not in os.environ          # a comment is never a value
+    assert os.environ["KEEP"] == "real-value" and os.environ["QUOTED"] == "two words"
+    assert os.environ["HASH_INSIDE"] == "pa#ss" and os.environ["SPACED"] == "padded"
+    for k in ("KEEP", "QUOTED", "HASH_INSIDE", "SPACED"):
+        monkeypatch.delenv(k, raising=False)
+
+
+def test_the_shipped_example_env_loads_as_all_blank_or_safe_defaults(monkeypatch):
+    import os
+    from pathlib import Path
+    from app.env import load_env
+    keys = [l.split("=")[0].strip() for l in (Path(__file__).parent.parent / ".env.example").read_text().splitlines()
+            if "=" in l and not l.strip().startswith("#")]
+    for k in keys:
+        monkeypatch.delenv(k, raising=False)
+    load_env(Path(__file__).parent.parent / ".env.example")
+    secrets_and_urls = {"SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_JWT_SECRET", "OPENAI_API_KEY", "MODEL_FAST",
+                        "ELEVENLABS_API_KEY", "DEMO_WINDOW_MINUTES", "CROSSOVER_DB", "CORS_ORIGINS"}
+    assert not [k for k in secrets_and_urls if os.environ.get(k)], "an unfilled example must not set secrets or URLs"
+    assert os.environ["FREE_REVEALS"] == "3" and os.environ["PERSIST"] == "on"
+    for k in keys:
+        monkeypatch.delenv(k, raising=False)

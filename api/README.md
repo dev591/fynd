@@ -1,18 +1,36 @@
-# api: volatile pipeline skeleton (pre-hackathon boilerplate, domain-agnostic)
-Layered "cheapest first" request pipeline + live trace over SSE. No domain logic; everything is meant to be swapped after the problem statement drops.
+# api
 
-Run: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/uvicorn app.main:app --port 8000`
-Test: `.venv/bin/python -m pytest -q`
+FastAPI service for Crossover: the rules engine, the request-and-quote network, anonymity and reveal, and the AI
+helpers. See the repo `README.md` for what the product does and how to run everything.
 
-- `POST /run {query, tenant, meta}` -> answer + which layer answered + tokens + $
-- `GET /trace/stream` (SSE): one event per layer hop (`start|hit|miss|done|error`, ms, tokens, $). Feeds the dashboard right rail.
-- `GET /stats`: % answered before LLM, $/1k requests, p50/p95. These are the Proof-chapter numbers once real traffic exists.
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env            # fill it in; it is git-ignored
+.venv/bin/uvicorn app.main:app --port 8000
+.venv/bin/python -m pytest -q   # 238 tests
+python3 -m app.reset            # back to the seed data (stop the API first)
+```
 
-## How to change it for the real problem
-- Order/choice of layers: env `PIPELINE="exact,rules,semantic,llm"`; add new layers to `REGISTRY` in `app/main.py` (class with `name`, `async run(ctx)->Result|None`, optional `learn`).
-- Domain logic: register deterministic rules (`Rules.add`), add retrieval/OKF/LangGraph as new layers before `llm`.
-- Real LLM: implement `complete(model, prompt)->(text, tin, tout, confidence)` and pass to `LLMCascade`. Default is an offline mock.
-- Placeholders to replace: `PRICES` in `core.py` (edit to real pricing), hashed-BoW embedder in `semantic_cache.py` (use a real embedding model + ANN), token estimate (`len/4`).
-- State is in-memory (lost on restart). Move cache/queue to Redis and vectors to pgvector when the design needs it.
+## Where things live
 
-Caveats: semantic threshold (0.88) is untuned; the mock "confidence" is fake; single process only.
+| File | Job |
+|---|---|
+| `engine.py` | Landed cost, gates, priority modes, negotiation targets, the three case checks. No identities, no masking |
+| `tax.py` | Puts quotes on one GST basis *before* the engine sees them |
+| `views.py` | The only way data leaves: buyer, seller and public views. Masking happens here, never in the browser |
+| `masking.py` | Hides phone numbers and emails in free text until a seller is revealed |
+| `rfq_store.py` | The store: requests, quotes, aliases, reveals, notices, windows (`tick()` with an injectable clock) |
+| `persist.py` | SQLite (WAL) write-through; loads on start; a corrupt file is set aside, never fatal |
+| `auth.py` | Supabase login tokens. Fail-closed: if auth is not configured, protected routes refuse |
+| `intake.py`, `quote_text.py`, `assistant.py`, `summary.py` | AI helpers, each checked by code before a person sees the result |
+| `importer.py` | CSV and JSON quote import with row-level errors |
+
+## Rules worth knowing
+
+- Every buyer and seller route needs a signed-in user **with the matching role**; the server checks both. The supplier
+  invite links (`/api/rfq-by-token/*`) and shared one-pager links (`/api/share/*`) are public by design and unguessable.
+- Buyers address sellers by alias ("Seller 2"); real ids and invite tokens never reach a buyer. Sellers see a buyer only
+  as a descriptor until revealed.
+- Negotiation is human. No AI or autopilot answers a target; `has_pending_target` stops autopilot.
+- `/run`, `/stats`, `/trace/stream` are the pre-hackathon pipeline skeleton; they now require a login and are not used by
+  the product.
