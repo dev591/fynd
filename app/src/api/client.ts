@@ -418,6 +418,7 @@ export interface SummaryDTO {
   tradeoffs: Record<string, { extra_cost: number | null; days_saved: number | null; line: string | null }>;
   exceptions: Record<string, { reason: string; approver: string }>;
   explainer: { text: string; source: "ai" | "engine"; discarded_reason: string | null } | null;
+  ai_opinion?: AiOpinionDTO | null;
   savings: {
     spreadsheet_pick: string; spreadsheet_landed: number; crossover_pick: string;
     crossover_landed: number; difference: number; label: string;
@@ -429,6 +430,21 @@ export interface SummaryDTO {
   /** Sellers this buyer has unlocked. Always empty on a shared link. */
   revealed: Record<string, SellerIdentity>;
   synthetic_note: string;
+}
+
+export interface AiOpinionDTO {
+  pick: string;
+  agrees: boolean;
+  engine_pick: string;
+  reason: string;
+  source: "ai";
+  label: string;
+}
+
+/** The AI's reading of the current quotes. Null with no AI key, nothing to weigh, or text that failed the checks. */
+export async function getAiOpinion(rfqId: string): Promise<AiOpinionDTO | null> {
+  const s = await apiFetch<SummaryDTO>(`/api/rfqs/${rfqId}/summary`);
+  return s.ai_opinion ?? null;
 }
 
 export async function getSummary(rfqId: string): Promise<SummaryDTO> {

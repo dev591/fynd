@@ -25,7 +25,16 @@ EXPLAIN_SCHEMA = {
 }
 
 
-_explain_cache: dict[tuple, dict[str, Any]] = {}  # same inputs, same pick: never pay for the same sentence twice
+OPINION_SYSTEM = (
+    "You are a second reader for a purchase decision. Rules have already ranked the quotes and the engine_pick is the "
+    "rules' choice. You may recommend a different option from the list only when the buyer's note or priority makes it "
+    "clearly the better fit; otherwise confirm the engine_pick. Choose only from the options given. Use only the facts "
+    "given, copy numbers exactly, write money with the ₹ symbol, and state the trade-off in rupees and days. Name the "
+    "seller you choose. Two sentences at most. No discount, guarantee or promise, and no other number."
+)
+
+_explain_cache: dict[tuple, dict[str, Any]] = {}
+_opinion_cache: dict[tuple, Optional[dict[str, Any]]] = {}  # same inputs, same pick: never pay for the same sentence twice
 
 
 def inr(n: float) -> str:
@@ -113,6 +122,46 @@ def _explainer(facts: dict, allowed: set[float], winner_name: str, fallback: str
     return {"text": text, "source": "ai", "discarded_reason": None}
 
 
+def second_opinion(store, rfq: RFQ, rows: list[EvaluatedRow], engine_pick: Optional[EvaluatedRow], fp: str) -> Optional[dict[str, Any]]:
+    """AI's reading of the situation, alongside the engine's pick and never in place of it.
+
+    It can only name an option the engine already allowed, every number it writes must exist in the engine output (or be a
+    gap between two of its numbers), and anything else is dropped. The buyer decides; the engine's pick is unchanged."""
+    from .assistant import numbers_used
+    cands = [r for r in rows if r.landed is not None and (r.status == "eligible" or (r.status == "exception" and r.approved))]
+    if engine_pick is None or len(cands) < 2:
+        return None
+    note = scrub(rfq.note or "")[:300]
+    key = (fp, rfq.priority_mode, note)
+    if key in _opinion_cache:
+        return _opinion_cache[key]
+    options = [{"seller": r.supplier, "landed": round(r.landed), "lead_days": r.lead_days, "extra_units": r.overbuy,
+                "freight": round(r.freight or 0)} for r in cands]
+    facts = {"priority": rfq.priority_mode, "needed_within_days": rfq.need_in_days, "units": rfq.qty,
+             "buyer_note": note or None, "engine_pick": engine_pick.supplier, "options": options}
+    schema = {"type": "object", "additionalProperties": False, "required": ["pick", "reason"],
+              "properties": {"pick": {"type": "string", "enum": [o["seller"] for o in options]}, "reason": {"type": "string"}}}
+    raw = structured_call(OPINION_SYSTEM, str(facts), "second_opinion", schema)
+    out: Optional[dict[str, Any]] = None
+    if raw:
+        pick, reason = raw.get("pick"), (raw.get("reason") or "").strip()
+        allowed: set[float] = {float(rfq.need_in_days), float(rfq.qty)} | numbers_used(note)
+        for o in options:
+            allowed |= {float(o["landed"]), float(o["lead_days"]), float(o["extra_units"]), float(o["freight"])}
+            allowed |= {float(abs(o["landed"] - p["landed"])) for p in options} | {float(abs(o["lead_days"] - p["lead_days"])) for p in options}
+        ok = (pick in {o["seller"] for o in options} and reason and pick.lower() in reason.lower()
+              and not makes_promise(reason)
+              and numbers_supported(re.sub(r"\bSeller \d+\b", "Seller", reason), allowed))
+        if ok:
+            out = {"pick": pick, "agrees": pick == engine_pick.supplier, "reason": reason, "engine_pick": engine_pick.supplier,
+                   "source": "ai", "label": "AI suggestion, not a calculation"}
+            rid = "op_" + fp[:10]
+            store.log_ai("second_opinion", rid, facts, out)
+            store.link_ai_log(rid, rfq.id)
+    _opinion_cache[key] = out
+    return out
+
+
 def _decision_for(decision: Optional[dict], audience: str) -> Optional[dict]:
     """A shared link shows the decision but not who signed it, and no phone or email typed into the reason."""
     if decision is None or audience == "buyer":
@@ -190,6 +239,11 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
             _explain_cache[key] = _explainer(facts, allowed, shown.supplier, " ".join(reasons[:2]))
         explainer = _explain_cache[key]
 
+    opinion = None
+    if with_explainer and audience == "buyer" and not decision:
+        opinion = second_opinion(store, rfq, ev.rows, ev.winner, fingerprint({"need": need.model_dump(), "mode": rfq.priority_mode,
+                                                                              "quotes": [q.model_dump() for q in quotes]}))
+
     return {
         "rfq": {"id": rfq.id, "item": rfq.item, "qty": rfq.qty, "need_in_days": rfq.need_in_days,
                 **({"buyer_company": rfq.buyer_company, "buyer_name": rfq.buyer_name} if audience == "buyer" else {}),
@@ -212,6 +266,7 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
         "delivery": _delivery_for((decision or {}).get("delivery"), audience),
         "exceptions": _exceptions_for({a: r.model_dump() for a, r in store.exceptions_by_alias(rfq_id).items()}, audience),
         "explainer": explainer,
+        "ai_opinion": opinion,
         "savings": savings,
         "fingerprint": fingerprint({"need": need.model_dump(), "mode": rfq.priority_mode,
                                     "quotes": [q.model_dump() for q in quotes]}),

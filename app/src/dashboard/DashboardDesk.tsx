@@ -18,7 +18,7 @@ import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
 import {
   getRFQDetails, sendTarget, lockDecision,
   getChatMessages, postChatMessage,
-  getSupplierProfileForBuyer, getSummary, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, draftQuotesFromMessage, type ImportResult, type QuoteDraftRow,
+  getSupplierProfileForBuyer, getSummary, getAiOpinion, type AiOpinionDTO, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, draftQuotesFromMessage, type ImportResult, type QuoteDraftRow,
   type DeliveryDTO, type RFQDetailsDTO, type ChatMessageDTO, type SellerPanelDTO, type SellerIdentity, type PlanInfo, type SummaryDTO,
 } from "../api/client";
 
@@ -98,6 +98,13 @@ export function DashboardDesk() {
   const { data: summary } = useApiOnce<SummaryDTO | null>(
     () => decidedNow ? getSummary(rfqId ?? "") : Promise.resolve(null),
     [decidedNow, rfqId],
+  );
+
+  // AI's second reading of the quotes, shown beside the engine's pick. Refreshed when the set of quotes changes.
+  const quoteSig = Object.values(details?.quotes ?? {}).map(v => v.length).join(",");
+  const { data: opinion } = useApiOnce<AiOpinionDTO | null>(
+    () => !decidedNow && quoteSig ? getAiOpinion(rfqId ?? "").catch(() => null) : Promise.resolve(null),
+    [decidedNow, rfqId, quoteSig],
   );
 
   // Supplier profile (click-through)
@@ -596,6 +603,20 @@ export function DashboardDesk() {
                 <CostChart qty={qty} winnerId={winner?.quote.id} quotes={engineQuotes} late={evaluation.rows.filter(r => r.status === "exception").map(r => r.quote.id)} />
               </div>
             </div>
+
+            {opinion && !decidedNow && (
+              <div className={`rounded-2xl border p-4 text-[13px] ${opinion.agrees ? "border-line bg-surface/80" : "border-warn/50 bg-warn/5"}`}>
+                <p className="label text-muted">AI second opinion · {opinion.label}</p>
+                <p className="mt-1 text-bone">
+                  <strong>{opinion.agrees ? `AI agrees with ${opinion.engine_pick}.` : `AI would pick ${opinion.pick}.`}</strong> {opinion.reason}
+                </p>
+                {!opinion.agrees && (
+                  <p className="mt-1 text-[12px] text-muted">
+                    The rules still recommend {opinion.engine_pick}. You decide; both views are saved with your decision.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Why this supplier: gates as pass/fail, facts tagged by where they came from */}
             {winner && winner.landed !== null && (
