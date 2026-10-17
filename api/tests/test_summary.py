@@ -1,9 +1,17 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app import summary
 from app.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_explainer_cache():
+    summary._explain_cache.clear()
+    yield
+    summary._explain_cache.clear()
 
 
 def _decided_request(winner="B", qty=100):
@@ -68,7 +76,9 @@ def test_reasons_come_from_engine_when_no_ai():
 
 def test_explainer_keeps_faithful_text_and_discards_bad(monkeypatch):
     rid = _decided_request()
-    say = lambda t: monkeypatch.setattr(summary, "structured_call", lambda *a, **k: {"text": t})
+    def say(t):
+        summary._explain_cache.clear()      # new model answer on identical inputs: bypass the cache on purpose
+        monkeypatch.setattr(summary, "structured_call", lambda *a, **k: {"text": t})
 
     say("Supplier B wins at ₹1,150 landed, ₹50 below Supplier A, with delivery in 3 days.")
     ok = client.get(f"/api/rfqs/{rid}/summary").json()["explainer"]
