@@ -72,3 +72,24 @@ def test_seller_role_added_later_does_not_touch_other_users():
     as_user("roles-b")
     assert client.get("/api/me").json()["roles"] == ["buyer"]
     assert client.get("/api/supplier/roles-a/notifications").status_code == 403
+
+
+def _seller_account(uid, company):
+    as_user(uid, f"{uid}@test.dev")
+    client.post("/api/profile", json=make_profile("supplier", company=company))
+    client.post("/api/me/roles", json={"role": "seller"})
+    client.post(f"/api/supplier/products/{uid}", json={"name": "Zinc widget", "pack_price": 10, "pack_size": 1,
+                                                       "moq": 1, "usual_lead_days": 2, "stock": 500})
+
+
+def test_two_separate_accounts_with_the_same_item_are_both_notified():
+    for uid, co in (("seller-one", "One Works"), ("seller-two", "Two Works")):
+        _seller_account(uid, co)
+    as_user("buyer-x", "bx@test.dev")
+    client.post("/api/profile", json=make_profile("buyer"))
+    rid = client.post("/api/rfqs", json={"item": "zinc widget", "qty": 50, "need_in_days": 5,
+                                         "buyer_company": "Co", "buyer_name": "B"}).json()["id"]
+    for uid in ("seller-one", "seller-two"):
+        as_user(uid, f"{uid}@test.dev")
+        inbox = client.get(f"/api/supplier/{uid}/notifications").json()
+        assert any(n["rfq_id"] == rid for n in inbox), uid

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { WizardHeader } from "./Header";
+import { useSession } from "../lib/useSession";
 import { RoleStep } from "./steps/RoleStep";
 import { AccountStep } from "./steps/AccountStep";
 import { BusinessStep } from "./steps/BusinessStep";
@@ -78,6 +79,13 @@ export function LoginWizard() {
   });
 
   const [direction, setDirection] = useState(1);
+  const session = useSession();
+
+  // A saved draft can be ahead of the login (the session ended, or sign-up never finished). Past the account
+  // step you must be signed in, so go back to it instead of failing later at "save profile".
+  useEffect(() => {
+    if (!session && draft.step > 1) setDraft((d) => ({ ...d, step: 1 }));
+  }, [session, draft.step]);
 
   // Persist draft whenever it changes
   useEffect(() => {

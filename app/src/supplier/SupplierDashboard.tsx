@@ -147,6 +147,9 @@ export function SupplierDashboard() {
               </div>
             )}
 
+            <Link to="/app" className="rounded-full border border-line bg-raised px-3 py-1 text-[12px] font-medium text-bone hover:border-signal/50 hover:text-signal transition-colors">
+              Buyer view
+            </Link>
             <AccountMenu />
           </div>
         </div>
