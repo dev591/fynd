@@ -274,6 +274,10 @@ class SupplierProfileOut(BaseModel):
     description: str | None = None
     verification_tier: Literal["email", "tax_ids", "registry", "none"] = "none"
     synthetic: bool = True  # all demo sellers are synthetic and labelled so
+    # Private until a buyer reveals this seller. Never returned by a buyer-facing view before then.
+    contact_name: str | None = None
+    phone: str | None = None
+    email: str | None = None
     products: list[SupplierProduct] = Field(default_factory=list)
 
 
@@ -316,6 +320,7 @@ class Notification(BaseModel):
     token: str
     created_at: str
     status: Literal["new", "viewed", "quoting"] = "new"
+    unlocked_at: str | None = None    # set when the buyer reveals this seller
 
 
 class NotificationOut(BaseModel):
@@ -327,11 +332,11 @@ class NotificationOut(BaseModel):
     item: str
     qty: int
     need_in_days: int
-    buyer_company: str
-    buyer_city: str
-    buyer_state: str
+    buyer_descriptor: str                   # e.g. "Manufacturer, Telangana"; never a name, company or city
     note: str | None = None
     priority_mode: PriorityMode = "cheapest"
+    unlocked: bool = False                  # true once this buyer has revealed this seller
+    buyer_contact: dict | None = None       # only present when unlocked
     rfq_status: str
     token: str
     quote_url: str

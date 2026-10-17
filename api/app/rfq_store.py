@@ -1,3 +1,4 @@
+import os
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -23,6 +24,8 @@ from .models import (
 from .engine import order
 from .intake import item_key
 from .assistant import template_message
+from . import views
+from .masking import scrub
 from .matching import draft_quote, matching_product, normalise_item, verdict_for
 
 # Default supplier labels for demo invites
@@ -49,6 +52,10 @@ class RFQStore:
         self.supplier_products: Dict[str, List[SupplierProduct]] = {}
         self.chats: Dict[str, Dict[str, List[ChatMessage]]] = {}
         self.notifications: Dict[str, List[Notification]] = {}  # supplier_id -> inbox
+        self.aliases: Dict[str, Dict[str, str]] = {}      # rfq_id -> {supplier_id: "Seller N"}, in order of first quote
+        self.revealed: Dict[str, Dict[str, dict]] = {}    # rfq_id -> {supplier_id: {buyer_id, at, kind}}
+        self.reveal_log: List[dict] = []                  # every first-time reveal: buyer, seller, request, free/paid/repeat
+        self.plans: Dict[str, str] = {}                   # buyer_id -> "free" | "pro" (mock billing)
         self.supplier_owner: Dict[str, str] = {}  # supplier_id -> owning user id; demo sellers have none
         self.autopilot: Dict[str, AutopilotSettings] = {}  # supplier_id -> settings; absent means off
         self.shares: Dict[str, str] = {}  # unguessable share token -> rfq_id, created only by an explicit click
@@ -58,53 +65,28 @@ class RFQStore:
         self._seed_default_data()
         self._seed_supplier_profiles()
         self._seed_marketplace()
+        self._seed_contacts()
 
     # ─── Seeding ───────────────────────────────────────────────────────
 
     def _seed_default_data(self):
-        rfq = RFQ(
-            id="rfq_c27_01",
-            token="tok_supplier_a",
-            item="M10 bolt",
-            qty=100,
-            need_in_days=5,
-            buyer_company="FanWorks Precision Manufacturing",
-            buyer_name="Ramesh Sharma",
-            buyer_city="Pune",
-            buyer_state="Maharashtra",
-            note="Need 100 high-tensile hex bolts for fan motor mountings by Friday.",
-            created_at=datetime.now().isoformat(),
-            status="Open",
-            supplier_tokens={"A": "tok_supplier_a", "B": "tok_supplier_b", "C": "tok_supplier_c"},
-        )
-        self.rfqs[rfq.id] = rfq
-        for sid, tok in rfq.supplier_tokens.items():
-            self.token_to_rfq_id[tok] = rfq.id
-            self.token_to_supplier_id[tok] = sid
-            self.token_to_supplier_name[tok] = dict(_DEFAULT_SUPPLIERS).get(sid, f"Supplier {sid}")
+        """No shared demo request: reveals and quotas are per buyer, so every sample request belongs to one buyer."""
 
-        self.quotes[rfq.id] = {
-            "A": [
-                QuoteVersion(
-                    version=1, supplier_id="A", supplier_name="Supplier A",
-                    pack_price=10.0, pack_size=1, freight=200.0, lead_days=3,
-                    moq=1, notes="Ex-warehouse Pune.",
-                    landed_cost=1200.0, units=100, packs=100,
-                    submitted_at="10:00 AM",
-                )
-            ],
-            "B": [
-                QuoteVersion(
-                    version=1, supplier_id="B", supplier_name="Supplier B",
-                    pack_price=11.0, pack_size=1, freight=50.0, lead_days=3,
-                    moq=1, notes="Direct local shipping.",
-                    landed_cost=1150.0, units=100, packs=100,
-                    submitted_at="10:15 AM",
-                )
-            ],
-        }
-        self.targets[rfq.id] = {}
-        self.chats[rfq.id] = {}
+    def create_sample_rfq(self, owner_id: str, company: str, name: str, city: str, state: str) -> RFQ:
+        """A personal request with quotes already in, for the empty state and the demo. All of it synthetic."""
+        rfq = self.create_rfq(RFQCreate(item="M10 bolt", qty=100, need_in_days=5, buyer_company=company, buyer_name=name,
+                                        buyer_city=city, buyer_state=state, note="Sample request (synthetic demo data)."),
+                              owner_id=owner_id)
+        for sid in ("A", "B", "C"):
+            token = rfq.supplier_tokens.get(sid)
+            if not token or sid in self.quotes.get(rfq.id, {}):
+                continue                                           # a demo seller on autopilot already quoted
+            d = self.draft_for_token(token)
+            if d:
+                self.submit_quote(token=token, supplier_name=self._supplier_name(sid), pack_price=d.pack_price,
+                                  pack_size=d.pack_size, freight=d.freight, lead_days=d.lead_days, moq=d.moq,
+                                  max_qty=d.max_qty, notes="Sample quote (synthetic demo data).")
+        return rfq
 
     def _seed_supplier_profiles(self):
         self.supplier_profiles["A"] = SupplierProfileOut(
@@ -191,10 +173,71 @@ class RFQStore:
                      "coil", stock, 150, ["copper wire", "1.5mm copper wire"]),
             ])
 
-        # The seeded demo request reaches its three invited sellers too.
-        seeded = self.rfqs["rfq_c27_01"]
-        self._notify(seeded, {sid: m for sid, m in self.match_suppliers(seeded.item).items()
-                              if sid in seeded.supplier_tokens})
+
+    def _seed_contacts(self):
+        """Obviously fake contact details for the synthetic sellers. Released only on reveal."""
+        for sid, prof in self.supplier_profiles.items():
+            n = ord(sid[0]) - 64
+            prof.contact_name = f"Demo contact {sid} (synthetic)"
+            prof.phone = f"+91 90000 {n:05d}"
+            prof.email = f"seller-{sid.lower()}@synthetic-demo.test"
+
+    # ─── Aliases, reveal, quota ────────────────────────────────────────
+
+    def alias_for(self, rfq_id: str, supplier_id: str, create: bool = False) -> Optional[str]:
+        table = self.aliases.setdefault(rfq_id, {}) if create else self.aliases.get(rfq_id, {})
+        if supplier_id not in table and create:
+            table[supplier_id] = f"Seller {len(table) + 1}"
+        return table.get(supplier_id)
+
+    def supplier_for_alias(self, rfq_id: str, alias: str) -> Optional[str]:
+        return next((sid for sid, a in self.aliases.get(rfq_id, {}).items() if a == alias), None)
+
+    def is_revealed(self, rfq_id: str, supplier_id: str) -> bool:
+        return supplier_id in self.revealed.get(rfq_id, {})
+
+    @staticmethod
+    def free_reveal_limit() -> int:
+        try:
+            return max(0, int(os.environ.get("FREE_REVEALS", "3")))
+        except ValueError:
+            return 3
+
+    def plan_of(self, buyer_id: str) -> str:
+        return self.plans.get(buyer_id, "free")
+
+    def reveals_used(self, buyer_id: str) -> int:
+        return sum(1 for e in self.reveal_log if e["buyer_id"] == buyer_id and e["kind"] == "free")
+
+    def reveals_left(self, buyer_id: str) -> Optional[int]:
+        if self.plan_of(buyer_id) == "pro":
+            return None
+        return max(0, self.free_reveal_limit() - self.reveals_used(buyer_id))
+
+    def _revealed_before(self, buyer_id: str, supplier_id: str) -> bool:
+        return any(supplier_id in d and self.rfqs[r].owner_id == buyer_id for r, d in self.revealed.items() if r in self.rfqs)
+
+    def reveal(self, rfq_id: str, supplier_id: str, buyer_id: str) -> Optional[str]:
+        """Unlock one seller for one request. Idempotent per (request, seller). Returns the kind
+        ("free", "paid", "repeat" or "already"), or None when the free allowance is used up."""
+        if self.is_revealed(rfq_id, supplier_id):
+            return "already"
+        if self._revealed_before(buyer_id, supplier_id):
+            kind = "repeat"                       # a seller you already unlocked is free and uses no allowance
+        elif self.plan_of(buyer_id) == "pro":
+            kind = "paid"
+        elif self.reveals_used(buyer_id) < self.free_reveal_limit():
+            kind = "free"
+        else:
+            return None
+        now = datetime.now().isoformat()
+        self.revealed.setdefault(rfq_id, {})[supplier_id] = {"buyer_id": buyer_id, "at": now, "kind": kind}
+        self.reveal_log.append({"buyer_id": buyer_id, "supplier_id": supplier_id, "rfq_id": rfq_id,
+                                "alias": self.alias_for(rfq_id, supplier_id), "kind": kind, "at": now})
+        for n in self.notifications.get(supplier_id, []):     # tell the seller: a buyer unlocked you
+            if n.rfq_id == rfq_id:
+                n.unlocked_at, n.status = now, "new"
+        return kind
 
     # ─── Matching & notifications ──────────────────────────────────────
 
@@ -280,6 +323,7 @@ class RFQStore:
             location_state=profile.state, categories=profile.categories,
             description=existing.description if existing else None,
             verification_tier=tier, synthetic=False,
+            contact_name=profile.full_name, phone=profile.phone, email=profile.email,
         )
         self.supplier_products.setdefault(user_id, [])
 
@@ -319,11 +363,13 @@ class RFQStore:
         prod = next((p for p in self.supplier_products.get(n.supplier_id, []) if p.id == n.product_id), None)
         if not rfq or not prod:
             return None
+        unlocked = self.is_revealed(rfq.id, n.supplier_id)
         return NotificationOut(
             id=n.id, rfq_id=rfq.id, supplier_id=n.supplier_id, status=n.status, created_at=n.created_at,
             item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days,
-            buyer_company=rfq.buyer_company, buyer_city=rfq.buyer_city, buyer_state=rfq.buyer_state,
-            note=rfq.note, priority_mode=rfq.priority_mode, rfq_status=rfq.status,
+            buyer_descriptor=views.buyer_descriptor(self, rfq),
+            note=rfq.note if unlocked else scrub(rfq.note), priority_mode=rfq.priority_mode, rfq_status=rfq.status,
+            unlocked=unlocked, buyer_contact=views.buyer_contact(self, rfq) if unlocked else None,
             token=n.token, quote_url=f"/supplier/quote?token={n.token}",
             product=prod, verdict=verdict_for(rfq, prod),
             has_quoted=n.supplier_id in self.quotes.get(rfq.id, {}),
@@ -425,30 +471,6 @@ class RFQStore:
     def get_rfq(self, rfq_id: str) -> Optional[RFQ]:
         return self.rfqs.get(rfq_id)
 
-    def get_rfq_by_token(self, token: str) -> Optional[dict]:
-        """Sealed bids: supplier only sees the buyer's request, nothing about other suppliers."""
-        rfq_id = self.token_to_rfq_id.get(token)
-        if not rfq_id:
-            return None
-        rfq = self.rfqs.get(rfq_id)
-        if not rfq:
-            return None
-        self.touch_token(token, "viewed")
-        return {
-            "id": rfq.id,
-            "item": rfq.item,
-            "qty": rfq.qty,
-            "need_in_days": rfq.need_in_days,
-            "buyer_company": rfq.buyer_company,
-            "buyer_name": rfq.buyer_name,
-            "buyer_city": rfq.buyer_city,
-            "buyer_state": rfq.buyer_state,
-            "note": rfq.note,
-            "status": rfq.status,
-            "supplier_id": self.token_to_supplier_id.get(token),
-            "supplier_name": self.get_supplier_name_for_token(token),
-        }
-
     def submit_quote(
         self,
         token: str,
@@ -476,6 +498,7 @@ class RFQStore:
 
         rfq_quotes = self.quotes.setdefault(rfq_id, {})
         supplier_history = rfq_quotes.setdefault(supplier_id, [])
+        self.alias_for(rfq_id, supplier_id, create=True)     # "Seller N", in order of first quote, stable afterwards
 
         next_ver = len(supplier_history) + 1
         q_obj = Quote(
@@ -577,6 +600,7 @@ class RFQStore:
                          for e in self.ai_log_for(rfq_id)],
             "mode": rfq.priority_mode,
             "source": rfq.source,
+            "payment_note": "Cash on delivery. Crossover never holds money.",
         }
         rfq.decision = decision
         self.decisions[rfq_id] = decision
@@ -592,8 +616,9 @@ class RFQStore:
             if not versions:
                 continue
             latest = versions[-1]
+            alias = self.alias_for(rfq_id, s_id, create=True)   # the engine only ever sees the alias
             res.append(Quote(
-                id=s_id, supplier=latest.supplier_name, item=rfq.item,
+                id=alias, supplier=alias, item=rfq.item,
                 pack_price=latest.pack_price, pack_size=latest.pack_size,
                 freight=latest.freight, lead_days=latest.lead_days,
                 moq=latest.moq, max_qty=latest.max_qty, raw=f"v{latest.version}: ₹{latest.pack_price} + ₹{latest.freight}",
@@ -625,6 +650,11 @@ class RFQStore:
             categories=payload.categories,
             description=payload.description,
             verification_tier=tier,
+            # Editing a profile must not wipe what the seller registered with, or flip a real seller to "synthetic".
+            synthetic=existing.synthetic if existing else False,
+            contact_name=existing.contact_name if existing else None,
+            phone=existing.phone if existing else None,
+            email=existing.email if existing else None,
             products=self.supplier_products.get(supplier_id, []),
         )
         self.supplier_profiles[supplier_id] = prof
@@ -672,42 +702,6 @@ class RFQStore:
                 prods.pop(i)
                 return True
         return False
-
-    def get_supplier_profile_for_buyer(self, rfq_id: str, supplier_id: str) -> Optional[dict]:
-        """Buyer-side: only if that supplier is on the request (invited or quoted)."""
-        rfq = self.rfqs.get(rfq_id)
-        if not rfq:
-            return None
-        # Supplier must have a token OR have submitted a quote
-        has_token = supplier_id in rfq.supplier_tokens
-        has_quote = supplier_id in self.quotes.get(rfq_id, {})
-        if not has_token and not has_quote:
-            return None
-        prof = self.supplier_profiles.get(supplier_id)
-        if not prof:
-            # Return minimal profile from quote data
-            quotes = self.quotes.get(rfq_id, {}).get(supplier_id, [])
-            name = quotes[-1].supplier_name if quotes else f"Supplier {supplier_id}"
-            return {
-                "supplier_id": supplier_id,
-                "business_name": name,
-                "location_city": "Unknown",
-                "location_state": "Unknown",
-                "categories": [],
-                "description": None,
-                "verification_tier": "none",
-                "products": [],
-            }
-        return {
-            "supplier_id": prof.supplier_id,
-            "business_name": prof.business_name,
-            "location_city": prof.location_city,
-            "location_state": prof.location_state,
-            "categories": prof.categories,
-            "description": prof.description,
-            "verification_tier": prof.verification_tier,
-            "products": [p.model_dump() for p in self.supplier_products.get(supplier_id, [])],
-        }
 
     # ─── Chat ──────────────────────────────────────────────────────────
 

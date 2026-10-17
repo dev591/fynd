@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app import assistant
 from app.main import app, store
+from tests.helpers import tokens_of
 from app.matching import draft_quote
 from app.models import RFQ, SupplierProduct
 
@@ -112,6 +113,12 @@ def test_item_match_ai_reason_with_unsupported_number_is_dropped(monkeypatch):
 # ─── endpoints and origin ─────────────────────────────────────────────────────
 
 def _new(qty=100):
+    res = _create(qty)
+    res["supplier_tokens"] = tokens_of(res["id"])        # test-only peek: the API no longer returns these
+    return res
+
+
+def _create(qty=100):
     return client.post("/api/rfqs", json={"item": "M10 bolt", "qty": qty, "need_in_days": 5,
                                           "buyer_company": "Co", "buyer_name": "B"}).json()
 
@@ -139,8 +146,9 @@ def test_assist_endpoint_and_origin_labels(monkeypatch):
     assert _send(tok, a["draft"], a["message"]["text"], freight=150)["origin"] == "ai_draft_edited"
     assert _send(tok, a["draft"], a["message"]["text"] + " Thanks.")["origin"] == "ai_draft_edited"
 
-    log = client.get(f"/api/rfqs/{res['id']}/ai-log").json()
-    assert any(e["kind"] == "seller_assist" for e in log)
+    assert any(e["kind"] == "seller_assist" for e in store.ai_log_for(res["id"]))
+    # the buyer's own log view hides seller-side entries
+    assert not any(e["kind"] == "seller_assist" for e in client.get(f"/api/rfqs/{res['id']}/ai-log").json())
 
 
 def test_client_cannot_claim_ai_origin():

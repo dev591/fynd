@@ -49,6 +49,8 @@ from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
 from .auth import AuthUser, get_current_user
+from . import views
+from fastapi.responses import JSONResponse
 
 
 def require_role(role: str):
@@ -66,9 +68,9 @@ seller_only = require_role("seller")
 
 
 def _rfq_for(user: AuthUser, rfq_id: str) -> RFQ:
-    """The request, only if this user owns it (or it is the shared demo request). 404 otherwise, never 403."""
+    """The request, only if this user owns it. 404 otherwise, never 403."""
     rfq = store.get_rfq(rfq_id)
-    if not rfq or (rfq.owner_id is not None and rfq.owner_id != user.id):
+    if not rfq or rfq.owner_id != user.id:
         raise HTTPException(status_code=404, detail="RFQ not found.")
     return rfq
 
@@ -279,7 +281,7 @@ def confirm_rfq(payload: ConfirmIn, user: AuthUser = Depends(buyer_only)):
 @app.get("/api/rfqs/{rfq_id}/summary")
 def rfq_summary(rfq_id: str, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
-    s = build_summary(store, rfq_id)
+    s = build_summary(store, rfq_id, audience="buyer")
     if not s:
         raise HTTPException(status_code=404, detail="RFQ not found.")
     return s
@@ -298,7 +300,7 @@ def share_rfq(rfq_id: str, user: AuthUser = Depends(buyer_only)):
 @app.get("/api/share/{token}")
 def shared_summary(token: str):
     rid = store.shares.get(token)
-    s = build_summary(store, rid) if rid else None
+    s = build_summary(store, rid, audience="public") if rid else None     # a shared link never carries identities
     if not s:
         raise HTTPException(status_code=404, detail="This link isn't valid.")
     return s
@@ -312,22 +314,13 @@ def savings(user: AuthUser = Depends(buyer_only)):
 @app.get("/api/rfqs/{rfq_id}/ai-log")
 def rfq_ai_log(rfq_id: str, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
-    return store.ai_log_for(rfq_id)
+    # The buyer's own intake only. Seller-side AI entries describe the seller and stay private.
+    return [e for e in store.ai_log_for(rfq_id) if e["kind"] in ("intake_draft", "transcribe")]
 
 
 def _rfq_response(rfq: RFQ) -> dict:
-    return {
-        "id": rfq.id,
-        "token": rfq.token,
-        "supplier_url": f"/supplier/quote?token={rfq.token}",
-        "supplier_tokens": rfq.supplier_tokens,
-        "matched": len(rfq.supplier_tokens),
-        "supplier_urls": {
-            sid: f"/supplier/quote?token={tok}"
-            for sid, tok in rfq.supplier_tokens.items()
-        },
-        "rfq": rfq,
-    }
+    """What a buyer gets back on creating a request. Invite tokens stay on the server."""
+    return {"id": rfq.id, "matched": len(rfq.supplier_tokens), "rfq": views.public_rfq(store, rfq)}
 
 
 @app.get("/api/suppliers")
@@ -365,76 +358,99 @@ def read_notification(supplier_id: str, notification_id: str, user: AuthUser = D
     return n
 
 
-@app.get("/api/rfqs", response_model=List[RFQ])
+@app.get("/api/rfqs")
 def list_rfqs(user: AuthUser = Depends(buyer_only)):
-    """Only this buyer's requests, plus the shared demo request."""
-    return [r for r in store.rfqs.values() if r.owner_id in (None, user.id)]
+    """Only this buyer's requests."""
+    return [views.public_rfq(store, r) for r in store.rfqs.values() if r.owner_id == user.id]
 
 
 @app.get("/api/rfqs/{rfq_id}")
 def get_rfq_details(rfq_id: str, user: AuthUser = Depends(buyer_only)):
-    rfq = _rfq_for(user, rfq_id)
+    """Quotes under aliases ("Seller 1"). Identities appear only for sellers this buyer has revealed."""
+    return views.buyer_details(store, _rfq_for(user, rfq_id), user.id)
 
-    quotes_by_supplier = store.quotes.get(rfq_id, {})
-    targets_by_supplier = store.targets.get(rfq_id, {})
 
-    # Evaluate latest quotes using Crossover engine
-    engine_quotes = store.get_latest_quotes_as_engine_input(rfq_id)
-    evaluation = None
-    if engine_quotes:
-        need = Need(item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days)
-        evaluation = evaluate(engine_quotes, need, mode=rfq.priority_mode)
-
-    return {
-        "rfq": rfq,
-        "quotes": quotes_by_supplier,
-        "targets": targets_by_supplier,
-        "evaluation": evaluation,
-        "activity": store.activity(rfq_id),
-    }
+def _seller_by_alias(rfq_id: str, alias: str) -> str:
+    sid = store.supplier_for_alias(rfq_id, alias)
+    if not sid:
+        raise HTTPException(status_code=404, detail="No such seller on this request.")
+    return sid
 
 
 @app.post("/api/rfqs/{rfq_id}/targets", response_model=NegotiationTarget)
 def send_target_to_supplier(rfq_id: str, payload: NegotiationTargetIn, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
+    sid = _seller_by_alias(rfq_id, payload.supplier_id)         # the buyer speaks in aliases
     try:
-        return store.send_target(
-            rfq_id=rfq_id,
-            supplier_id=payload.supplier_id,
-            cut_needed=payload.cut_needed,
-            target_freight=payload.target_freight,
-            target_per_unit=payload.target_per_unit,
-            concession_type=payload.concession_type,
-            message=payload.message,
-            sent_by=payload.sent_by,
+        target = store.send_target(
+            rfq_id=rfq_id, supplier_id=sid, cut_needed=payload.cut_needed,
+            target_freight=payload.target_freight, target_per_unit=payload.target_per_unit,
+            concession_type=payload.concession_type, message=payload.message, sent_by=payload.sent_by,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    return target.model_copy(update={"supplier_id": payload.supplier_id})
+
+
+@app.post("/api/rfqs/{rfq_id}/quotes/{alias}/reveal")
+def reveal_seller(rfq_id: str, alias: str, user: AuthUser = Depends(buyer_only)):
+    """Unlock one seller. Idempotent. Uses a free reveal (or a paid plan); 402 when none are left."""
+    _rfq_for(user, rfq_id)
+    sid = _seller_by_alias(rfq_id, alias)
+    if sid not in store.quotes.get(rfq_id, {}):
+        raise HTTPException(status_code=404, detail="No such seller on this request.")
+    kind = store.reveal(rfq_id, sid, user.id)
+    if kind is None:
+        return JSONResponse(status_code=402, content={
+            "code": "reveals_exhausted", "message": "You have used your free reveals.",
+            **views.plan_info(store, user.id)})
+    return {"alias": alias, "kind": kind, "seller": views.identity_of(store, sid), "plan": views.plan_info(store, user.id)}
+
+
+@app.get("/api/me/plan")
+def my_plan(user: AuthUser = Depends(buyer_only)):
+    return views.plan_info(store, user.id)
+
+
+@app.post("/api/dev/mock-upgrade")
+def mock_upgrade(user: AuthUser = Depends(buyer_only)):
+    """DEV ONLY. No payment happens; this flips the account to unlimited reveals so the paywall can be demoed."""
+    store.plans[user.id] = "pro"
+    return {**views.plan_info(store, user.id), "note": "Mock upgrade for the demo. No payment was taken and none is stored."}
+
+
+@app.post("/api/demo/sample-request")
+def sample_request(user: AuthUser = Depends(buyer_only)):
+    """A personal sample request with synthetic quotes already in. Used by the empty state."""
+    p = store.profiles.get(user.id)
+    rfq = store.create_sample_rfq(user.id, p.company if p else "My company", p.full_name if p else "Buyer",
+                                  p.city if p else "Pune", p.state if p else "Maharashtra")
+    return _rfq_response(rfq)
 
 
 @app.post("/api/rfqs/{rfq_id}/decision")
 def record_decision(rfq_id: str, payload: DecisionIn, user: AuthUser = Depends(buyer_only)):
+    """Order handoff. The chosen seller must have been revealed first, so the buyer can actually contact them."""
     _rfq_for(user, rfq_id)
+    sid = _seller_by_alias(rfq_id, payload.winner_id)
+    if not store.is_revealed(rfq_id, sid):
+        raise HTTPException(status_code=409, detail={"code": "reveal_required",
+                            "message": "Reveal this seller before saving the order."})
     try:
-        return store.save_decision(
-            rfq_id=rfq_id,
-            winner_id=payload.winner_id,
-            reason=payload.reason,
-            approver=payload.approver,
-        )
+        return store.save_decision(rfq_id=rfq_id, winner_id=payload.winner_id, reason=payload.reason, approver=payload.approver)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
 @app.get("/api/recommendations")
 def list_recommendations(user: AuthUser = Depends(buyer_only)):
-    return {rid: d for rid, d in store.decisions.items() if store.rfqs[rid].owner_id in (None, user.id)}
+    return {rid: d for rid, d in store.decisions.items() if store.rfqs[rid].owner_id == user.id}
 
 
 # --- 5. Supplier Sealed Bids (Token Routes) ---
 @app.get("/api/rfq-by-token/{token}")
 def get_rfq_by_token(token: str):
-    data = store.get_rfq_by_token(token)
+    data = views.seller_request(store, token)
     if not data:
         raise HTTPException(status_code=404, detail="This link isn't valid or has expired.")
     return data
@@ -516,7 +532,7 @@ def rfq_activity(rfq_id: str, user: AuthUser = Depends(buyer_only)):
 
 @app.get("/api/rfq-by-token/{token}/quotes/mine")
 def get_my_quotes(token: str):
-    return store.get_supplier_quotes_and_target(token)
+    return views.seller_my_quotes(store, token)
 
 
 # --- 6. Supplier Profile & Products ---
@@ -566,32 +582,35 @@ def delete_supplier_product(supplier_id: str, product_id: str, user: AuthUser = 
 
 
 # --- 7. Buyer-side supplier profile (click-through) ---
-@app.get("/api/rfqs/{rfq_id}/suppliers/{supplier_id}")
-def get_supplier_profile_for_buyer(rfq_id: str, supplier_id: str, user: AuthUser = Depends(buyer_only)):
-    _rfq_for(user, rfq_id)
-    data = store.get_supplier_profile_for_buyer(rfq_id, supplier_id)
+@app.get("/api/rfqs/{rfq_id}/suppliers/{alias}")
+def get_supplier_profile_for_buyer(rfq_id: str, alias: str, user: AuthUser = Depends(buyer_only)):
+    """Before reveal: alias, state and what was checked. After reveal: the seller."""
+    data = views.supplier_for_buyer(store, _rfq_for(user, rfq_id), alias)
     if data is None:
         raise HTTPException(status_code=404, detail="Supplier not found on this request.")
     return data
 
 
 # --- 8. Chat (buyer + supplier token routes) ---
-@app.get("/api/rfqs/{rfq_id}/threads/{supplier_id}/messages", response_model=List[ChatMessage])
-def get_chat_messages(rfq_id: str, supplier_id: str, user: AuthUser = Depends(buyer_only)):
-    _rfq_for(user, rfq_id)
-    return store.get_chat_messages(rfq_id, supplier_id)
+@app.get("/api/rfqs/{rfq_id}/threads/{alias}/messages", response_model=List[ChatMessage])
+def get_chat_messages(rfq_id: str, alias: str, user: AuthUser = Depends(buyer_only)):
+    rfq = _rfq_for(user, rfq_id)
+    return views.chat_for_buyer(store, rfq, _seller_by_alias(rfq_id, alias))
 
 
-@app.post("/api/rfqs/{rfq_id}/threads/{supplier_id}/messages", response_model=ChatMessage, status_code=201)
-def post_chat_message(rfq_id: str, supplier_id: str, payload: ChatMessageIn, user: AuthUser = Depends(buyer_only)):
+@app.post("/api/rfqs/{rfq_id}/threads/{alias}/messages", response_model=ChatMessage, status_code=201)
+def post_chat_message(rfq_id: str, alias: str, payload: ChatMessageIn, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
+    sid = _seller_by_alias(rfq_id, alias)
     # The signed-in buyer is always the buyer here; the request body cannot pick the sender.
-    return store.add_chat_message(rfq_id, supplier_id, "buyer", payload.sender_name, payload.text)
+    return store.add_chat_message(rfq_id, sid, "buyer", payload.sender_name, payload.text)
 
 
 @app.get("/api/rfq-by-token/{token}/messages", response_model=List[ChatMessage])
 def get_chat_by_token(token: str):
-    return store.get_chat_by_token(token)
+    rfq_id, sid = store.token_to_rfq_id.get(token), store.token_to_supplier_id.get(token)
+    rfq = store.rfqs.get(rfq_id) if rfq_id else None
+    return views.chat_for_seller(store, rfq, sid) if rfq and sid else []
 
 
 @app.post("/api/rfq-by-token/{token}/messages", response_model=ChatMessage, status_code=201)

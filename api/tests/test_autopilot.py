@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app, store
+from tests.helpers import tokens_of
 
 client = TestClient(app)
 
@@ -13,12 +14,17 @@ def _autopilot_off_after():
 
 
 def _request(qty=100, need=5, item="M10 bolt"):
-    return client.post("/api/rfqs", json={"item": item, "qty": qty, "need_in_days": need,
-                                          "buyer_company": "Co", "buyer_name": "B"}).json()
+    res = client.post("/api/rfqs", json={"item": item, "qty": qty, "need_in_days": need,
+                                         "buyer_company": "Co", "buyer_name": "B"}).json()
+    res["supplier_tokens"] = tokens_of(res["id"])        # test-only peek
+    return res
 
 
 def _quotes(rid):
-    return client.get(f"/api/rfqs/{rid}").json()["quotes"]
+    """The buyer's view is keyed by alias; tests think in seller ids, so translate back."""
+    by_alias = client.get(f"/api/rfqs/{rid}").json()["quotes"]
+    back = {a: sid for sid, a in store.aliases.get(rid, {}).items()}
+    return {back[a]: v for a, v in by_alias.items()}
 
 
 def test_autopilot_is_off_by_default_and_sends_nothing():
@@ -42,7 +48,7 @@ def test_autopilot_quotes_from_catalog_and_is_marked_auto():
     assert "₹1,200" in q["notes"]                    # template wording, every number from data
     assert set(_quotes(rid)) == {"A"}                 # sellers without autopilot stay silent
     # the buyer's compare picks it up like any other quote
-    assert client.get(f"/api/rfqs/{rid}").json()["evaluation"]["winner"]["quote_id"] == "A"
+    assert client.get(f"/api/rfqs/{rid}").json()["evaluation"]["winner"]["quote_id"] == "Seller 1"
 
 
 def test_autopilot_leaves_anything_but_a_clean_yes_to_a_person():
@@ -63,7 +69,7 @@ def test_autopilot_never_answers_a_target_or_revises():
     res = _request()
     rid, tok = res["id"], res["supplier_tokens"]["A"]
     assert len(_quotes(rid)["A"]) == 1
-    client.post(f"/api/rfqs/{rid}/targets", json={"supplier_id": "A", "cut_needed": 51, "target_freight": 149,
+    client.post(f"/api/rfqs/{rid}/targets", json={"supplier_id": "Seller 1", "cut_needed": 51, "target_freight": 149,
                                                   "concession_type": "freight", "sent_by": "Ramesh Sharma"})
     assert store.has_pending_target(tok) is True
     rfq = store.get_rfq(rid)
@@ -96,4 +102,4 @@ def test_one_pager_lists_auto_quotes():
     client.put("/api/supplier/A/autopilot", json={"enabled": True})
     rid = _request()["id"]
     s = client.get(f"/api/rfqs/{rid}/summary").json()
-    assert s["auto_quotes"] == ["Bolt Express Industrial Supplies"]
+    assert s["auto_quotes"] == ["Seller 1"]

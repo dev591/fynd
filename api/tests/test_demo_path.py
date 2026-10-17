@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from app import intake
 from app.main import app, store
+from tests.helpers import alias, tokens_of
 
 client = TestClient(app)
 
@@ -22,8 +23,8 @@ def test_demo_path_end_to_end(monkeypatch):
         "item": d["item"], "qty": d["qty"], "need_in_days": d["need_in_days"],
         "priority_mode": d["priority_mode"], "source": "voice", "buyer_company": "FanWorks",
         "buyer_name": "Ramesh Sharma", "intake_id": draft["request_id"]}).json()
-    rid, tok = req["id"], req["supplier_tokens"]
-    assert req["matched"] >= 5
+    rid, tok = req["id"], tokens_of(req["id"])
+    assert req["matched"] >= 5 and "supplier_tokens" not in req
     bells = {sid: [n for n in client.get(f"/api/supplier/{sid}/notifications").json() if n["rfq_id"] == rid]
              for sid in tok}
     assert all(len(v) == 1 and v[0]["status"] == "new" for v in bells.values())
@@ -44,20 +45,21 @@ def test_demo_path_end_to_end(monkeypatch):
     assert details["activity"]["quoted"] == 2
     ev = details["evaluation"]
     landed = {r["supplier"]: r["landed"] for r in ev["rows"]}
-    assert landed["Supplier A"] == 1200
+    assert landed["Seller 1"] == 1200 and set(landed) == {"Seller 1", "Seller 2"}     # anonymous until reveal
 
     # 4. Winner with the priority switch: every mode is visible and engine-decided.
     assert set(ev["winners"]) == {"cheapest", "fastest", "balanced"}
     first_winner = ev["winner"]["quote_id"]
 
     # 5. Buyer reviews and sends a target to the runner-up as a named person.
-    runner = "A" if first_winner != "A" else "B"
+    runner_alias = "Seller 1" if first_winner != "Seller 1" else "Seller 2"
+    runner = "A" if runner_alias == "Seller 1" else "B"
     gap = ev["winner"]["landed"]
-    loser_landed = next(r["landed"] for r in ev["rows"] if r["quote_id"] == runner)
+    loser_landed = next(r["landed"] for r in ev["rows"] if r["quote_id"] == runner_alias)
     cut = loser_landed - gap + 1
-    freight = next(r["freight"] for r in ev["rows"] if r["quote_id"] == runner) - cut
+    freight = next(r["freight"] for r in ev["rows"] if r["quote_id"] == runner_alias) - cut
     t = client.post(f"/api/rfqs/{rid}/targets", json={
-        "supplier_id": runner, "cut_needed": cut, "target_freight": freight, "concession_type": "freight",
+        "supplier_id": runner_alias, "cut_needed": cut, "target_freight": freight, "concession_type": "freight",
         "message": "Cut freight to win this order.", "sent_by": "Ramesh Sharma"})
     assert t.status_code == 200 and t.json()["sent_by"] == "Ramesh Sharma"
     assert store.has_pending_target(tok[runner]) is True
@@ -65,15 +67,20 @@ def test_demo_path_end_to_end(monkeypatch):
     assert seen["target"]["status"] == "pending"                 # shows on the seller screen
 
     # 6. The seller revises by hand; the winner flips on the buyer's next poll.
-    old = next(r for r in ev["rows"] if r["quote_id"] == runner)
+    old = next(r for r in ev["rows"] if r["quote_id"] == runner_alias)
     client.post(f"/api/rfq-by-token/{tok[runner]}/quotes", json={
         "supplier_name": f"Supplier {runner}", "pack_price": old["pack_price"], "pack_size": old["pack_size"],
         "freight": freight, "lead_days": old["lead_days"], "notes": "Revised to your target."})
     flipped = client.get(f"/api/rfqs/{rid}").json()["evaluation"]["winner"]["quote_id"]
-    assert flipped == runner and flipped != first_winner
+    assert flipped == runner_alias and flipped != first_winner
     assert store.has_pending_target(tok[runner]) is False
 
     # 7. Save the decision (named approver), open the one-pager, create the share link.
+    assert client.post(f"/api/rfqs/{rid}/decision", json={
+        "winner_id": flipped, "reason": "x", "approver": "Ramesh Sharma"}).status_code == 409     # reveal comes first
+    left_before = client.get("/api/me/plan").json()["reveals_left"]
+    revealed = client.post(f"/api/rfqs/{rid}/quotes/{flipped}/reveal").json()
+    assert revealed["seller"]["business_name"] and revealed["plan"]["reveals_left"] in (left_before, left_before - 1)
     dec = client.post(f"/api/rfqs/{rid}/decision", json={
         "winner_id": flipped, "reason": "Lowest landed after revision", "approver": "Ramesh Sharma"})
     assert dec.status_code == 200

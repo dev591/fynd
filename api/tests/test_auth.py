@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app import auth
 from app.auth import get_current_user
 from app.main import app, store
+from tests.helpers import alias, tokens_of
 
 client = TestClient(app)
 SECRET = "test-secret-not-a-real-one-0123456789abcdef"
@@ -80,7 +81,8 @@ def test_public_routes_need_no_login():
     assert client.get("/health").status_code == 200
     assert client.get("/api/case-checks").status_code == 200
     assert client.get("/api/share/shr_nope").status_code == 404          # reachable, just not found
-    assert client.get("/api/rfq-by-token/tok_supplier_a").status_code == 200   # invite links stay open
+    rid = _new_rfq(token(sub="invite-owner"))
+    assert client.get(f"/api/rfq-by-token/{tokens_of(rid)['A']}").status_code == 200   # invite links stay open
 
 
 # ─── remote verification (no secret configured) ─────────────────────────────
@@ -164,19 +166,27 @@ def test_buyers_cannot_see_or_touch_each_others_requests():
         assert r.status_code == 404, (method, path, r.status_code)
 
 
-def test_shared_demo_request_is_visible_to_everyone_signed_in():
-    assert "rfq_c27_01" in [r["id"] for r in client.get("/api/rfqs", headers=hdr(token(sub="newcomer"))).json()]
+def test_a_new_buyer_starts_empty_and_a_sample_request_is_personal():
+    newcomer, other = token(sub="newcomer"), token(sub="newcomer-2")
+    assert client.get("/api/rfqs", headers=hdr(newcomer)).json() == []
+    sample = client.post("/api/demo/sample-request", headers=hdr(newcomer)).json()
+    mine = client.get(f"/api/rfqs/{sample['id']}", headers=hdr(newcomer)).json()
+    assert mine["rfq"]["note"].startswith("Sample request") and len(mine["quotes"]) >= 2
+    assert client.get(f"/api/rfqs/{sample['id']}", headers=hdr(other)).status_code == 404
+    assert client.get("/api/rfqs", headers=hdr(other)).json() == []
 
 
 def test_savings_only_count_your_own_decisions():
     alice, bob = token(sub="alice2"), token(sub="bob2")
     before = client.get("/api/savings", headers=hdr(bob)).json()
     rid = _new_rfq(alice)
-    toks = client.get(f"/api/rfqs/{rid}", headers=hdr(alice)).json()["rfq"]["supplier_tokens"]
+    toks = tokens_of(rid)
     for sid, price, freight in (("A", 10, 200), ("B", 11, 50)):
         client.post(f"/api/rfq-by-token/{toks[sid]}/quotes", json={
             "supplier_name": sid, "pack_price": price, "pack_size": 1, "freight": freight, "lead_days": 3})
-    client.post(f"/api/rfqs/{rid}/decision", headers=hdr(alice), json={"winner_id": "B", "reason": "x", "approver": "Alice"})
+    winner = alias(rid, "B")
+    client.post(f"/api/rfqs/{rid}/quotes/{winner}/reveal", headers=hdr(alice))
+    client.post(f"/api/rfqs/{rid}/decision", headers=hdr(alice), json={"winner_id": winner, "reason": "x", "approver": "Alice"})
     assert client.get("/api/savings", headers=hdr(alice)).json()["total"] >= 50
     assert client.get("/api/savings", headers=hdr(bob)).json() == before
 
@@ -185,8 +195,9 @@ def test_chat_sender_cannot_be_spoofed():
     alice = token(sub="alice3")
     res = client.post("/api/rfqs", headers=hdr(alice), json={
         "item": "M10 bolt", "qty": 100, "need_in_days": 5, "buyer_company": "C", "buyer_name": "B"}).json()
-    rid, tk = res["id"], res["supplier_tokens"]["A"]
-    m1 = client.post(f"/api/rfqs/{rid}/threads/A/messages", headers=hdr(alice),
+    rid, tk = res["id"], tokens_of(res["id"])["A"]
+    client.post(f"/api/rfq-by-token/{tk}/quotes", json={"supplier_name": "x", "pack_price": 10, "pack_size": 1, "freight": 100, "lead_days": 3})
+    m1 = client.post(f"/api/rfqs/{rid}/threads/Seller 1/messages", headers=hdr(alice),
                      json={"sender": "supplier", "sender_name": "Alice", "text": "from the buyer"}).json()
     m2 = client.post(f"/api/rfq-by-token/{tk}/messages",
                      json={"sender": "buyer", "sender_name": "Pretender", "text": "from the link"}).json()
@@ -227,7 +238,7 @@ def test_a_seller_owns_their_catalog_and_others_cannot_touch_it():
     client.post("/api/me/roles", headers=hdr(other), json={"role": "buyer"})
     rid = client.post("/api/rfqs", headers=hdr(other), json={
         "item": "brass nut x", "qty": 5, "need_in_days": 5, "buyer_company": "C", "buyer_name": "B"}).json()
-    assert "seller-own" in rid["supplier_tokens"]
+    assert "seller-own" in tokens_of(rid["id"])
     inbox = client.get("/api/supplier/seller-own/notifications", headers=hdr(owner)).json()
     assert len(inbox) == 1 and inbox[0]["verdict"]["can_fulfil"] == "yes"
 

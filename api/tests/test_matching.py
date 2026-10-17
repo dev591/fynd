@@ -3,13 +3,16 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.matching import normalise_item, matching_product, verdict_for
 from app.models import RFQ, SupplierProduct
+from tests.helpers import tokens_of
 
 client = TestClient(app)
 
 
 def _rfq(item="M10 bolt", qty=100, need=5, **kw):
     body = {"item": item, "qty": qty, "need_in_days": need, "buyer_company": "Co", "buyer_name": "Buyer", **kw}
-    return client.post("/api/rfqs", json=body).json()
+    res = client.post("/api/rfqs", json=body).json()
+    res["supplier_tokens"] = tokens_of(res["id"])        # test-only peek: the API no longer returns these
+    return res
 
 
 def _inbox(sid):
@@ -133,6 +136,6 @@ def test_activity_funnel_and_live_quote_appears_in_compare():
 
     # the buyer's next poll already sees it
     details = client.get(f"/api/rfqs/{rid}").json()
-    assert details["quotes"]["A"][0]["landed_cost"] == 1200
-    assert details["evaluation"]["winner"]["quote_id"] == "A"
+    assert details["quotes"]["Seller 1"][0]["landed_cost"] == 1200
+    assert details["evaluation"]["winner"]["quote_id"] == "Seller 1"
     assert details["activity"]["quoted"] == 1

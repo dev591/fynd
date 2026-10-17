@@ -4,11 +4,13 @@ Every number comes from the engine output. The explainer's wording may come from
 never picks the winner, and its text is dropped for the engine's own reasons list if any number
 is unsupported or it names no winner.
 """
+import re
 from typing import Any, Optional
 
 from .ai import structured_call
 from .assistant import makes_promise, numbers_supported
 from .engine import evaluate, fingerprint, naive_pick, order
+from . import views
 from .models import EvaluatedRow, Need, RFQ
 
 EXPLAIN_SYSTEM = (
@@ -65,12 +67,14 @@ def _explainer(facts: dict, allowed: set[float], winner_name: str, fallback: str
         return {"text": fallback, "source": "engine", "discarded_reason": "AI text did not name the winner"}
     if makes_promise(text):
         return {"text": fallback, "source": "engine", "discarded_reason": "AI text made an offer or promise"}
-    if not numbers_supported(text, allowed):
+    # "Seller 2" is a label, not a quantity: take the alias digits out before checking numbers.
+    if not numbers_supported(re.sub(r"\bSeller \d+\b", "Seller", text), allowed):
         return {"text": fallback, "source": "engine", "discarded_reason": "AI text contained a number not in the engine output"}
     return {"text": text, "source": "ai", "discarded_reason": None}
 
 
-def build_summary(store, rfq_id: str, with_explainer: bool = True) -> Optional[dict[str, Any]]:
+def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str = "buyer") -> Optional[dict[str, Any]]:
+    """audience 'buyer' is the owner's own page; 'public' is a shared link and never carries identities."""
     rfq: Optional[RFQ] = store.get_rfq(rfq_id)
     if not rfq:
         return None
@@ -121,7 +125,7 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True) -> Optional[d
 
     return {
         "rfq": {"id": rfq.id, "item": rfq.item, "qty": rfq.qty, "need_in_days": rfq.need_in_days,
-                "buyer_company": rfq.buyer_company, "buyer_name": rfq.buyer_name,
+                **({"buyer_company": rfq.buyer_company, "buyer_name": rfq.buyer_name} if audience == "buyer" else {}),
                 "priority_mode": rfq.priority_mode, "source": rfq.source, "status": rfq.status,
                 "created_at": rfq.created_at},
         "decided": decision is not None,
@@ -139,7 +143,8 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True) -> Optional[d
                                     "quotes": [q.model_dump() for q in quotes]}),
         "ai_calls": (decision or {}).get("ai_calls", []),
         # Suppliers whose current quote was sent by their autopilot, with no person reviewing it.
-        "auto_quotes": [v[-1].supplier_name for v in store.quotes.get(rfq_id, {}).values() if v and v[-1].origin == "auto"],
+        "auto_quotes": [store.alias_for(rfq_id, sid) for sid, v in store.quotes.get(rfq_id, {}).items() if v and v[-1].origin == "auto"],
+        "revealed": views.buyer_revealed(store, rfq) if audience == "buyer" else {},
         "synthetic_note": "Demo data is synthetic. Savings figures come from demo data.",
     }
 

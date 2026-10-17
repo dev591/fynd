@@ -16,6 +16,8 @@ def _no_real_provider_keys(monkeypatch):
     """api/.env may hold real keys. Tests must never reach a real provider; they stub or run keyless."""
     for var in PROVIDER_VARS:
         monkeypatch.delenv(var, raising=False)
+    # General tests share one user across the suite, so give them a generous allowance. Quota tests set their own.
+    monkeypatch.setenv("FREE_REVEALS", "1000")
 
 
 @pytest.fixture(autouse=True)
