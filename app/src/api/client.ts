@@ -716,6 +716,23 @@ export async function mockUpgrade(): Promise<PlanInfo & { note: string }> {
   return apiFetch("/api/dev/mock-upgrade", { method: "POST" });
 }
 
+export interface LastOrderDTO {
+  item: string;
+  qty: number;
+  last: { source: "your_last_order" | "synthetic_history"; label: string; date: string; qty: number; landed: number; lead_days: number } | null;
+  today: { landed: number; lead_days: number; sellers_checked: number } | null;
+  /** Last landed cost minus today's best for the same quantity. Null when they cannot be compared. */
+  difference: number | null;
+  note: string;
+}
+
+export async function getLastOrder(item: string, qty?: number, needInDays?: number): Promise<LastOrderDTO> {
+  const q = new URLSearchParams();
+  if (qty) q.set("qty", String(qty));
+  if (needInDays) q.set("need_in_days", String(needInDays));
+  return apiFetch(`/api/items/${encodeURIComponent(item)}/last-order?${q}`);
+}
+
 export async function createSampleRequest(): Promise<RFQCreateResponse> {
   return apiFetch("/api/demo/sample-request", { method: "POST" });
 }

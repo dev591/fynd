@@ -7,7 +7,7 @@ import { IntakePanel } from "./IntakePanel";
 import { useApiOnce } from "../lib/useApi";
 import { dateFromDays, daysFromToday, tomorrow } from "../lib/dates";
 import { useSession } from "../lib/useSession";
-import { getMe, createRFQ, type PriorityMode, type RFQCreateResponse } from "../api/client";
+import { getLastOrder, getMe, createRFQ, type LastOrderDTO, type PriorityMode, type RFQCreateResponse } from "../api/client";
 
 const PRIORITY_OPTIONS: { id: PriorityMode; label: string; hint: string }[] = [
   { id: "cheapest", label: "Cheapest", hint: "Lowest landed cost" },
@@ -23,6 +23,8 @@ export function NewRequestForm() {
   const [qty, setQty] = useState<number | "">("");
   const [needBy, setNeedBy] = useState(() => dateFromDays(5));
   const needInDays = daysFromToday(needBy);
+  // Last order vs today, once an item is typed. Numbers only; history marked synthetic is demo data.
+  const [lastOrder, setLastOrder] = useState<LastOrderDTO | null>(null);
   const [note, setNote] = useState("");
   const [priority, setPriority] = useState<PriorityMode>("cheapest");
   // Who is asking comes from the signed-in profile, not from a hardcoded buyer.
@@ -32,6 +34,15 @@ export function NewRequestForm() {
   const [buyerName, setBuyerName] = useState("");
   const [buyerCity, setBuyerCity] = useState("");
   const [buyerState, setBuyerState] = useState("");
+  useEffect(() => {
+    if (item.trim().length < 3) { setLastOrder(null); return; }
+    const t = setTimeout(() => {
+      getLastOrder(item.trim(), typeof qty === "number" && qty > 0 ? qty : undefined, needInDays >= 1 ? needInDays : undefined)
+        .then(setLastOrder).catch(() => setLastOrder(null));
+    }, 450);
+    return () => clearTimeout(t);
+  }, [item, qty, needInDays]);
+
   useEffect(() => {
     const p = me?.profile;
     setBuyerCompany(c => c || p?.company || "My company");
@@ -205,6 +216,29 @@ export function NewRequestForm() {
               {needInDays >= 1 && <p className="mt-1 text-[11px] text-muted">{needInDays} day{needInDays === 1 ? "" : "s"} from today</p>}
             </div>
           </div>
+
+          {lastOrder && (lastOrder.last || lastOrder.today) && (
+            <div className="rounded-xl border border-line bg-raised/40 p-3 text-[13px] space-y-1">
+              <p className="label text-muted">Last order vs today</p>
+              {lastOrder.last ? (
+                <p className="text-bone">
+                  {lastOrder.last.label}: <span className="num">₹{Math.round(lastOrder.last.landed).toLocaleString("en-IN")}</span> for{" "}
+                  <span className="num">{lastOrder.last.qty}</span> units on {lastOrder.last.date}.
+                </p>
+              ) : <p className="text-muted">No earlier order for this item.</p>}
+              {lastOrder.today ? (
+                <p className="text-bone">
+                  Best today for {lastOrder.qty} units: <span className="num">₹{Math.round(lastOrder.today.landed).toLocaleString("en-IN")}</span>{" "}
+                  ({lastOrder.today.lead_days} days, {lastOrder.today.sellers_checked} seller{lastOrder.today.sellers_checked === 1 ? "" : "s"} checked).
+                  {lastOrder.difference !== null && lastOrder.difference !== 0 && (
+                    <> That is <strong className="num text-signal">₹{Math.abs(Math.round(lastOrder.difference)).toLocaleString("en-IN")}</strong>{" "}
+                    {lastOrder.difference > 0 ? "less" : "more"} than last time.</>
+                  )}
+                </p>
+              ) : <p className="text-muted">No seller stocks this item yet.</p>}
+              <p className="text-[11px] text-muted">{lastOrder.note}</p>
+            </div>
+          )}
 
           {/* Priority */}
           <div>
