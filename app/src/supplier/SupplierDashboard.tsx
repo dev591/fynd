@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft, Building2, Package, Plus, ArrowRight,
@@ -8,9 +8,10 @@ import { VerifiedBadge } from "./components/VerifiedBadge";
 import { StatusChip } from "./components/StatusChip";
 import { useApiPoll, useApiOnce } from "../lib/useApi";
 import { useSupplierId } from "../lib/useSupplierId";
+import { AccountMenu } from "../components/AccountMenu";
 import { computeStatus } from "./types";
 import {
-  getSellers, getNotifications, markNotificationViewed, getAutopilot, setAutopilot,
+  getMe, getSellers, getNotifications, markNotificationViewed, getAutopilot, setAutopilot,
   getSupplierProfile, getSupplierProducts,
   addSupplierProduct, deleteSupplierProduct,
   type NotificationDTO, type SellerSummary, type SupplierProfileDTO, type SupplierProductDTO,
@@ -22,6 +23,15 @@ export function SupplierDashboard() {
 
   // Sellers (demo selector) and this seller's inbox
   const { data: sellers } = useApiOnce<SellerSummary[]>(() => getSellers(), []);
+  const { data: me } = useApiOnce(() => getMe(), []);
+  // The stored seller id may belong to someone else (an earlier user, or demo sellers switched off):
+  // fall back to this user's own seller record, then the first seller the server lets them use.
+  useEffect(() => {
+    if (!sellers || sellers.length === 0) return;
+    if (!sellers.some(s => s.supplier_id === supplierId)) {
+      setSupplierId(me?.supplier_id && sellers.some(s => s.supplier_id === me.supplier_id) ? me.supplier_id : sellers[0].supplier_id);
+    }
+  }, [sellers, me, supplierId, setSupplierId]);
   const { data: inbox, loading: inboxLoading, error: inboxError, refetch: refetchInbox } = useApiPoll<NotificationDTO[]>(
     () => getNotifications(supplierId), 2000, [supplierId],
   );
@@ -138,6 +148,7 @@ export function SupplierDashboard() {
             <Link to="/app" className="rounded-full border border-line bg-raised px-3 py-1 text-[12px] font-medium text-bone hover:border-signal/50 hover:text-signal transition-colors">
               Switch to Buyer View
             </Link>
+            <AccountMenu />
           </div>
         </div>
       </header>

@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { saveProfile } from "../../api/client";
 import {
   ArrowRight,
   ShieldCheck,
@@ -21,10 +23,18 @@ interface SummaryStepProps {
 export function SummaryStep({ profile }: SummaryStepProps) {
   const navigate = useNavigate();
 
-  const handleLaunch = () => {
-    // Store active profile for the dashboard
-    localStorage.setItem("crossover_active_profile", JSON.stringify(profile));
-    navigate("/app");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleLaunch = async () => {
+    setSaving(true); setSaveError(null);
+    try {
+      await saveProfile(profile);                       // stored against the signed-in user, server side
+      navigate(profile.role === "supplier" ? "/supplier" : "/app");
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Could not save your profile.");
+      setSaving(false);
+    }
   };
 
   const isBuyer = profile.role === "buyer";
@@ -142,16 +152,19 @@ export function SummaryStep({ profile }: SummaryStepProps) {
           </p>
         </div>
 
+        {saveError && <p className="text-center text-[12px] text-error">{saveError}</p>}
+
         {/* Enter Desk Action */}
         <div className="pt-2">
           <Magnetic className="block w-full" pull={0.15}>
             <button
               type="button"
               onClick={handleLaunch}
+              disabled={saving}
               className="flex w-full items-center justify-center gap-2 rounded-full bg-signal py-3.5 px-6 font-medium text-ink shadow-lg transition-transform hover:opacity-95 active:scale-98"
             >
               <span>
-                {isBuyer ? "Open Ramesh's Desk / Enter App" : "Open Quoting Dashboard"}
+                {saving ? "Saving…" : isBuyer ? "Open my buyer desk" : "Open my quoting dashboard"}
               </span>
               <ArrowRight size={18} strokeWidth={2} />
             </button>

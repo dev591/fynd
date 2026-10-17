@@ -70,7 +70,7 @@ export function LoginWizard() {
   const [draft, setDraft] = useState<WizardDraft>(() => {
     try {
       const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) return { ...JSON.parse(saved), password: "" };
     } catch {
       // fallback to initial
     }
@@ -82,7 +82,8 @@ export function LoginWizard() {
   // Persist draft whenever it changes
   useEffect(() => {
     try {
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      // The password is never written to the browser's storage.
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ ...draft, password: "" }));
     } catch {
       // quota or private mode fallback
     }

@@ -5,15 +5,25 @@
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+import { getAccessToken, signOut } from "../lib/auth";
+
+async function authHeader(): Promise<Record<string, string>> {
+  const token = await getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: { "Content-Type": "application/json", ...(await authHeader()), ...(options?.headers as Record<string, string> | undefined) },
   });
   if (!res.ok) {
+    // A rejected token means the session is over: clear it so the page sends you back to sign in.
+    if (res.status === 401) await signOut();
     const text = await res.text();
     throw new Error(`API ${res.status}: ${text}`);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -23,7 +33,7 @@ export async function healthCheck(): Promise<{ ok: boolean; service: string }> {
   return apiFetch("/health");
 }
 
-// ─── Profile ───────────────────────────────────────────────────────────────
+// ─── Profile and identity ──────────────────────────────────────────────────
 
 export interface ApiProfile {
   id: string;
@@ -47,26 +57,20 @@ export interface ApiProfile {
   supplier?: { default_lead_days: number; gst_inclusive_default: boolean; regions: string[] };
 }
 
-export async function createProfile(profile: Omit<ApiProfile, "id"> & { id?: string }): Promise<ApiProfile> {
+export interface MeResponse {
+  user: { id: string; email: string | null };
+  profile: ApiProfile | null;
+  /** The seller record this user owns, if they signed up as a supplier. */
+  supplier_id: string | null;
+}
+
+export async function getMe(): Promise<MeResponse> {
+  return apiFetch("/api/me");
+}
+
+/** Saves the signed-in user's own profile. The server takes id and email from the login, not from this. */
+export async function saveProfile(profile: ApiProfile): Promise<ApiProfile> {
   return apiFetch("/api/profile", { method: "POST", body: JSON.stringify(profile) });
-}
-
-export async function getProfile(id: string): Promise<ApiProfile> {
-  return apiFetch(`/api/profile/${id}`);
-}
-
-// ─── Tax Validation ────────────────────────────────────────────────────────
-
-export interface TaxValidationResult {
-  gstin_valid: boolean;
-  pan_consistent: boolean;
-  state_code: string;
-  pan_masked: string | null;
-  errors: string[];
-}
-
-export async function validateTax(gstin: string, pan: string): Promise<TaxValidationResult> {
-  return apiFetch("/api/validate/tax", { method: "POST", body: JSON.stringify({ gstin, pan }) });
 }
 
 // ─── Compare / Engine ─────────────────────────────────────────────────────
@@ -268,7 +272,7 @@ export async function draftIntake(text: string): Promise<IntakeResultDTO> {
 export async function transcribeAudio(blob: Blob): Promise<string | null> {
   try {
     const res = await fetch(`${BASE_URL}/api/intake/transcribe`, {
-      method: "POST", headers: { "Content-Type": blob.type || "audio/webm" }, body: blob,
+      method: "POST", headers: { "Content-Type": blob.type || "audio/webm", ...(await authHeader()) }, body: blob,
     });
     if (!res.ok) return null;
     const out = await res.json();

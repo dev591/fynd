@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ArrowLeft, Package, Send, Copy, Check, ExternalLink,
 } from "lucide-react";
 import { IntakePanel } from "./IntakePanel";
-import { createRFQ, type PriorityMode, type RFQCreateResponse } from "../api/client";
+import { useApiOnce } from "../lib/useApi";
+import { useSession } from "../lib/useSession";
+import { getMe, createRFQ, type PriorityMode, type RFQCreateResponse } from "../api/client";
 
 const PRIORITY_OPTIONS: { id: PriorityMode; label: string; hint: string }[] = [
   { id: "cheapest", label: "Cheapest", hint: "Lowest landed cost" },
@@ -22,10 +24,20 @@ export function NewRequestForm() {
   const [needInDays, setNeedInDays] = useState<number | "">(5);
   const [note, setNote] = useState("");
   const [priority, setPriority] = useState<PriorityMode>("cheapest");
-  const [buyerCompany, setBuyerCompany] = useState("FanWorks Precision Manufacturing");
-  const [buyerName, setBuyerName] = useState("Ramesh Sharma");
-  const [buyerCity] = useState("Pune");
-  const [buyerState] = useState("Maharashtra");
+  // Who is asking comes from the signed-in profile, not from a hardcoded buyer.
+  const session = useSession();
+  const { data: me } = useApiOnce(() => getMe(), []);
+  const [buyerCompany, setBuyerCompany] = useState("");
+  const [buyerName, setBuyerName] = useState("");
+  const [buyerCity, setBuyerCity] = useState("");
+  const [buyerState, setBuyerState] = useState("");
+  useEffect(() => {
+    const p = me?.profile;
+    setBuyerCompany(c => c || p?.company || "My company");
+    setBuyerName(n => n || p?.full_name || session?.user.email?.split("@")[0] || "Buyer");
+    setBuyerCity(c => c || p?.city || "Pune");
+    setBuyerState(s => s || p?.state || "Maharashtra");
+  }, [me, session]);
 
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<RFQCreateResponse | null>(null);

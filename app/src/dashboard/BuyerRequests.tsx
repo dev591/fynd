@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Plus, ArrowRight, Package, AlertTriangle, Building2 } from "lucide-react";
 import { useApiPoll } from "../lib/useApi";
+import { AccountMenu } from "../components/AccountMenu";
 import { getRFQs, getSavings, type RFQDTO } from "../api/client";
 
 export function BuyerRequests() {
@@ -22,9 +23,12 @@ export function BuyerRequests() {
             <span className="display text-base font-semibold text-bone">Crossover Desk</span>
             <span className="label ml-2 text-signal">BUYER</span>
           </div>
-          <Link to="/supplier" className="rounded-full border border-line bg-raised px-3 py-1.5 text-[12px] font-medium text-bone hover:border-signal/50 hover:text-signal">
-            Supplier Portal
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link to="/supplier" className="rounded-full border border-line bg-raised px-3 py-1.5 text-[12px] font-medium text-bone hover:border-signal/50 hover:text-signal">
+              Supplier Portal
+            </Link>
+            <AccountMenu />
+          </div>
         </div>
       </header>
 

@@ -8,6 +8,8 @@ import { DashboardDesk } from './dashboard/DashboardDesk'
 import { DecisionOnePager } from './dashboard/DecisionOnePager'
 import { SupplierDashboard } from './supplier/SupplierDashboard'
 import { SupplierQuotePage } from './supplier/SupplierQuotePage'
+import { SignIn } from './auth/SignIn'
+import { RequireAuth } from './components/RequireAuth'
 
 export default function App() {
   return (
@@ -16,18 +18,21 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<LoginWizard />} />
+        <Route path="/signin" element={<SignIn />} />
 
-        {/* Buyer dashboard */}
-        <Route path="/app" element={<BuyerRequests />} />
-        <Route path="/app/new" element={<NewRequestForm />} />
-        <Route path="/app/compare/:rfqId" element={<DashboardDesk />} />
-        <Route path="/app/decision/:rfqId" element={<DecisionOnePager />} />
-        <Route path="/share/:token" element={<DecisionOnePager shared />} />
+        {/* Buyer dashboard: signed in only */}
+        <Route path="/app" element={<RequireAuth><BuyerRequests /></RequireAuth>} />
+        <Route path="/app/new" element={<RequireAuth><NewRequestForm /></RequireAuth>} />
+        <Route path="/app/compare/:rfqId" element={<RequireAuth><DashboardDesk /></RequireAuth>} />
+        <Route path="/app/decision/:rfqId" element={<RequireAuth><DecisionOnePager /></RequireAuth>} />
 
-        {/* Supplier dashboard */}
-        <Route path="/supplier" element={<SupplierDashboard />} />
+        {/* Seller dashboard: signed in only. The quote pages below open from an invite link, no login. */}
+        <Route path="/supplier" element={<RequireAuth><SupplierDashboard /></RequireAuth>} />
         <Route path="/supplier/quote" element={<SupplierQuotePage />} />
         <Route path="/quote" element={<SupplierQuotePage />} />
+
+        {/* Read-only shared one-pager: anyone with the link */}
+        <Route path="/share/:token" element={<DecisionOnePager shared />} />
       </Routes>
     </BrowserRouter>
   )
