@@ -1,0 +1,13 @@
+{
+  "task_id": "task-fynd-backend-wiring",
+  "task_description": "Implement complete FastAPI backend wiring for FYND with SQLite database, Supabase JWT auth, 16 RFQ/quote/profile endpoints, seed script, and TypeScript contracts. Maintain 3 existing pipeline tests.",
+  "status": "pending",
+  "feature_order": [
+    "FEAT-001",
+    "FEAT-002",
+    "FEAT-003",
+    "FEAT-004",
+    "FEAT-005"
+  ],
+  "blocked_reason": null
+}

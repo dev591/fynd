@@ -1,0 +1,22 @@
+{
+  "project_type": "FastAPI backend + TypeScript frontend validator library + React spa",
+  "language": "Python (backend), TypeScript (frontend + contracts)",
+  "build_system": "pip for Python backend (no build step), npm workspaces (app/ for frontend, root for validators)",
+  "test_framework": "pytest for backend (test_pipeline.py has 3 passing tests), vitest for TypeScript (161 tests passing in src/validators/)",
+  "build_command": "npm run build (for TypeScript contracts), no Python build needed",
+  "test_command": "pytest api/tests/ (backend), npm run test (TypeScript validators)",
+  "verification_instructions": "1. Run pytest api/tests/ and verify 3 existing tests pass. 2. Run npm run test and verify 161 validator tests still pass. 3. Test new endpoints with curl or API client. 4. Run seed script and inspect database.",
+  "snapshot_or_generated_files": "Database file: api/db.sqlite (auto-created by init script, WAL mode, use .gitignore to exclude). Seed produces synthetic data and photos in api/data/products/.",
+  "environment_constraints": "Supabase JWT verification requires SUPABASE_ANON_KEY env var (decode JWT but do not verify signature, as per comment in user req). SQLite WAL mode required. FastAPI CORS allows localhost:5173 (Vite dev server). Never restart server on :9001 (not relevant here). Backend listens on :8000, frontend on :5173.",
+  "contribution_requirements": "All 16 endpoints must be added in one PR (api.py + contracts.ts together per user req). Existing pipeline tests must pass. Use Pydantic for input/output validation. No breaking changes to core.py, layers, or trace.py (user: 'Don't touch engine.py rules without telling me', parallel to Python layer rule). JWT verification is the gate for all non-health/stats endpoints.",
+  "key_patterns": "1. Pydantic BaseModel for all request/response schemas. 2. Async functions with 'async def' and 'await'. 3. Layer protocol: async run(ctx) -> Result | None. 4. All endpoints return JSON via Pydantic models. 5. Database queries via sqlite3, parameterized queries. 6. Seed script imports fixtures and creates demo data with 'labelled synthetic' marker. 7. TypeScript contracts mirror Pydantic models exactly.",
+  "relevant_files": [
+    "api/app/main.py (entry point, add endpoints here or in new routers/)",
+    "api/app/core.py (DO NOT MODIFY except to understand Layer protocol)",
+    "api/app/layers/ (existing: exact, rules, semantic, llm; DO NOT MODIFY)",
+    "api/tests/test_pipeline.py (3 existing tests, must keep passing)",
+    "src/types.ts (Profile contract already exists, study for pattern)",
+    "src/validators/index.ts (19 validators, copy PAN/GSTIN/phone/state logic to Python)"
+  ],
+  "directory_structure": "api/app/main.py - FastAPI app entry point; api/app/models/ (create) - Pydantic models for RFQ/quote/profile; api/app/db.py (create) - SQLite init + schema; api/app/seed.py (create) - demo data seeding; api/tests/test_pipeline.py (preserve); src/contracts.ts (create) - TypeScript models for frontend. Root: package.json runs npm test (validators), pytest runs backend tests."
+}

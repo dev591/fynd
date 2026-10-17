@@ -1,0 +1,29 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Create SQLite schema, Pydantic models, and database initialization layer for all 7 tables (rfqs, rfq_invites, quotes, targets, supplier_profiles, products, messages). Implement DB helper functions for create/read/update/list operations. Enable WAL mode for write concurrency.",
+  "status": "completed",
+  "steps": [
+    "Create api/app/db.py with SQLite schema: rfqs (id, buyer_id PK, company, categories, created_at, state, city, status='pending'|'decided', decided_at, decided_quote_id), rfq_invites (id, rfq_id FK, supplier_id, token unique, revoked bool, created_at), quotes (id, rfq_id FK, supplier_id FK, version int, price, lead_days, packing_json, notes, submitted_at, rejected_bool), targets (id, rfq_id FK, quantity int, packed int, supplier_id FK, source='engine_negotiation_targets', created_at), supplier_profiles (id PK, email, company, state, business_type, categories_json, regions_json, default_lead_days, gst_inclusive_default, verification_json, created_at), products (id, supplier_id FK, name, category, photo_path, created_at), messages (id, rfq_id FK, supplier_id FK, sender_type='buyer'|'supplier', content, created_at)",
+    "Add init_db() function to create WAL-mode connection, enable foreign keys, create all tables if not exist",
+    "Create Pydantic models in api/app/models/ for each table: RFQCreate, RFQRead, RFQInviteCreate, QuoteCreate, QuoteRead, TargetCreate, SupplierProfileCreate, ProductCreate, ProductRead, MessageCreate, MessageRead",
+    "Add database helper functions (get_db_connection, execute_query, fetch_all, fetch_one, insert, update) with parameterized queries to prevent SQL injection",
+    "Add test: test_db_schema_created() - verify all 7 tables exist and have correct columns",
+    "Run pytest api/tests/ to confirm all existing tests still pass"
+  ],
+  "acceptance_criteria": [
+    "db.py creates SQLite file at api/db.sqlite with all 7 tables and correct schema",
+    "init_db() runs without errors and enables WAL mode",
+    "Pydantic models defined and importable from api.app.models",
+    "Parameterized query functions prevent SQL injection (verified by attempting bad input)",
+    "All 3 existing pipeline tests still pass after db.py is imported"
+  ],
+  "verification": [
+    "Run: cd api && python -c 'from app.db import init_db; init_db(); print(\"OK\")' — should print OK and create db.sqlite",
+    "Run: sqlite3 api/db.sqlite '.tables' — should show rfqs, rfq_invites, quotes, targets, supplier_profiles, products, messages",
+    "Run: pytest api/tests/test_pipeline.py -v — should show 3 passing tests",
+    "Run: cd api && python -c 'from app.models import RFQCreate, QuoteRead; print(\"OK\")' — should print OK"
+  ],
+  "blocked_reason": null,
+  "findings": "Python 3.14.3, FastAPI/Pydantic installed. All 7 tables created with correct schema (rfqs, rfq_invites, quotes, targets, supplier_profiles, products, messages). WAL mode enabled, foreign keys enforced. 40 database/validator tests pass. 3 existing pipeline tests still pass. Parameterized queries prevent SQL injection. Validators ported from TypeScript (phone, email, GSTIN, PAN, state, business_type, categories, full_name). Pydantic models defined for all entities (RFQCreate, RFQRead, QuoteRead, SupplierProfileRead, ProfileRead, etc.). Database helper functions: get_db_connection, fetch_one, fetch_all, insert, update, context manager. Committed to feat/FEAT-001-database-schema branch."
+}

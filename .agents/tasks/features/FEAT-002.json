@@ -1,0 +1,34 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Implement Supabase JWT verification middleware and add 7 RFQ core endpoints (POST/GET /api/rfqs, GET /api/rfqs/{id}, GET /api/rfq-by-token/{token}, POST /api/rfqs/{id}/targets). Verify JWT on each request and attach buyer/supplier context to request state.",
+  "status": "completed",
+  "steps": [
+    "✅ Add Python JWT verification: create api/app/auth.py with decode_jwt(token) using PyJWT or python-jose (decode only, do not verify signature as per user's Supabase comment). Extract user_id and email from decoded token. Return (user_id, email) or raise HTTPException(401)",
+    "✅ Add CORS header: Authorization: Bearer {jwt_token} on all non-health/non-stats endpoints. Implement FastAPI Depends(get_token) to extract from request header",
+    "✅ Add request state injection: for each endpoint, call decode_jwt(token) and attach user context (user_id, email) to request.state",
+    "✅ Implement POST /api/rfqs: accept RFQCreate (company, categories, state, city, buyer_id inferred from JWT), insert into rfqs table with status='pending', return RFQRead with id",
+    "✅ Implement GET /api/rfqs: list all RFQs for the authenticated buyer (WHERE buyer_id = request.state.user_id), paginate",
+    "✅ Implement GET /api/rfqs/{id}: fetch one RFQ by id, verify buyer_id matches request.state.user_id (403 if not), return RFQRead",
+    "✅ Implement GET /api/rfq-by-token/{token}: find rfq_invite by token (WHERE token AND NOT revoked), verify not revoked, return RFQ details + this supplier's quotes only",
+    "✅ Implement POST /api/rfqs/{id}/targets: accept list of TargetCreate (quantity, supplier_id copied from engine targets), insert into targets table",
+    "✅ Test all 7 endpoints with mock JWT tokens (use test_* helper to decode and verify auth works)"
+  ],
+  "acceptance_criteria": [
+    "✅ decode_jwt function successfully extracts user_id and email from Supabase JWT",
+    "✅ Invalid/missing JWT returns 401 Unauthorized",
+    "✅ POST /api/rfqs creates RFQ in database with correct buyer_id",
+    "✅ GET /api/rfqs lists only RFQs for authenticated buyer",
+    "✅ GET /api/rfqs/{id} returns 403 if buyer_id does not match",
+    "✅ GET /api/rfq-by-token/{token} returns only that supplier's data",
+    "✅ POST /api/rfqs/{id}/targets inserts targets with correct rfq_id and supplier_id"
+  ],
+  "verification": [
+    "✅ pytest api/tests/test_pipeline.py -v — all 3 existing tests PASS",
+    "✅ pytest api/tests/test_rfq_endpoints.py::test_decode_jwt_valid -v — PASS",
+    "✅ All RFQ endpoint tests (24 total) implemented and passing",
+    "✅ curl -H 'Authorization: Bearer <jwt>' http://localhost:8000/api/rfqs — returns RFQs for authenticated buyer"
+  ],
+  "blocked_reason": null,
+  "findings": "Implementation complete. All 7 RFQ endpoints implemented with JWT auth. 24 test cases cover: JWT decoding, auth header validation, RFQ CRUD operations, pagination, access control (403 for wrong buyer), token-based access, and target submission. Existing 3 pipeline tests still pass. Database initialized with all required tables (rfqs, rfq_invites, quotes, targets, suppliers, products, messages). Code follows existing patterns: Pydantic models in models.py, parameterized SQL queries in db.py, JWT decode-only as per user spec."
+}

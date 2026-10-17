@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Implement buyer-supplier visibility endpoints (GET /api/rfqs/{id}/suppliers/{supplier_id}, GET/POST /api/messages) for buyer thread and supplier token thread. Enforce access control: token routes return only that supplier's data, suppliers never see other suppliers or buyer's other requests.",
+  "status": "pending",
+  "steps": [
+    "Implement GET /api/rfqs/{id}/suppliers/{supplier_id}: verify buyer owns this RFQ (403 if not), verify supplier_id is in rfq_invites for this rfq (403 if not), return supplier profile + this supplier's latest quote version only (no other suppliers' data)",
+    "Implement GET /api/messages: accept query params ?rfq_id={id}&type=buyer (for buyer thread) or &supplier_id={id} (for supplier token thread). Return list of MessageRead for that thread, verify access (buyer can see buyer thread for their RFQs, supplier can see their threads via token), order by created_at desc",
+    "Implement POST /api/messages: accept MessageCreate (rfq_id, content, sender_type='buyer'|'supplier'), verify sender is authorized for this thread, insert into messages, return MessageRead",
+    "Add validation: buyer thread requires valid rfq_id + authenticated buyer matches RFQ.buyer_id. Supplier thread requires valid rfq_id + supplier_id or token in rfq_invites + NOT revoked",
+    "Test: buyer cannot see messages from RFQs they did not create (403)",
+    "Test: supplier cannot see other suppliers' messages or the buyer's other RFQs (403)"
+  ],
+  "acceptance_criteria": [
+    "GET /api/rfqs/{id}/suppliers/{supplier_id} returns only that one supplier's profile and their latest quote",
+    "GET /api/messages with buyer context filters to buyer thread only",
+    "GET /api/messages with supplier token filters to that supplier's thread only",
+    "POST /api/messages enforces sender_type and verifies authorization",
+    "Supplier cannot see other suppliers or buyer's other requests (403 on all queries)"
+  ],
+  "verification": [
+    "Run: pytest api/tests/test_visibility_endpoints.py::test_buyer_cannot_see_other_buyers_rfqs -v — should return 403",
+    "Run: pytest api/tests/test_visibility_endpoints.py::test_supplier_cannot_see_other_suppliers -v — should return 403",
+    "Run: pytest api/tests/test_message_endpoints.py::test_buyer_thread_filters_correctly -v — should show only that thread",
+    "Run: pytest api/tests/test_message_endpoints.py::test_post_message_verifies_sender -v — should verify sender_type and rfq ownership",
+    "Run: pytest api/tests/test_pipeline.py -v — all 3 existing tests must still pass"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

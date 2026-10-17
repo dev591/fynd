@@ -1,0 +1,34 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Implement quote versioning endpoints (POST /api/rfq-by-token/{token}/quotes, GET /api/rfq-by-token/{token}/quotes/mine) and supplier profile/product management endpoints (GET/PUT /api/supplier/profile, GET/POST /api/supplier/products, PUT/DELETE /api/supplier/products/{id}, POST /api/supplier/products/{id}/photo). Enforce token-based access control and quote rejection after decision.",
+  "status": "pending",
+  "steps": [
+    "Implement POST /api/rfq-by-token/{token}/quotes: accept QuoteCreate (price, lead_days, packing_json, notes, supplier_id from token), check RFQ.decided_quote_id is null (reject if decided), insert quote with version = (max version for this rfq_supplier + 1), e.g. v1, v2, return QuoteRead",
+    "Implement GET /api/rfq-by-token/{token}/quotes/mine: list all versions of quotes for this (rfq, supplier) pair, return list of QuoteRead ordered by version desc",
+    "Implement GET /api/supplier/profile: fetch supplier_profiles row for request.state.user_id, return SupplierProfileRead",
+    "Implement PUT /api/supplier/profile: update supplier_profiles row for request.state.user_id with SupplierProfileCreate fields (state, regions, default_lead_days, gst_inclusive_default, etc.), return SupplierProfileRead",
+    "Implement GET /api/supplier/products: list all products for request.state.user_id (WHERE supplier_id = request.state.user_id), return list of ProductRead",
+    "Implement POST /api/supplier/products: accept ProductCreate (name, category), insert into products table, return ProductRead with id",
+    "Implement PUT /api/supplier/products/{id}: update product (name, category), verify supplier_id matches request.state.user_id (403 if not), return ProductRead",
+    "Implement DELETE /api/supplier/products/{id}: delete product, verify supplier_id matches (403 if not), return 204",
+    "Implement POST /api/supplier/products/{id}/photo: accept multipart file upload, save to api/data/products/{product_id}.jpg, update products.photo_path, return ProductRead",
+    "Add test: verify quote rejection after RFQ.decided_quote_id is set (POST should return 400)"
+  ],
+  "acceptance_criteria": [
+    "Quote versioning auto-increments: first POST creates v1, second creates v2, etc.",
+    "RFQ with decided_quote_id rejects new quotes with 400 Bad Request",
+    "Supplier can only view/edit their own profile and products (403 for others)",
+    "Photo upload saves file and updates product.photo_path",
+    "Token-based access: GET /api/rfq-by-token/{token}/quotes only works with valid token"
+  ],
+  "verification": [
+    "Run: pytest api/tests/test_quote_endpoints.py::test_quote_versioning -v — should show v1 then v2",
+    "Run: pytest api/tests/test_quote_endpoints.py::test_reject_quote_after_decision -v — should return 400",
+    "Run: pytest api/tests/test_supplier_endpoints.py::test_supplier_can_only_edit_own_products -v — should return 403",
+    "Run: pytest api/tests/test_product_endpoints.py::test_photo_upload_saves_file -v — should verify file exists",
+    "Run: pytest api/tests/test_pipeline.py -v — all 3 existing tests must still pass"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

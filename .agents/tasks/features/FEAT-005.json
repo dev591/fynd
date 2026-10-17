@@ -1,0 +1,35 @@
+{
+  "id": "FEAT-005",
+  "type": "feat",
+  "description": "Create TypeScript contracts.ts mirroring all Pydantic models, implement seed script (api/seed.py) to rebuild demo database with synthetic data and placeholder photos, and verify all endpoints work end-to-end with real database.",
+  "status": "pending",
+  "steps": [
+    "Create src/contracts.ts with TypeScript interfaces for all request/response models: RFQCreate, RFQRead, RFQInviteCreate, QuoteCreate, QuoteRead, TargetCreate, SupplierProfileCreate, SupplierProfileRead, ProductCreate, ProductRead, MessageCreate, MessageRead. Mirror exact Pydantic field names and types. Export all.",
+    "Create api/seed.py with generate_synthetic_data() function: create 2 buyer profiles (with spend_band, gst_claimable, need_by_buffer_days), 3 supplier profiles (with regions, default_lead_days, gst_inclusive_default), 2 RFQs (both status='pending'), rfq_invites (1 token per supplier per RFQ, not revoked), 2 quotes per supplier (v1 and v2, some rejected if RFQ marked decided), 5 targets per RFQ, 3 products per supplier (with photo_path set to fake names), and 10 messages per thread (buyer + supplier mixed). Tag all with 'labelled synthetic' in notes/content.",
+    "Create placeholder photos: generate 3 stub images (1x1 px PNGs) and save to api/data/products/ as 001.jpg, 002.jpg, 003.jpg",
+    "Add api/seed.py::rebuild_db() function: drop all tables, run init_db(), generate_synthetic_data()",
+    "Create api/seed_runner.py entry point: if __name__ == '__main__': rebuild_db(); print('Seeded successfully')",
+    "Add npm script to contracts.ts build: src/contracts.ts compiles cleanly with tsc --noEmit",
+    "Test: run seed script, verify 7 tables populated with correct counts (2 buyers, 3 suppliers, 2 RFQs, 6 invites, etc.), test all endpoints with seeded data",
+    "Test: GET /api/rfqs for one buyer should return only their 2 RFQs, GET /api/rfqs/{id}/suppliers/{supplier_id} should return only that supplier's data"
+  ],
+  "acceptance_criteria": [
+    "src/contracts.ts compiles without errors and exports all models",
+    "api/seed.py::rebuild_db() creates 7 tables and populates with: 2 RFQs, 3 suppliers, 6 rfq_invites, 6 quotes (2 per supplier, some v1 some v2), 10+ targets, 3 products, 20+ messages",
+    "All data is tagged 'labelled synthetic'",
+    "Placeholder photos exist in api/data/products/",
+    "GET /api/rfqs for buyer returns only their RFQs",
+    "GET /api/rfqs/{id}/suppliers/{supplier_id} returns only that supplier's profile and quote"
+  ],
+  "verification": [
+    "Run: cd api && python seed_runner.py — should print 'Seeded successfully' and create populated db.sqlite",
+    "Run: sqlite3 api/db.sqlite 'SELECT COUNT(*) FROM rfqs;' — should return 2",
+    "Run: sqlite3 api/db.sqlite 'SELECT COUNT(*) FROM supplier_profiles;' — should return 3",
+    "Run: sqlite3 api/db.sqlite 'SELECT COUNT(*) FROM products;' — should return 3",
+    "Run: npx tsc src/contracts.ts --noEmit — should compile without errors",
+    "Run: curl http://localhost:8000/api/rfqs with valid buyer JWT — should return 2 RFQs",
+    "Run: pytest api/tests/ -v — all tests including existing 3 pipeline tests must pass"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
