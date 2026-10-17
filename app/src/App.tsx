@@ -10,13 +10,11 @@ import { SupplierDashboard } from './supplier/SupplierDashboard'
 import { SupplierQuotePage } from './supplier/SupplierQuotePage'
 import { SignIn } from './auth/SignIn'
 import { RequireAuth } from './components/RequireAuth'
-import { DemoMarker } from './components/DemoMarker'
 
 export default function App() {
   return (
     <BrowserRouter>
       <CursorTrail />
-      <DemoMarker />
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<LoginWizard />} />

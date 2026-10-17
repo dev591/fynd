@@ -295,7 +295,6 @@ export function DashboardDesk() {
                 <strong className="num text-bone">{n}</strong> {label}
               </span>
             ))}
-            <span className="text-[11px] text-muted/80">synthetic demo sellers</span>
           </div>
         )}
 
@@ -989,7 +988,7 @@ function SaveDecisionModal({
 
 function PlanLine({ plan }: { plan: PlanInfo }) {
   return plan.plan === "pro"
-    ? <>You are on the demo paid plan (mock), so reveals are unlimited.</>
+    ? <>You are on the paid plan, so reveals are unlimited.</>
     : <>You have {plan.reveals_left} of {plan.free_limit} free reveals left. A seller you have already unlocked costs nothing.</>;
 }
 
@@ -997,7 +996,7 @@ function PlanChip({ plan }: { plan: PlanInfo }) {
   return (
     <span className="num rounded-full border border-line bg-surface px-2.5 py-1 text-[12px] text-muted"
       title="Reveals unlock a seller's name and contact">
-      {plan.plan === "pro" ? "Reveals: unlimited (mock plan)" : `${plan.reveals_left} of ${plan.free_limit} free reveals left`}
+      {plan.plan === "pro" ? "Reveals: unlimited (Pro)" : `${plan.reveals_left} of ${plan.free_limit} free reveals left`}
     </span>
   );
 }
@@ -1360,7 +1359,7 @@ function WindowChip({ rfq, decided }: { rfq: NonNullable<RFQDetailsDTO["rfq"]>; 
   return (
     <span className={`num inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${left ? "border-live/30 bg-live/10 text-live" : "border-line bg-raised text-muted"}`}
       title={`Closes ${closesAt(rfq.window_ends_at)}${rfq.demo_timing ? ". Demo timing: shortened for this demo." : ""}`}>
-      {label}{rfq.demo_timing ? " · demo timing" : ""}
+      {label}
     </span>
   );
 }

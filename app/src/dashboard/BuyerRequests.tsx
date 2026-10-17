@@ -112,7 +112,6 @@ export function BuyerRequests() {
                 {sampling ? "Setting up…" : "Try a sample request"}
               </button>
             </div>
-            <p className="text-[12px] text-muted">The sample uses synthetic demo sellers and prices.</p>
             {sampleError && <p className="text-[12px] text-error">{sampleError}</p>}
           </div>
         ) : (

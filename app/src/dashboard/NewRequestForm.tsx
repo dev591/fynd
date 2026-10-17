@@ -125,7 +125,7 @@ export function NewRequestForm() {
             </p>
             <p className="mx-auto max-w-[52ch] text-[12px] text-muted">
               Quotes arrive without seller names, so you compare on cost and lead time only. You unlock a seller's
-              contact when you choose them. All demo sellers are synthetic.
+              contact when you choose them.
             </p>
           </div>
 
