@@ -785,6 +785,31 @@ export async function importQuotes(rfqId: string, format: "csv" | "json", data: 
   return apiFetch(`/api/rfqs/${rfqId}/import-quotes`, { method: "POST", body: JSON.stringify({ format, data }) });
 }
 
+export interface QuoteDraftRow {
+  supplier: string | null;
+  item: string | null;
+  pack_size: number | null;
+  pack_price: number | null;
+  freight: number | null;
+  lead_days: number | null;
+  moq: number | null;
+  max_qty: number | null;
+  tax_rate: number | null;
+  price_includes_tax: boolean | null;
+  notes: string | null;
+}
+
+/** Reads a pasted supplier message into rows for the buyer to check. Saves nothing. Any failure resolves to a fallback. */
+export async function draftQuotesFromMessage(text: string, rfqId?: string): Promise<{
+  rows: QuoteDraftRow[]; warnings: string[]; fallback: boolean; message?: string; request_id: string;
+}> {
+  try {
+    return await apiFetch("/api/ai/quote-draft", { method: "POST", body: JSON.stringify({ text, rfq_id: rfqId }) });
+  } catch {
+    return { rows: [], warnings: [], fallback: true, message: "Couldn't read that automatically. Use the CSV or JSON import.", request_id: "" };
+  }
+}
+
 export async function getImportTemplate(): Promise<{ csv: string; json: string; required_columns: string[] }> {
   return apiFetch("/api/import-template");
 }

@@ -46,9 +46,11 @@ from .models import (
     DeclineIn,
     ImportIn,
     DeliveryIn,
+    QuoteTextIn,
 )
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
+from .quote_text import draft_from_message
 from . import ai, assistant
 from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
@@ -381,7 +383,7 @@ def savings(user: AuthUser = Depends(buyer_only)):
 def rfq_ai_log(rfq_id: str, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
     # The buyer's own intake only. Seller-side AI entries describe the seller and stay private.
-    return [e for e in store.ai_log_for(rfq_id) if e["kind"] in ("intake_draft", "transcribe")]
+    return [e for e in store.ai_log_for(rfq_id) if e["kind"] in ("intake_draft", "transcribe", "quote_draft")]
 
 
 def _rfq_response(rfq: RFQ) -> dict:
@@ -516,6 +518,21 @@ def import_quotes(rfq_id: str, payload: ImportIn, user: AuthUser = Depends(buyer
     loaded = [store.import_quote(rfq_id, r) for r in good]
     return {"imported": len(loaded), "errors": errors, "skipped_rows": len({e["row"] for e in errors}),
             "suppliers": sorted({store.alias_for(rfq_id, q.supplier_id) for q in loaded}, key=str)}
+
+
+@app.post("/api/ai/quote-draft")
+def quote_draft(payload: QuoteTextIn, user: AuthUser = Depends(buyer_only)):
+    """Read a pasted supplier message into quote rows. A draft only: nothing is saved until the buyer imports it."""
+    if payload.rfq_id:
+        _rfq_for(user, payload.rfq_id)
+    result = draft_from_message(payload.text)
+    result["request_id"] = "qd_" + os.urandom(4).hex()
+    if result["fallback"]:
+        result["message"] = "Couldn't read that automatically. Use the CSV or JSON import, or the file template."
+    store.log_ai("quote_draft", result["request_id"], {"chars": len(payload.text)}, result)
+    if payload.rfq_id:
+        store.link_ai_log(result["request_id"], payload.rfq_id)
+    return result
 
 
 @app.get("/api/import-template")

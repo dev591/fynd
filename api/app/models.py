@@ -493,3 +493,8 @@ class DeliveryIn(BaseModel):
     on_time: bool
     note: str | None = Field(default=None, max_length=500)
     media: MediaIn | None = None
+
+
+class QuoteTextIn(BaseModel):
+    text: str = Field(max_length=5000)
+    rfq_id: str | None = None      # only used to attach the AI log to the request

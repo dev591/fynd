@@ -18,7 +18,7 @@ import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
 import {
   getRFQDetails, sendTarget, lockDecision,
   getChatMessages, postChatMessage,
-  getSupplierProfileForBuyer, getSummary, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, type ImportResult,
+  getSupplierProfileForBuyer, getSummary, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, draftQuotesFromMessage, type ImportResult, type QuoteDraftRow,
   type DeliveryDTO, type RFQDetailsDTO, type ChatMessageDTO, type SellerPanelDTO, type SellerIdentity, type PlanInfo, type SummaryDTO,
 } from "../api/client";
 
@@ -1170,6 +1170,35 @@ function ImportModal({ rfqId, onClose, onLoaded }: { rfqId: string; onClose: () 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  // "Paste a message": the model reads it, you check every value, then it goes through the normal import.
+  const [mode, setMode] = useState<"file" | "message">("file");
+  const [message, setMessage] = useState("");
+  const [draft, setDraft] = useState<{ rows: QuoteDraftRow[]; warnings: string[] } | null>(null);
+  const [reading, setReading] = useState(false);
+
+  const readMessage = async () => {
+    setReading(true); setError(null); setResult(null); setDraft(null);
+    const r = await draftQuotesFromMessage(message, rfqId);
+    setReading(false);
+    if (r.fallback) { setError(r.message ?? "Couldn't read that automatically."); return; }
+    setDraft({ rows: r.rows, warnings: r.warnings });
+  };
+  const editRow = (i: number, field: keyof QuoteDraftRow, value: string) =>
+    setDraft(d => d && ({ ...d, rows: d.rows.map((row, j) => j !== i ? row : {
+      ...row, [field]: field === "supplier" ? value : value.trim() === "" ? null : Number(value) }) }));
+  const importDraft = async () => {
+    if (!draft) return;
+    setBusy(true); setError(null); setResult(null);
+    try {
+      const r = await importQuotes(rfqId, "json", JSON.stringify({ quotes: draft.rows }));
+      setResult(r);
+      if (r.imported > 0) { onLoaded(); setDraft(null); setMessage(""); }
+    } catch (e) {
+      setError((e instanceof Error ? e.message : "Could not import.").replace(/^API \d+: /, "").replace(/^\{"detail":"?|"?\}$/g, ""));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const readFile = async (file: File) => {
     const body = await file.text();
@@ -1208,7 +1237,67 @@ function ImportModal({ rfqId, onClose, onLoaded }: { rfqId: string; onClose: () 
           minimum order, stock, GST rate and "price includes GST" are optional. A missing pack size is not guessed: that quote is
           blocked as "pack size unknown". These suppliers are yours, so there is nothing to reveal. Crossover has not checked them.
         </p>
-        <div className="flex flex-wrap items-center gap-2 text-[12px]">
+        <div role="group" aria-label="How to bring quotes in" className="flex w-fit rounded-full border border-line p-0.5 text-[12px]">
+          {([["file", "File or table"], ["message", "Paste a message"]] as const).map(([m, label]) => (
+            <button key={m} type="button" aria-pressed={mode === m} onClick={() => { setMode(m); setError(null); setResult(null); }}
+              className={`rounded-full px-3 py-1 ${mode === m ? "bg-signal text-ink" : "text-muted hover:text-bone"}`}>{label}</button>
+          ))}
+        </div>
+
+        {mode === "message" && (
+          <div className="space-y-3">
+            <p className="text-[12px] text-muted">
+              Paste what a supplier sent you on WhatsApp or email. AI reads it into rows; you check and edit every value before
+              anything is saved. A price, pack size, freight or lead time that the message doesn't state is left blank, never guessed.
+            </p>
+            <textarea value={message} onChange={e => { setMessage(e.target.value); setDraft(null); }} rows={5} maxLength={5000}
+              placeholder={"Acme Traders: M10 bolt Rs 10 per piece, delivery Rs 200, 3 days"}
+              className="w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-bone" />
+            <button type="button" onClick={readMessage} disabled={reading || !message.trim()}
+              className="rounded-full border border-signal/50 bg-signal/10 px-4 py-1.5 text-[12px] font-semibold text-signal hover:bg-signal hover:text-ink disabled:opacity-40">
+              {reading ? "Reading…" : "Read it"}
+            </button>
+            {draft && (
+              <div className="space-y-2 rounded-lg border border-line bg-raised/30 p-3">
+                <p className="label text-muted">Check these before importing</p>
+                {draft.rows.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[12px]">
+                      <thead className="text-muted"><tr>
+                        {["Supplier", "Units/pack", "Pack price ₹", "Freight ₹", "Lead days", "MOQ"].map(h => <th key={h} className="pb-1 pr-2 font-medium">{h}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {draft.rows.map((row, i) => (
+                          <tr key={i} className="border-t border-line/60">
+                            <td className="py-1 pr-2"><input value={row.supplier ?? ""} onChange={e => editRow(i, "supplier", e.target.value)}
+                              aria-label="Supplier" className="w-32 rounded border border-line bg-surface px-1.5 py-1 text-bone" /></td>
+                            {(["pack_size", "pack_price", "freight", "lead_days", "moq"] as const).map(f => (
+                              <td key={f} className="py-1 pr-2"><input value={row[f] ?? ""} onChange={e => editRow(i, f, e.target.value)} inputMode="decimal"
+                                aria-label={f.replace("_", " ")} className="num w-20 rounded border border-line bg-surface px-1.5 py-1 text-bone" /></td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {draft.warnings.length > 0 && (
+                  <ul className="list-disc space-y-0.5 pl-5 text-[12px] text-warn">
+                    {draft.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                  </ul>
+                )}
+                {draft.rows.length > 0 && (
+                  <button type="button" onClick={importDraft} disabled={busy}
+                    className="rounded-full bg-signal px-4 py-1.5 text-[12px] font-semibold text-ink disabled:opacity-40">
+                    {busy ? "Importing…" : `Import ${draft.rows.length} quote${draft.rows.length === 1 ? "" : "s"}`}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className={`flex flex-wrap items-center gap-2 text-[12px] ${mode === "message" ? "hidden" : ""}`}>
           <label className="flex cursor-pointer items-center gap-1.5 rounded-full border border-line bg-raised px-3 py-1 text-bone hover:border-signal/50">
             <Upload size={12} /><span>Choose a file</span>
             <input type="file" accept=".csv,.json,text/csv,application/json" className="hidden"
@@ -1225,6 +1314,7 @@ function ImportModal({ rfqId, onClose, onLoaded }: { rfqId: string; onClose: () 
           </div>
         </div>
         <textarea value={text} onChange={e => { setText(e.target.value); setResult(null); setError(null); }} rows={9} spellCheck={false}
+          hidden={mode === "message"}
           placeholder={"supplier,units_per_pack,pack_price,freight,lead_days\nAcme Traders,1,10,200,3"}
           className="num w-full rounded-lg border border-line bg-raised px-3 py-2 text-[12px] text-bone" />
         {error && <p role="alert" className="rounded-lg border border-error/40 bg-error/10 p-2.5 text-[13px] text-error">{error}</p>}
@@ -1245,10 +1335,12 @@ function ImportModal({ rfqId, onClose, onLoaded }: { rfqId: string; onClose: () 
           <button onClick={onClose} className="rounded-full border border-line px-4 py-1.5 text-[13px] text-muted hover:text-bone">
             {result && result.imported > 0 ? "Done" : "Cancel"}
           </button>
-          <button onClick={run} disabled={busy || !text.trim()}
-            className="rounded-full bg-signal px-5 py-1.5 text-[13px] font-semibold text-ink disabled:opacity-40">
-            {busy ? "Importing…" : "Import"}
-          </button>
+          {mode === "file" && (
+            <button onClick={run} disabled={busy || !text.trim()}
+              className="rounded-full bg-signal px-5 py-1.5 text-[13px] font-semibold text-ink disabled:opacity-40">
+              {busy ? "Importing…" : "Import"}
+            </button>
+          )}
         </div>
       </div>
     </div>
