@@ -1,8 +1,8 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { Landing } from './landing/Landing'
 import { CursorTrail } from './components/CursorTrail'
-
-const Stub = ({ name }: { name: string }) => <div className="p-8">{name} (todo)</div>
+import { LoginWizard } from './wizard/LoginWizard'
+import { DashboardDesk } from './dashboard/DashboardDesk'
 
 export default function App() {
   return (
@@ -10,8 +10,8 @@ export default function App() {
       <CursorTrail />
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Stub name="Login" />} />
-        <Route path="/app" element={<Stub name="Dashboard" />} />
+        <Route path="/login" element={<LoginWizard />} />
+        <Route path="/app" element={<DashboardDesk />} />
       </Routes>
     </BrowserRouter>
   )

@@ -13,6 +13,7 @@ Site-wide polish: `CursorTrail` (canvas ink-drop trail with an SVG goo filter), 
 `ScrollProgress`, and a scrubbed `--enter` entrance in `PinnedChapter`. The trail idea was inspired by a pasted
 "particle animation" component whose author and license were not stated, so none of its code was copied; this is an
 independent rebuild.
+Onboarding Login Wizard (`src/wizard/`): role-selection, account verification, business profile, live GSTIN/PAN state-code validator with non-blocking skippable gate, role policies, and judge demo auto-filler. Seamlessly mounts at `/login` and routes to `/app` with full draft persistence.
 
 ## Dependencies installed
 | Package | Use | License |
