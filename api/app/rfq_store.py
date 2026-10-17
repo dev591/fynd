@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from .models import (
     RFQ,
@@ -18,11 +18,13 @@ from .models import (
     NotificationOut,
     Verdict,
     DraftQuote,
+    Need,
     Activity,
     AutopilotSettings,
 )
 from .engine import order
 from .intake import item_key
+from .engine import evaluate
 from .assistant import template_message
 from . import views
 from .masking import scrub
@@ -55,6 +57,7 @@ class RFQStore:
         self.aliases: Dict[str, Dict[str, str]] = {}      # rfq_id -> {supplier_id: "Seller N"}, in order of first quote
         self.revealed: Dict[str, Dict[str, dict]] = {}    # rfq_id -> {supplier_id: {buyer_id, at, kind}}
         self.reveal_log: List[dict] = []                  # every first-time reveal: buyer, seller, request, free/paid/repeat
+        self.history: List[dict] = []                     # synthetic past orders, labelled as such
         self.plans: Dict[str, str] = {}                   # buyer_id -> "free" | "pro" (mock billing)
         self.supplier_owner: Dict[str, str] = {}  # supplier_id -> owning user id; demo sellers have none
         self.autopilot: Dict[str, AutopilotSettings] = {}  # supplier_id -> settings; absent means off
@@ -66,6 +69,8 @@ class RFQStore:
         self._seed_supplier_profiles()
         self._seed_marketplace()
         self._seed_contacts()
+        self._seed_history()
+        self._seed_autopilot()
 
     # ─── Seeding ───────────────────────────────────────────────────────
 
@@ -181,6 +186,60 @@ class RFQStore:
             prof.contact_name = f"Demo contact {sid} (synthetic)"
             prof.phone = f"+91 90000 {n:05d}"
             prof.email = f"seller-{sid.lower()}@synthetic-demo.test"
+
+    def _seed_history(self):
+        """A little synthetic order history, so 'last order vs today' has something honest to show. Labelled synthetic."""
+        for item, qty, landed, lead, days_ago in [
+            ("M10 bolt", 100, 1320, 4, 21),
+            ("5 ply corrugated box", 200, 8900, 5, 30),
+            ("1.5 sq mm copper wire", 20, 28800, 6, 14),
+        ]:
+            when = (datetime.now() - timedelta(days=days_ago)).date().isoformat()
+            self.history.append({"item_key": item_key(item), "item": item, "qty": qty, "landed": landed,
+                                 "lead_days": lead, "date": when, "synthetic": True})
+
+    def _seed_autopilot(self):
+        """Demo sellers answer by themselves so quotes land in seconds. A seller can switch it off. Set
+        DEMO_AUTOPILOT=off to start with it off. Autopilot only ever opens a first quote on a clean 'yes'."""
+        if os.environ.get("DEMO_AUTOPILOT", "on").lower() == "off":
+            return
+        for sid, prof in self.supplier_profiles.items():
+            if prof.synthetic:
+                self.autopilot[sid] = AutopilotSettings(enabled=True)
+
+    def last_order(self, buyer_id: str, item: str) -> Optional[dict]:
+        """This buyer's most recent decided order for the item, else the synthetic history entry. Numbers only."""
+        key = item_key(item)
+        mine = [r for r in self.rfqs.values() if r.owner_id == buyer_id and r.decision and item_key(r.item) == key]
+        for r in sorted(mine, key=lambda r: r.decision["decided_at"], reverse=True):
+            alias = r.decision["winner_id"]
+            sid = self.supplier_for_alias(r.id, alias)
+            latest = (self.quotes.get(r.id, {}).get(sid) or [None])[-1] if sid else None
+            if latest:
+                return {"source": "your_last_order", "label": "Your last order", "date": r.decision["decided_at"][:10],
+                        "qty": r.qty, "landed": latest.landed_cost, "lead_days": latest.lead_days}
+        hist = [h for h in self.history if h["item_key"] == key]
+        if hist:
+            h = max(hist, key=lambda h: h["date"])
+            return {"source": "synthetic_history", "label": "Synthetic demo history", "date": h["date"],
+                    "qty": h["qty"], "landed": h["landed"], "lead_days": h["lead_days"]}
+        return None
+
+    def todays_best(self, item: str, qty: int, need_in_days: int = 30) -> Optional[dict]:
+        """Best landed cost today across sellers who stock the item, from their catalog rows through the engine.
+        Returns numbers only: no seller identity."""
+        quotes = []
+        for sid, prod in self.match_suppliers(item).items():
+            probe = RFQ(id="probe", token="t", item=item, qty=qty, need_in_days=need_in_days, buyer_company="", buyer_name="",
+                        buyer_city="", buyer_state="", created_at="")
+            d = draft_quote(probe, prod)
+            quotes.append(Quote(id=sid, supplier=sid, item=item, pack_price=d.pack_price, pack_size=d.pack_size,
+                                freight=d.freight, lead_days=d.lead_days, moq=d.moq, max_qty=d.max_qty))
+        if not quotes:
+            return None
+        res = evaluate(quotes, Need(item=item, qty=qty, need_in_days=need_in_days))
+        w = res.winner
+        return {"landed": w.landed, "lead_days": w.lead_days, "sellers_checked": len(quotes)} if w else None
 
     # ─── Aliases, reveal, quota ────────────────────────────────────────
 

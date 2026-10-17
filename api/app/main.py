@@ -48,6 +48,8 @@ from . import ai, assistant
 from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
+from . import persist
+from starlette.concurrency import run_in_threadpool
 from .auth import AuthUser, get_current_user
 from . import views
 from fastapi.responses import JSONResponse
@@ -98,15 +100,33 @@ def build() -> Pipeline:
 
 
 pipeline = build()
+
+PERSIST_STATE = persist.init(store)     # 'loaded' | 'seeded' | 'off'
+
 app = FastAPI(title="Crossover Decision Engine & RFQ API", version="2.0.0")
 
+# Browsers may call this API from the dev server, and from a phone on the same private network. Anywhere
+# else must be added on purpose with CORS_ORIGINS=https://one.example,https://two.example
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
+    allow_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()],
+    allow_origin_regex=r"^http://(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+):\d+$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def save_state_after_api_calls(request: Request, call_next):
+    """Write-through: after any API call, save whatever changed. Cheap when nothing did."""
+    response = await call_next(request)
+    if persist.enabled() and request.url.path.startswith("/api"):
+        try:
+            await run_in_threadpool(persist.save, store)
+        except Exception:
+            pass          # a failed save must never fail the request; the next call retries
+    return response
 
 
 # --- 1. Pipeline & Trace Endpoints ---
@@ -419,6 +439,17 @@ def mock_upgrade(user: AuthUser = Depends(buyer_only)):
     """DEV ONLY. No payment happens; this flips the account to unlimited reveals so the paywall can be demoed."""
     store.plans[user.id] = "pro"
     return {**views.plan_info(store, user.id), "note": "Mock upgrade for the demo. No payment was taken and none is stored."}
+
+
+@app.get("/api/items/{item}/last-order")
+def last_order(item: str, qty: Optional[int] = None, need_in_days: int = 5, user: AuthUser = Depends(buyer_only)):
+    """Last winner price for this item against what the same quantity costs today. Numbers only, no sellers named."""
+    last = store.last_order(user.id, item)
+    q = qty or (last["qty"] if last else 100)
+    today = store.todays_best(item, q, need_in_days)
+    diff = round(last["landed"] - today["landed"]) if last and today and last["qty"] == q else None
+    return {"item": item, "qty": q, "last": last, "today": today, "difference": diff,
+            "note": "Today's best comes from sellers' current catalog rows. History marked synthetic is demo data, not a result."}
 
 
 @app.post("/api/demo/sample-request")

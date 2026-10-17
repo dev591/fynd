@@ -1,3 +1,9 @@
+import os
+
+# Before the app is imported: no demo autopilot, no database file. Tests build exactly the state they need.
+os.environ["DEMO_AUTOPILOT"] = "off"
+os.environ["PERSIST"] = "off"
+
 import pytest
 
 from app.auth import AuthUser, get_current_user
