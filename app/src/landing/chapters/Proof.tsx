@@ -9,12 +9,13 @@ import { seg } from '../scrub'
 /** Chapter 5: the three scored case checks, actually run on page load. Nothing hardcoded. */
 export function Proof() {
   const [p, setP] = useState(0)
+  const [at] = useState(() => new Date().toLocaleTimeString())
   const run = useMemo(() => {
     const checks = caseChecks()
     // Same inputs, keys in a different order: the fingerprint must not change.
     const a = fingerprint({ need: NEED, quotes: QUOTES })
     const b = fingerprint({ quotes: QUOTES, need: NEED })
-    return { checks, a, same: a === b, at: new Date().toLocaleTimeString() }
+    return { checks, a, same: a === b }
   }, [])
   const score = run.checks.reduce((s, c) => s + (c.pass ? c.points : 0), 0)
 
@@ -23,7 +24,7 @@ export function Proof() {
       <div className="mx-auto grid h-full max-w-6xl items-center gap-10 px-6 py-16 md:grid-cols-[1fr_1fr]">
         <div className="rise">
           <p className="label flex items-center gap-2 text-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-live" /> 05 · Proof · ran in this browser at {run.at}
+            <span className="h-1.5 w-1.5 rounded-full bg-live" /> 05 · Proof · ran in this browser at {at}
           </p>
           <h2 className="display mt-1 text-[clamp(2rem,4.5vw,3.75rem)] leading-[1.05]">
             <span className="num">{score}</span> of 25 points, checked.

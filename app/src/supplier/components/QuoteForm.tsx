@@ -12,11 +12,11 @@ import {
 } from "lucide-react";
 import { order } from "../../landing/engine";
 import { Money } from "./Money";
-import type { RFQItem, SupplierProduct } from "../types";
+import type { SupplierProductDTO } from "../../api/client";
 
 interface QuoteFormProps {
-  rfq: RFQItem;
-  products?: SupplierProduct[];
+  rfq: { item: string; qty: number; needInDays: number };
+  products?: SupplierProductDTO[];
   initialValues?: {
     packPrice?: number;
     packSize?: number;
@@ -72,10 +72,10 @@ export function QuoteForm({
     setSelectedProductId(prodId);
     const p = products.find((x) => x.id === prodId);
     if (!p) return;
-    setPackPrice(p.packPrice);
-    setPackSize(p.packSize);
+    setPackPrice(p.pack_price);
+    setPackSize(p.pack_size);
     setMoq(p.moq);
-    setLeadDays(p.usualLeadDays);
+    setLeadDays(p.usual_lead_days);
   };
 
   // AI Item-match check (warn only, doesn't block)
@@ -173,7 +173,7 @@ export function QuoteForm({
               >
                 <Package size={13} className="shrink-0" />
                 <span className="truncate max-w-[180px]">{p.name}</span>
-                <span className="num text-[11px] text-muted">(₹{p.packPrice}/{p.unit})</span>
+                <span className="num text-[11px] text-muted">(₹{p.pack_price}/{p.unit})</span>
               </button>
             ))}
           </div>

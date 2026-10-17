@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useMemo } from 'react'
 import { landed, type Quote } from './engine'
 import { QUOTES } from './fixture'
 
@@ -9,9 +9,6 @@ const y = (v: number) => T + (1 - v / YMAX) * (H - T - B)
 
 /** Where a (qty, ₹) point sits, in % of the chart box. Lets HTML overlays land on the curves. */
 export const chartPoint = (q: number, v: number) => ({ left: (x(q) / W) * 100, top: (y(v) / H) * 100 })
-
-/** Quotes we can draw. A quote with no pack size has no curve: that is the point. */
-const PLOTTED = QUOTES.filter((q) => q.packSize)
 
 function curve(q: Quote) {
   let prev = landed(q, 0)!
@@ -24,7 +21,6 @@ function curve(q: Quote) {
   }
   return d + `L${x(QMAX)},${y(landed(q, QMAX)!)}`
 }
-const PATHS = Object.fromEntries(PLOTTED.map((q) => [q.id, curve(q)]))
 
 type Props = {
   /** 0..1, how much of each curve is drawn (left to right). */
@@ -35,18 +31,26 @@ type Props = {
   winnerId?: string | null
   /** Quote ids that are late (drawn dashed in warn). */
   late?: string[]
+  /** Quotes to plot. Defaults to fixture data (for the landing story). */
+  quotes?: Quote[]
   className?: string
 }
 
-export function CostChart({ draw = 1, cross = 0, qty = null, winnerId = null, late = ['C'], className = '' }: Props) {
+export function CostChart({ draw = 1, cross = 0, qty = null, winnerId = null, late = ['C'], quotes, className = '' }: Props) {
   const clip = useId()
   const plotW = W - L - R
+
+  // Use provided quotes or default to fixture (landing page)
+  const sourceQuotes = quotes ?? QUOTES
+  const plotted = useMemo(() => sourceQuotes.filter(q => q.packSize), [sourceQuotes])
+  const paths = useMemo(() => Object.fromEntries(plotted.map(q => [q.id, curve(q)])), [plotted])
+
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
       className={`block h-auto w-full ${className}`}
       role="img"
-      aria-label="Landed cost of each quote by order quantity. A and B cross at 150 units."
+      aria-label="Landed cost of each quote by order quantity."
     >
       <defs>
         <clipPath id={clip}>
@@ -70,13 +74,13 @@ export function CostChart({ draw = 1, cross = 0, qty = null, winnerId = null, la
       <text x={W - R} y={H - 1} textAnchor="end" fontSize="11" fill="var(--muted)">units ordered →</text>
 
       <g clipPath={`url(#${clip})`}>
-        {PLOTTED.map((q) => {
+        {plotted.map((q) => {
           const win = q.id === winnerId
           const isLate = late.includes(q.id)
           return (
             <path
               key={q.id}
-              d={PATHS[q.id]}
+              d={paths[q.id]}
               fill="none"
               stroke={win ? 'var(--signal)' : isLate ? 'var(--warn)' : 'var(--bone)'}
               strokeOpacity={win || isLate ? 1 : 0.55}
@@ -87,7 +91,7 @@ export function CostChart({ draw = 1, cross = 0, qty = null, winnerId = null, la
           )
         })}
       </g>
-      {PLOTTED.map((q) => {
+      {plotted.map((q) => {
         const v = landed(q, QMAX)!
         return (
           <text
@@ -105,21 +109,23 @@ export function CostChart({ draw = 1, cross = 0, qty = null, winnerId = null, la
         )
       })}
 
-      <g opacity={cross} transform={`translate(${x(150)},${y(1700)})`}>
-        <circle r="7" fill="none" stroke="var(--bone)" strokeWidth="1.5" />
-        <text x="-12" y="-14" textAnchor="end" fontSize="12" fill="var(--bone)">
-          A and B cross at 150
-        </text>
-      </g>
+      {cross > 0 && (
+        <g opacity={cross} transform={`translate(${x(150)},${y(1700)})`}>
+          <circle r="7" fill="none" stroke="var(--bone)" strokeWidth="1.5" />
+          <text x="-12" y="-14" textAnchor="end" fontSize="12" fill="var(--bone)">
+            A and B cross at 150
+          </text>
+        </g>
+      )}
 
       {qty !== null && (
         <g>
           <line x1={x(qty)} x2={x(qty)} y1={T} y2={H - B} stroke="var(--muted)" strokeDasharray="2 4" />
-          {PLOTTED.map((q) => (
+          {plotted.map((q) => (
             <circle
               key={q.id}
               cx={x(qty)}
-              cy={y(landed(q, qty)!)}
+              cy={y(landed(q, qty)!) }
               r={q.id === winnerId ? 5 : 3.5}
               fill={q.id === winnerId ? 'var(--signal)' : late.includes(q.id) ? 'var(--warn)' : 'var(--bone)'}
             />

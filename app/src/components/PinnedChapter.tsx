@@ -21,8 +21,12 @@ type Props = {
 export function PinnedChapter({ id, length = 3, onProgress, children, className = '', grid = true }: Props) {
   const ref = useRef<HTMLElement>(null)
   const cb = useRef(onProgress)
-  cb.current = onProgress
   const dive = useContext(DiveContext)
+
+  // Keep the callback ref current without accessing it during render
+  useEffect(() => {
+    cb.current = onProgress
+  }, [onProgress])
 
   // Inside a DiveStage the stage drives position, depth and progress.
   useLayoutEffect(() => {

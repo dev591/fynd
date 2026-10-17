@@ -1,73 +1,30 @@
-export type RFQStatus = "Open" | "Decided" | "Closed";
+// Frontend types that match the backend API DTOs (snake_case from the API).
+// Re-exported from client.ts so there is a single source of truth.
 
-export type SupplierQuoteStatus =
-  | "received"
-  | "under_review"
-  | "target_sent"
-  | "won"
-  | "not_selected";
+export type {
+  RFQDTO as RFQItem,
+  QuoteVersionDTO as QuoteVersion,
+  NegotiationTargetDTO as NegotiationTarget,
+  ChatMessageDTO as ChatMessage,
+  SupplierProductDTO as SupplierProduct,
+  SupplierProfileDTO as SupplierProfile,
+} from "../api/client";
 
-export interface SupplierProduct {
-  id: string;
-  name: string;
-  category: string;
-  packPrice: number;
-  packSize: number;
-  moq: number;
-  usualLeadDays: number;
-  capacityCap?: number;
-  unit: string;
-}
+// Derived types
+export type SupplierQuoteStatus = "received" | "under_review" | "target_sent" | "won" | "not_selected";
 
-export interface NegotiationTarget {
-  id: string;
-  supplierId: string;
-  message: string;
-  cutNeeded: number;
-  targetFreight?: number;
-  targetPerUnit?: number;
-  concessionType: "freight" | "unit_price";
-  sentAt: string;
-  status: "pending" | "accepted" | "declined";
-}
-
-export interface QuoteVersion {
-  version: number;
-  packPrice: number;
-  packSize: number;
-  freight: number;
-  leadDays: number;
-  moq?: number;
-  maxQty?: number;
-  taxRate?: number;
-  priceIncludesTax?: boolean;
-  notes?: string;
-  submittedAt: string;
-  landedCost: number;
-  units: number;
-  packs: number;
-}
-
-export interface RFQItem {
-  id: string;
-  item: string;
-  qty: number;
-  needInDays: number;
-  buyerCompany: string;
-  buyerName: string;
-  buyerCity: string;
-  buyerState: string;
-  note?: string;
-  createdAt: string;
-  status: RFQStatus;
-  winnerSupplierId?: string;
-}
-
-export interface ChatMessage {
-  id: string;
-  sender: "buyer" | "supplier";
-  senderName: string;
-  text: string;
-  target?: NegotiationTarget;
-  timestamp: string;
+/** Compute supplier status from quotes + target. */
+export function computeStatus(
+  hasQuotes: boolean,
+  targetStatus: string | null,
+  rfqStatus: string,
+  isWinner: boolean,
+): SupplierQuoteStatus {
+  if (rfqStatus === "Decided" || rfqStatus === "Closed") {
+    return isWinner ? "won" : "not_selected";
+  }
+  if (targetStatus === "pending") return "target_sent";
+  if (targetStatus === "accepted") return "under_review";
+  if (hasQuotes) return "under_review";
+  return "received";
 }

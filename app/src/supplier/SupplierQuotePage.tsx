@@ -1,86 +1,121 @@
 import { useState, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
-  ArrowLeft,
-  Building2,
-  Clock,
-  History,
-  RotateCcw,
-  MessageSquare,
-  Share2,
+  ArrowLeft, Building2, Clock, History, RotateCcw, MessageSquare,
+  Share2, AlertTriangle, CheckCircle2, XCircle,
 } from "lucide-react";
-import { useSupplierStore } from "./supplierStore";
 import { QuoteForm } from "./components/QuoteForm";
 import { StatusChip } from "./components/StatusChip";
 import { NegotiationTargetCard } from "./components/NegotiationTargetCard";
 import { SupplierChat } from "./components/SupplierChat";
 import { Money } from "./components/Money";
 import { VerifiedBadge } from "./components/VerifiedBadge";
-import type { QuoteVersion } from "./types";
+import { useApiPoll } from "../lib/useApi";
+import {
+  getRFQByToken, getMyQuotes, submitQuoteByToken,
+  getChatByToken, postChatByToken,
+  getSupplierProducts,
+  type SupplierRFQView, type QuoteVersionDTO, type NegotiationTargetDTO,
+  type ChatMessageDTO, type SupplierProductDTO,
+} from "../api/client";
+import { computeStatus } from "./types";
 
-interface SupplierQuotePageProps {
-  supplierId?: string; // defaults to "A" (Supplier A)
-}
+export function SupplierQuotePage() {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token") || "";
 
-export function SupplierQuotePage({ supplierId = "A" }: SupplierQuotePageProps) {
-  const store = useSupplierStore();
-  const rfq = store.getRFQ();
-  const quotes = store.getQuotesForSupplier(supplierId);
-  const target = store.getTargetForSupplier(supplierId);
-  const status = store.getSupplierStatus(supplierId);
-  const messages = store.getMessages(supplierId);
-  const products = store.getState().products;
+  // Poll RFQ view every 2s
+  const { data: rfq, loading, error } = useApiPoll<SupplierRFQView>(
+    () => token ? getRFQByToken(token) : Promise.reject(new Error("No token")),
+    2000,
+    [token],
+  );
+
+  // Poll quotes + target
+  const { data: myData, refetch: refetchMine } = useApiPoll<{
+    quotes: QuoteVersionDTO[]; target: NegotiationTargetDTO | null;
+  }>(
+    () => token ? getMyQuotes(token) : Promise.resolve({ quotes: [], target: null }),
+    2000,
+    [token],
+  );
+
+  // Poll chat
+  const { data: chatMessages, refetch: refetchChat } = useApiPoll<ChatMessageDTO[]>(
+    () => token ? getChatByToken(token) : Promise.resolve([]),
+    2000,
+    [token],
+  );
+
+  // Supplier products (one-time load)
+  const { data: products } = useApiPoll<SupplierProductDTO[]>(
+    () => getSupplierProducts("A"), 5000, [],
+  );
 
   const [activeTab, setActiveTab] = useState<"quote" | "chat">("quote");
   const [isRevising, setIsRevising] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const latestQuote: QuoteVersion | null = quotes.length > 0 ? quotes[quotes.length - 1] : null;
+  const quotes = myData?.quotes || [];
+  const target = myData?.target || null;
+  const latestQuote: QuoteVersionDTO | null = quotes.length > 0 ? quotes[quotes.length - 1] : null;
 
-  // Determine initial values for form
+  // Compute supplier status from real data
+  const status = useMemo(() => {
+    if (!rfq) return "received" as const;
+    return computeStatus(quotes.length > 0, target?.status || null, rfq.status, false);
+  }, [rfq, quotes.length, target]);
+
+  // Form initial values
   const formInitialValues = useMemo(() => {
-    // If revising from target, apply the target values!
     if (target && target.status === "pending") {
       return {
-        packPrice: latestQuote?.packPrice ?? 10,
-        packSize: latestQuote?.packSize ?? 1,
-        freight: target.targetFreight !== undefined ? target.targetFreight : (latestQuote?.freight ?? 150),
-        leadDays: latestQuote?.leadDays ?? 3,
+        packPrice: latestQuote?.pack_price ?? 10,
+        packSize: latestQuote?.pack_size ?? 1,
+        freight: target.target_freight ?? (latestQuote?.freight ?? 150),
+        leadDays: latestQuote?.lead_days ?? 3,
         moq: latestQuote?.moq ?? 1,
         notes: `Revised to match buyer counter-offer: ${target.message}`,
       };
     }
-
     if (latestQuote) {
       return {
-        packPrice: latestQuote.packPrice,
-        packSize: latestQuote.packSize,
+        packPrice: latestQuote.pack_price,
+        packSize: latestQuote.pack_size,
         freight: latestQuote.freight,
-        leadDays: latestQuote.leadDays,
+        leadDays: latestQuote.lead_days,
         moq: latestQuote.moq,
-        maxQty: latestQuote.maxQty,
-        taxRate: latestQuote.taxRate,
-        priceIncludesTax: latestQuote.priceIncludesTax,
         notes: latestQuote.notes,
       };
     }
-
     return undefined;
   }, [latestQuote, target]);
 
-  const handleQuoteSubmit = (data: {
-    packPrice: number;
-    packSize: number;
-    freight: number;
-    leadDays: number;
-    moq?: number;
-    maxQty?: number;
-    taxRate?: number;
-    priceIncludesTax?: boolean;
-    notes?: string;
+  const handleQuoteSubmit = async (data: {
+    packPrice: number; packSize: number; freight: number; leadDays: number;
+    moq?: number; maxQty?: number; taxRate?: number; priceIncludesTax?: boolean; notes?: string;
   }) => {
-    store.submitQuote(supplierId, data);
-    setIsRevising(false);
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await submitQuoteByToken(token, {
+        supplier_name: "Supplier A",
+        pack_price: data.packPrice,
+        pack_size: data.packSize,
+        freight: data.freight,
+        lead_days: data.leadDays,
+        moq: data.moq,
+        notes: data.notes,
+      });
+      setIsRevising(false);
+      refetchMine();
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Failed to submit quote");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleCopyLink = () => {
@@ -89,72 +124,120 @@ export function SupplierQuotePage({ supplierId = "A" }: SupplierQuotePageProps) 
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
+  const handleSendMessage = async (text: string) => {
+    try {
+      await postChatByToken(token, {
+        sender: "supplier",
+        sender_name: "Supplier A",
+        text,
+      });
+      refetchChat();
+    } catch (e) {
+      console.error("Failed to send message:", e);
+    }
+  };
+
+  // ─── States ─────────────────────────────────────────────────────────
+
+  if (!token) {
+    return (
+      <div className="landing grain min-h-screen bg-ink text-bone flex items-center justify-center">
+        <div className="max-w-md text-center space-y-3">
+          <AlertTriangle size={28} className="mx-auto text-warn" />
+          <h2 className="display text-lg text-bone">No token provided</h2>
+          <p className="text-[13px] text-muted">This link is missing the supplier token. Ask the buyer for a fresh invite link.</p>
+          <Link to="/supplier" className="inline-block rounded-full bg-signal px-4 py-2 text-[13px] text-ink">Go to Supplier Portal</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading && !rfq) {
+    return (
+      <div className="landing grain min-h-screen bg-ink text-bone flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-line border-t-signal" />
+          <p className="text-[13px] text-muted">Loading request…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !rfq) {
+    return (
+      <div className="landing grain min-h-screen bg-ink text-bone flex items-center justify-center">
+        <div className="max-w-md rounded-2xl border border-error/40 bg-error/10 p-6 text-center space-y-3">
+          <XCircle size={28} className="mx-auto text-error" />
+          <h2 className="display text-lg text-bone">This link isn't valid</h2>
+          <p className="text-[13px] text-muted">The link may have expired or the request may be closed. Contact the buyer for a new link.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!rfq) return null;
+
+  const isClosed = rfq.status === "Decided" || rfq.status === "Closed";
+
   return (
     <div className="landing grain min-h-screen bg-ink text-bone pb-16">
-      {/* Mobile-Friendly Top Bar */}
+      {/* Top Bar */}
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2.5">
-            <Link
-              to="/supplier"
-              className="flex items-center gap-1 text-[13px] text-muted hover:text-bone"
-            >
-              <ArrowLeft size={14} />
-              <span className="hidden sm:inline">Supplier Portal</span>
+            <Link to="/supplier" className="flex items-center gap-1 text-[13px] text-muted hover:text-bone">
+              <ArrowLeft size={14} /><span className="hidden sm:inline">Supplier Portal</span>
             </Link>
             <span className="text-muted/50">·</span>
             <span className="label text-signal">SUPPLIER QUOTE DESK</span>
           </div>
-
           <div className="flex items-center gap-2">
             <VerifiedBadge tier="tax_ids" />
             <button
               type="button"
               onClick={handleCopyLink}
               className="flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] text-muted hover:text-bone"
-              title="Copy mobile invite link"
             >
-              <Share2 size={12} />
-              <span>{copiedLink ? "Copied!" : "Share Link"}</span>
+              <Share2 size={12} /><span>{copiedLink ? "Copied!" : "Share Link"}</span>
             </button>
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-6 space-y-6">
-        {/* Top: The Buyer's Request Header Card (PDF Page 3 requirement) */}
+        {/* Request Header */}
         <div className="rounded-2xl border border-line bg-surface/90 p-5 shadow-sm backdrop-blur-md">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 text-[12px] text-muted">
                 <Building2 size={13} className="text-signal" />
-                <span className="font-semibold text-bone">{rfq.buyerCompany}</span>
+                <span className="font-semibold text-bone">{rfq.buyer_company}</span>
                 <span>·</span>
-                <span>{rfq.buyerCity}, {rfq.buyerState}</span>
+                <span>{rfq.buyer_city}, {rfq.buyer_state}</span>
               </div>
               <h1 className="display text-2xl text-bone mt-1.5">
-                Request for Quotation: <span className="text-signal">{rfq.item}</span>
+                Request: <span className="text-signal">{rfq.item}</span>
               </h1>
             </div>
-
-            <span className="rounded-full bg-signal/15 border border-signal/30 px-3 py-1 text-[12px] font-semibold text-signal shrink-0">
+            <span className={`rounded-full px-3 py-1 text-[12px] font-semibold shrink-0 ${
+              isClosed ? "border border-line bg-raised text-muted" : "border border-signal/30 bg-signal/15 text-signal"
+            }`}>
               {rfq.status}
             </span>
           </div>
 
-          {/* Key Request Parameters */}
           <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3 border-t border-line/60 pt-3 text-[13px]">
             <div>
-              <span className="label text-muted block">Quantity Required</span>
+              <span className="label text-muted block">Quantity</span>
               <span className="num text-base font-bold text-bone">{rfq.qty} units</span>
             </div>
             <div>
-              <span className="label text-muted block">Delivery Window</span>
-              <span className="num text-base font-bold text-bone">Within {rfq.needInDays} days</span>
+              <span className="label text-muted block">Delivery</span>
+              <span className="num text-base font-bold text-bone">Within {rfq.need_in_days} days</span>
             </div>
             <div className="col-span-2 sm:col-span-1">
-              <span className="label text-muted block">Contact Person</span>
-              <span className="font-medium text-bone">{rfq.buyerName}</span>
+              <span className="label text-muted block">Contact</span>
+              <span className="font-medium text-bone">{rfq.buyer_name}</span>
             </div>
           </div>
 
@@ -165,68 +248,62 @@ export function SupplierQuotePage({ supplierId = "A" }: SupplierQuotePageProps) 
           )}
         </div>
 
-        {/* View Tabs: Quote Submission vs Discussion */}
+        {/* Read-only banner if closed */}
+        {isClosed && (
+          <div className="rounded-xl border border-line bg-raised/30 p-4 text-center text-[13px] text-muted">
+            <CheckCircle2 size={20} className="mx-auto text-muted mb-1" />
+            This request is {rfq.status}. No further revisions accepted.
+          </div>
+        )}
+
+        {/* Tabs */}
         <div className="flex border-b border-line gap-4 text-[13px] font-medium">
           <button
             type="button"
             onClick={() => setActiveTab("quote")}
             className={`pb-2.5 transition-colors border-b-2 flex items-center gap-1.5 ${
-              activeTab === "quote"
-                ? "border-signal text-bone font-semibold"
-                : "border-transparent text-muted hover:text-bone"
+              activeTab === "quote" ? "border-signal text-bone font-semibold" : "border-transparent text-muted hover:text-bone"
             }`}
           >
             <span>Quote Submission</span>
-            {latestQuote && (
-              <span className="rounded bg-raised px-1.5 py-0.2 text-[10px] text-muted">
-                v{latestQuote.version}
-              </span>
-            )}
+            {latestQuote && <span className="rounded bg-raised px-1.5 py-0.2 text-[10px] text-muted">v{latestQuote.version}</span>}
           </button>
-
           <button
             type="button"
             onClick={() => setActiveTab("chat")}
             className={`pb-2.5 transition-colors border-b-2 flex items-center gap-1.5 ${
-              activeTab === "chat"
-                ? "border-signal text-bone font-semibold"
-                : "border-transparent text-muted hover:text-bone"
+              activeTab === "chat" ? "border-signal text-bone font-semibold" : "border-transparent text-muted hover:text-bone"
             }`}
           >
-            <MessageSquare size={14} />
-            <span>Buyer Negotiation Thread</span>
-            {messages.length > 0 && (
+            <MessageSquare size={14} /><span>Negotiation Thread</span>
+            {(chatMessages?.length || 0) > 0 && (
               <span className="rounded-full bg-signal text-ink px-1.5 py-0.2 text-[10px] font-bold">
-                {messages.length}
+                {chatMessages!.length}
               </span>
             )}
           </button>
         </div>
 
-        {/* Tab 1: Quote Form or Status Card */}
+        {/* Tab 1: Quote */}
         {activeTab === "quote" && (
           <div className="space-y-6">
-            {/* If quote already submitted and not currently editing revision */}
-            {latestQuote && !isRevising ? (
+            {latestQuote && !isRevising && !isClosed ? (
               <div className="space-y-5">
-                {/* Screen 2: Status Page Card (PDF Page 3 requirement) */}
+                {/* Status Card */}
                 <div className="rounded-2xl border border-line bg-surface/90 p-5 shadow-sm">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-line/60">
                     <div>
-                      <p className="label text-muted">Quote Submission Status</p>
-                      <h3 className="display text-xl text-bone mt-0.5">
-                        Version {latestQuote.version} Active
-                      </h3>
+                      <p className="label text-muted">Quote Status</p>
+                      <h3 className="display text-xl text-bone mt-0.5">Version {latestQuote.version} Active</h3>
                     </div>
                     <StatusChip status={status} />
                   </div>
 
-                  {/* Summary of submitted quote */}
                   <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[13px]">
                     <div>
                       <span className="label text-muted block">Pack Price</span>
-                      <Money amount={latestQuote.packPrice} className="text-base font-bold text-bone" />
-                      <span className="text-[11px] text-muted block">({latestQuote.packSize} pc/pack)</span>
+                      <Money amount={latestQuote.pack_price} className="text-base font-bold text-bone" />
+                      <span className="text-[11px] text-muted block">({latestQuote.pack_size} pc/pack)</span>
                     </div>
                     <div>
                       <span className="label text-muted block">Freight</span>
@@ -234,96 +311,109 @@ export function SupplierQuotePage({ supplierId = "A" }: SupplierQuotePageProps) 
                     </div>
                     <div>
                       <span className="label text-muted block">Lead Time</span>
-                      <span className="num text-base font-bold text-bone">{latestQuote.leadDays} days</span>
+                      <span className="num text-base font-bold text-bone">{latestQuote.lead_days} days</span>
                     </div>
                     <div>
                       <span className="label text-muted block">Total Landed</span>
-                      <Money amount={latestQuote.landedCost} className="text-base font-bold text-signal" />
+                      <Money amount={latestQuote.landed_cost} className="text-base font-bold text-signal" />
                     </div>
                   </div>
 
                   {latestQuote.notes && (
-                    <div className="mt-3 text-[12px] text-muted">
-                      <strong>Terms:</strong> {latestQuote.notes}
-                    </div>
+                    <div className="mt-3 text-[12px] text-muted"><strong>Terms:</strong> {latestQuote.notes}</div>
                   )}
 
                   <div className="mt-4 flex items-center justify-between border-t border-line/60 pt-3 text-[12px]">
                     <span className="text-muted flex items-center gap-1">
-                      <Clock size={12} /> Submitted at {latestQuote.submittedAt}
+                      <Clock size={12} /> Submitted at {latestQuote.submitted_at}
                     </span>
-
                     <button
                       type="button"
                       onClick={() => setIsRevising(true)}
                       className="flex items-center gap-1 rounded-full border border-line bg-raised px-3 py-1.5 font-medium text-bone hover:border-signal/50 hover:text-signal transition-colors"
                     >
-                      <RotateCcw size={12} />
-                      <span>Revise Quote Terms</span>
+                      <RotateCcw size={12} /><span>Revise Quote</span>
                     </button>
                   </div>
                 </div>
 
-                {/* If Buyer Sent a Target, prominent callout card */}
+                {/* Negotiation Target Card */}
                 {target && target.status === "pending" && (
-                  <NegotiationTargetCard
-                    target={target}
-                    onRevise={() => setIsRevising(true)}
-                  />
+                  <NegotiationTargetCard target={target} onRevise={() => setIsRevising(true)} />
                 )}
 
                 {/* Revision History */}
                 {quotes.length > 1 && (
                   <div className="rounded-xl border border-line bg-surface/50 p-4">
                     <span className="label text-muted flex items-center gap-1.5 mb-2">
-                      <History size={13} />
-                      Previous Revisions ({quotes.length} total)
+                      <History size={13} /> Previous Revisions ({quotes.length} total)
                     </span>
                     <div className="space-y-2">
-                      {quotes.map((q) => (
-                        <div
-                          key={q.version}
-                          className="flex items-center justify-between text-[12px] border-b border-line/40 py-1.5 last:border-0"
-                        >
+                      {quotes.map(q => (
+                        <div key={q.version} className="flex items-center justify-between text-[12px] border-b border-line/40 py-1.5 last:border-0">
                           <span className="font-semibold text-bone">v{q.version}</span>
-                          <span className="text-muted">₹{q.packPrice}/pack · ₹{q.freight} freight</span>
-                          <Money amount={q.landedCost} className="font-mono text-bone" />
-                          <span className="text-muted">{q.submittedAt}</span>
+                          <span className="text-muted">₹{q.pack_price}/pack · ₹{q.freight} freight</span>
+                          <Money amount={q.landed_cost} className="font-mono text-bone" />
+                          <span className="text-muted">{q.submitted_at}</span>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
               </div>
+            ) : isClosed ? (
+              <div className="rounded-2xl border border-line bg-surface/90 p-5">
+                {latestQuote && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[13px]">
+                    <div>
+                      <span className="label text-muted block">Pack Price</span>
+                      <Money amount={latestQuote.pack_price} className="text-base font-bold text-bone" />
+                    </div>
+                    <div>
+                      <span className="label text-muted block">Freight</span>
+                      <Money amount={latestQuote.freight} className="text-base font-bold text-bone" />
+                    </div>
+                    <div>
+                      <span className="label text-muted block">Lead Time</span>
+                      <span className="num text-base font-bold text-bone">{latestQuote.lead_days} days</span>
+                    </div>
+                    <div>
+                      <span className="label text-muted block">Total Landed</span>
+                      <Money amount={latestQuote.landed_cost} className="text-base font-bold text-signal" />
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
-              /* Screen 1: Quote Form (New or Revising) */
               <div className="rounded-2xl border border-line bg-surface/90 p-5 sm:p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-line/60">
                   <div>
                     <h2 className="display text-xl text-bone">
                       {isRevising ? `Revise Quote (Version ${quotes.length + 1})` : "Submit Quotation"}
                     </h2>
-                    <p className="text-[13px] text-muted">
-                      Complete in under 1 minute. Enter transparent pack sizes and freight.
-                    </p>
+                    <p className="text-[13px] text-muted">Complete in under 1 minute.</p>
                   </div>
-
                   {isRevising && (
-                    <button
-                      type="button"
-                      onClick={() => setIsRevising(false)}
-                      className="text-[12px] text-muted underline hover:text-bone"
-                    >
-                      Cancel revision
+                    <button onClick={() => setIsRevising(false)} className="text-[12px] text-muted underline hover:text-bone">
+                      Cancel
                     </button>
                   )}
                 </div>
 
+                {submitError && (
+                  <div className="mb-4 rounded-lg border border-error/40 bg-error/10 p-3 text-[12px] text-error">
+                    {submitError}
+                  </div>
+                )}
+
                 <QuoteForm
-                  rfq={rfq}
-                  products={products}
+                  rfq={{
+                    item: rfq.item, qty: rfq.qty, needInDays: rfq.need_in_days,
+                  }}
+                  products={products || []}
                   initialValues={formInitialValues}
                   onSubmit={handleQuoteSubmit}
+                  isSubmitting={submitting}
                   versionNumber={quotes.length + 1}
                 />
               </div>
@@ -331,19 +421,14 @@ export function SupplierQuotePage({ supplierId = "A" }: SupplierQuotePageProps) 
           </div>
         )}
 
-        {/* Tab 2: Negotiation Chat Thread */}
+        {/* Tab 2: Chat */}
         {activeTab === "chat" && (
           <SupplierChat
-            messages={messages}
+            messages={chatMessages || []}
             currentRole="supplier"
-            currentUserName="Suresh Gupta (Supplier A)"
-            onSendMessage={(text) =>
-              store.sendMessage(supplierId, "supplier", text, "Suresh Gupta")
-            }
-            onReviseFromTarget={() => {
-              setActiveTab("quote");
-              setIsRevising(true);
-            }}
+            currentUserName="Supplier A"
+            onSendMessage={handleSendMessage}
+            onReviseFromTarget={() => { setActiveTab("quote"); setIsRevising(true); }}
           />
         )}
       </main>
