@@ -4,7 +4,13 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   ArrowLeft, Package, Send, Copy, Check, ExternalLink,
 } from "lucide-react";
-import { createRFQ, type RFQCreateResponse } from "../api/client";
+import { createRFQ, type PriorityMode, type RFQCreateResponse } from "../api/client";
+
+const PRIORITY_OPTIONS: { id: PriorityMode; label: string; hint: string }[] = [
+  { id: "cheapest", label: "Cheapest", hint: "Lowest landed cost" },
+  { id: "fastest", label: "Fastest", hint: "Shortest lead time" },
+  { id: "balanced", label: "Balanced", hint: "Fastest within 5% of cheapest" },
+];
 
 export function NewRequestForm() {
   const navigate = useNavigate();
@@ -14,6 +20,7 @@ export function NewRequestForm() {
   const [qty, setQty] = useState<number | "">("");
   const [needInDays, setNeedInDays] = useState<number | "">(5);
   const [note, setNote] = useState("");
+  const [priority, setPriority] = useState<PriorityMode>("cheapest");
   const [buyerCompany, setBuyerCompany] = useState("FanWorks Precision Manufacturing");
   const [buyerName, setBuyerName] = useState("Ramesh Sharma");
   const [buyerCity] = useState("Pune");
@@ -41,6 +48,8 @@ export function NewRequestForm() {
         buyer_city: buyerCity,
         buyer_state: buyerState,
         note: note.trim() || undefined,
+        priority_mode: priority,
+        source: "form",
       });
       setCreated(res);
     } catch (e) {
@@ -230,6 +239,28 @@ export function NewRequestForm() {
                 onChange={e => setNeedInDays(e.target.value === "" ? "" : Number(e.target.value))}
                 className="num w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-[15px] text-bone focus:border-signal focus:outline-none"
               />
+            </div>
+          </div>
+
+          {/* Priority */}
+          <div>
+            <label className="label mb-1.5 block text-bone">Priority</label>
+            <div className="grid grid-cols-3 gap-2">
+              {PRIORITY_OPTIONS.map(o => (
+                <button
+                  type="button"
+                  key={o.id}
+                  onClick={() => setPriority(o.id)}
+                  className={`rounded-lg border p-2.5 text-center transition-all ${
+                    priority === o.id
+                      ? "border-signal bg-signal/10 text-bone ring-1 ring-signal/40"
+                      : "border-line bg-raised text-muted hover:text-bone"
+                  }`}
+                >
+                  <span className="block text-[13px] font-medium">{o.label}</span>
+                  <span className="block text-[11px] text-muted">{o.hint}</span>
+                </button>
+              ))}
             </div>
           </div>
 

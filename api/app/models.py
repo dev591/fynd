@@ -101,12 +101,19 @@ class EvaluatedRow(BaseModel):
     fill_qty: int | None = None  # units the seller can actually cover when below the need
 
 
+PriorityMode = Literal["cheapest", "fastest", "balanced"]
+RequestSource = Literal["form", "chat", "voice"]
+
+
 class CompareResult(BaseModel):
     rows: list[EvaluatedRow]
     pool: list[EvaluatedRow]
     winner: EvaluatedRow | None
     tie: bool
     cheaper_excluded: list[EvaluatedRow]
+    mode: PriorityMode = "cheapest"
+    # Winner under every mode, so the trade-off is visible.
+    winners: dict[str, EvaluatedRow | None] = Field(default_factory=dict)
 
 
 # RFQ Lifecycle Models
@@ -119,6 +126,8 @@ class RFQCreate(BaseModel):
     buyer_city: str = "Pune"
     buyer_state: str = "Maharashtra"
     note: str | None = None
+    priority_mode: PriorityMode = "cheapest"
+    source: RequestSource = "form"
 
 
 class RFQ(BaseModel):
@@ -135,6 +144,8 @@ class RFQ(BaseModel):
     created_at: str
     status: Literal["Open", "Decided", "Closed"] = "Open"
     decision: dict | None = None
+    priority_mode: PriorityMode = "cheapest"
+    source: RequestSource = "form"
     supplier_tokens: dict[str, str] = Field(default_factory=dict)  # supplier_id -> token
 
 

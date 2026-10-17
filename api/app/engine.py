@@ -1,4 +1,4 @@
-import hashlib, json, math
+import hashlib, json, math, os
 from typing import Dict, List, Optional
 from .models import (
     Quote,
@@ -8,6 +8,17 @@ from .models import (
     EvaluatedRow,
     CompareResult,
 )
+
+
+MODES = ("cheapest", "fastest", "balanced")
+
+
+def balanced_threshold() -> float:
+    """Share above the lowest landed cost that balanced mode will pay to arrive sooner. Our assumption."""
+    try:
+        return float(os.environ.get("BALANCED_THRESHOLD", "0.05"))
+    except ValueError:
+        return 0.05
 
 
 def order(q: Quote, qty: int) -> Optional[OrderCalc]:
@@ -24,10 +35,39 @@ def is_valid_exception(e: Optional[ExceptionRecord]) -> bool:
     return bool(e and len(e.reason.strip()) > 0 and len(e.approver.strip()) > 0)
 
 
+def rank_key(r: EvaluatedRow):
+    """Cheapest landed wins; ties break on shorter lead time, then less overbuy."""
+    return (r.landed if r.landed is not None else float("inf"), r.lead_days, r.overbuy)
+
+
+def fastest_key(r: EvaluatedRow):
+    """Shortest lead time wins; ties go to the cheaper landed cost."""
+    return (r.lead_days, r.landed if r.landed is not None else float("inf"), r.overbuy)
+
+
+def mode_key(mode: str):
+    return fastest_key if mode == "fastest" else rank_key
+
+
+def rank_pool(pool: List[EvaluatedRow], mode: str, threshold: Optional[float] = None) -> List[EvaluatedRow]:
+    """Order the eligible pool for a mode. Unknown modes behave as cheapest."""
+    if mode == "fastest":
+        return sorted(pool, key=fastest_key)
+    ordered = sorted(pool, key=rank_key)
+    if mode == "balanced" and ordered and ordered[0].landed is not None:
+        t = balanced_threshold() if threshold is None else threshold
+        limit = ordered[0].landed * (1 + t)
+        near = sorted((r for r in ordered if r.landed is not None and r.landed <= limit), key=fastest_key)
+        return near + [r for r in ordered if r not in near]
+    return ordered
+
+
 def evaluate(
     quotes: List[Quote],
     need: Need,
     exceptions: Optional[Dict[str, ExceptionRecord]] = None,
+    mode: str = "cheapest",
+    threshold: Optional[float] = None,
 ) -> CompareResult:
     if exceptions is None:
         exceptions = {}
@@ -98,15 +138,13 @@ def evaluate(
             )
         )
 
-    # Rank function: cheapest landed wins; ties break on shorter lead time, then less overbuy
-    def rank_key(r: EvaluatedRow):
-        return (r.landed if r.landed is not None else float("inf"), r.lead_days, r.overbuy)
-
-    pool = [r for r in rows if r.status == "eligible" or r.approved]
-    pool.sort(key=rank_key)
+    eligible = [r for r in rows if r.status == "eligible" or r.approved]
+    pool = rank_pool(eligible, mode, threshold)
+    winners = {m: (rank_pool(eligible, m, threshold) or [None])[0] for m in MODES}
 
     winner = pool[0] if pool else None
-    tie = len(pool) > 1 and rank_key(pool[0]) == rank_key(pool[1])
+    key = mode_key(mode)
+    tie = len(pool) > 1 and key(pool[0]) == key(pool[1])
 
     cheaper_excluded = []
     if winner and winner.landed is not None:
@@ -120,6 +158,8 @@ def evaluate(
         winner=winner,
         tie=tie,
         cheaper_excluded=cheaper_excluded,
+        mode=mode if mode in MODES else "cheapest",
+        winners=winners,
     )
 
 

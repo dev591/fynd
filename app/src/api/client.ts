@@ -132,7 +132,11 @@ export interface RFQCreatePayload {
   buyer_city: string;
   buyer_state: string;
   note?: string;
+  priority_mode?: PriorityMode;
+  source?: "form" | "chat" | "voice";
 }
+
+export type PriorityMode = "cheapest" | "fastest" | "balanced";
 
 export interface QuoteVersionDTO {
   version: number;
@@ -177,6 +181,8 @@ export interface RFQDTO {
   created_at: string;
   status: "Open" | "Decided" | "Closed";
   decision?: Record<string, unknown> | null;
+  priority_mode?: PriorityMode;
+  source?: "form" | "chat" | "voice";
   supplier_tokens: Record<string, string>;
 }
 

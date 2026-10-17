@@ -139,11 +139,12 @@ class CompareIn(BaseModel):
     quotes: List[Quote]
     need: Need
     exceptions: Optional[dict[str, ExceptionRecord]] = None
+    mode: str = "cheapest"
 
 
 @app.post("/api/compare", response_model=CompareResult)
 def compare_quotes(payload: CompareIn):
-    return evaluate(payload.quotes, payload.need, payload.exceptions)
+    return evaluate(payload.quotes, payload.need, payload.exceptions, payload.mode)
 
 
 @app.get("/api/case-checks")
@@ -194,7 +195,7 @@ def get_rfq_details(rfq_id: str):
     evaluation = None
     if engine_quotes:
         need = Need(item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days)
-        evaluation = evaluate(engine_quotes, need)
+        evaluation = evaluate(engine_quotes, need, mode=rfq.priority_mode)
 
     return {
         "rfq": rfq,

@@ -26,6 +26,10 @@ export type Quote = {
 
 export type Need = { item: string; qty: number; needInDays: number }
 export type Exception = { reason: string; approver: string }
+export type Mode = 'cheapest' | 'fastest' | 'balanced'
+export const MODES: Mode[] = ['cheapest', 'fastest', 'balanced']
+/** Our assumption: balanced pays up to 5% over the lowest landed cost to arrive sooner. */
+export const BALANCED_THRESHOLD = 0.05
 export type Status = 'eligible' | 'exception' | 'blocked'
 
 export type Row = {
@@ -63,7 +67,28 @@ const blocked = (quote: Quote, reason: string): Row => ({
 const rank = (a: Row, b: Row) =>
   a.landed! - b.landed! || a.quote.leadDays - b.quote.leadDays || a.overbuy - b.overbuy
 
-export function evaluate(quotes: Quote[], need: Need, exceptions: Record<string, Exception> = {}) {
+const fastRank = (a: Row, b: Row) =>
+  a.quote.leadDays - b.quote.leadDays || a.landed! - b.landed! || a.overbuy - b.overbuy
+
+/** Order the eligible pool for a mode. */
+export function rankPool(pool: Row[], mode: Mode, threshold = BALANCED_THRESHOLD): Row[] {
+  if (mode === 'fastest') return [...pool].sort(fastRank)
+  const ordered = [...pool].sort(rank)
+  if (mode === 'balanced' && ordered.length) {
+    const limit = ordered[0].landed! * (1 + threshold)
+    const near = ordered.filter((r) => r.landed! <= limit).sort(fastRank)
+    return [...near, ...ordered.filter((r) => !near.includes(r))]
+  }
+  return ordered
+}
+
+export function evaluate(
+  quotes: Quote[],
+  need: Need,
+  exceptions: Record<string, Exception> = {},
+  mode: Mode = 'cheapest',
+  threshold = BALANCED_THRESHOLD,
+) {
   const rows: Row[] = quotes.map((q) => {
     if (q.item !== need.item) return blocked(q, 'different item')
     const short = q.maxQty !== undefined && q.maxQty < need.qty
@@ -83,13 +108,31 @@ export function evaluate(quotes: Quote[], need: Need, exceptions: Record<string,
       ...o,
     }
   })
-  const pool = rows.filter((r) => r.status === 'eligible' || r.approved).sort(rank)
+  const eligible = rows.filter((r) => r.status === 'eligible' || r.approved)
+  const pool = rankPool(eligible, mode, threshold)
+  const winners = Object.fromEntries(
+    MODES.map((m) => [m, rankPool(eligible, m, threshold)[0] ?? null]),
+  ) as Record<Mode, Row | null>
   const winner = pool[0] ?? null
-  const tie = pool.length > 1 && rank(pool[0], pool[1]) === 0
+  const cmp = mode === 'fastest' ? fastRank : rank
+  const tie = pool.length > 1 && cmp(pool[0], pool[1]) === 0
   const cheaperExcluded = winner
     ? rows.filter((r) => !pool.includes(r) && r.landed !== null && r.landed < winner.landed!)
     : []
-  return { rows, pool, winner, tie, cheaperExcluded }
+  return { rows, pool, winner, tie, cheaperExcluded, mode, winners }
+}
+
+/** One line on what a mode costs against the cheapest pick. Numbers come from the engine rows. */
+export function giveUp(mode: Mode, winners: Record<Mode, Row | null>): string | null {
+  const base = winners.cheapest
+  const w = winners[mode]
+  if (!base || !w) return null
+  if (mode === 'cheapest') return 'Lowest landed cost. Nothing given up on price.'
+  if (w.quote.id === base.quote.id) return 'Same supplier as the cheapest pick. Nothing given up.'
+  const extra = Math.round(w.landed! - base.landed!)
+  const days = base.quote.leadDays - w.quote.leadDays
+  const when = days > 0 ? `arrives ${days} day${days === 1 ? '' : 's'} earlier` : 'arrives no earlier'
+  return `${mode === 'fastest' ? 'Fastest' : 'Balanced'} costs ${inr(extra)} more and ${when}.`
 }
 
 /** What a losing quote must cut to win this order: freight alone if that is enough, and per unit. */

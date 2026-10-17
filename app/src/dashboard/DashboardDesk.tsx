@@ -5,7 +5,7 @@ import {
   TrendingDown, Target, ExternalLink, MessageSquare, Check,
   Save, Lock, X,
 } from "lucide-react";
-import { evaluate, inr, negotiation, type Quote } from "../landing/engine";
+import { evaluate, giveUp, inr, MODES, negotiation, type Mode, type Quote } from "../landing/engine";
 import { CostChart } from "../landing/CostChart";
 import { QtyControl } from "../landing/QtyControl";
 import { SupplierChat } from "../supplier/components/SupplierChat";
@@ -31,6 +31,7 @@ export function DashboardDesk() {
 
   const [qty, setQty] = useState<number>(100);
   const [sheetMode, setSheetMode] = useState(false);
+  const [mode, setMode] = useState<Mode>("cheapest");
   const [chatSupplierId, setChatSupplierId] = useState<string | null>(null);
   const [targetSuccessId, setTargetSuccessId] = useState<string | null>(null);
   const [showDecisionModal, setShowDecisionModal] = useState(false);
@@ -47,6 +48,7 @@ export function DashboardDesk() {
     if (rfq && !qtyInitialized.current) {
       qtyInitialized.current = true;
       setQty(rfq.qty);
+      setMode((rfq.priority_mode as Mode) ?? "cheapest");
     }
   }, [rfq]);
 
@@ -59,8 +61,8 @@ export function DashboardDesk() {
   // Run the local engine at the slider quantity for instant feedback
   const evaluation = useMemo(() => {
     if (engineQuotes.length === 0 || !rfq) return null;
-    return evaluate(engineQuotes, { ...needFromRFQ(rfq), qty });
-  }, [engineQuotes, rfq, qty]);
+    return evaluate(engineQuotes, { ...needFromRFQ(rfq), qty }, {}, mode);
+  }, [engineQuotes, rfq, qty, mode]);
 
   const winner = evaluation?.winner ?? null;
 
@@ -258,6 +260,34 @@ export function DashboardDesk() {
                 </button>
               </div>
 
+              {/* Priority mode switch: winner under every mode, numbers from the engine */}
+              <div className="rounded-xl border border-line bg-raised/30 p-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="label text-muted">Priority</span>
+                  {MODES.map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMode(m)}
+                      className={`rounded-full border px-3 py-1 text-[12px] font-medium capitalize transition-all ${
+                        mode === m ? "border-signal bg-signal/15 text-signal" : "border-line bg-surface text-muted hover:text-bone"
+                      }`}
+                    >
+                      {m}
+                      <span className="ml-1.5 text-[11px] font-normal text-muted">
+                        {evaluation.winners[m]?.quote.supplier ?? "none"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {giveUp(mode, evaluation.winners) && (
+                  <p className="text-[12px] text-muted">{giveUp(mode, evaluation.winners)}</p>
+                )}
+                {mode === "balanced" && (
+                  <p className="text-[11px] text-muted/80">Balanced pays up to 5% over the lowest landed cost to arrive sooner. The 5% is our assumption.</p>
+                )}
+              </div>
+
               <div className="space-y-3">
                 {evaluation.rows.map((row) => {
                   const isWin = winner?.quote.id === row.quote.id;
@@ -288,7 +318,7 @@ export function DashboardDesk() {
                             )}
                             {isWin && (
                               <span className="rounded-full bg-signal px-2 py-0.5 text-[10px] font-bold text-ink uppercase tracking-wide">
-                                Winner · Lowest Landed
+                                Winner · {mode === "cheapest" ? "Lowest Landed" : mode === "fastest" ? "Fastest" : "Balanced"}
                               </span>
                             )}
                             {isLate && (
@@ -573,7 +603,7 @@ function SaveDecisionModal({
   const [winnerId, setWinnerId] = useState(evaluation.winner?.quote.id || "");
   const [reason, setReason] = useState(
     evaluation.winner
-      ? `Lowest landed cost at ${inr(evaluation.winner.landed!)}. ${evaluation.winner.quote.supplier} wins on total cost of ownership.`
+      ? `${evaluation.mode === "cheapest" ? "Lowest landed cost" : evaluation.mode === "fastest" ? "Fastest delivery" : "Best balance of cost and speed"} at ${inr(evaluation.winner.landed!)}. ${evaluation.winner.quote.supplier} wins.`
       : ""
   );
   const [approver, setApprover] = useState(buyerName);

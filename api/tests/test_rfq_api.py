@@ -304,3 +304,31 @@ def test_catalog_stock_caps_quote_in_compare():
     row = next(r for r in ev["rows"] if r["quote_id"] == "A")
     assert row["status"] == "exception"
     assert row["fill_qty"] == 60
+
+
+def test_rfq_priority_mode_and_source_roundtrip():
+    rfq = client.post("/api/rfqs", json={
+        "item": "M10 bolt", "qty": 100, "need_in_days": 5,
+        "buyer_company": "Co", "buyer_name": "Buyer",
+        "priority_mode": "fastest", "source": "chat",
+    }).json()
+    assert rfq["rfq"]["priority_mode"] == "fastest" and rfq["rfq"]["source"] == "chat"
+    default = client.post("/api/rfqs", json={
+        "item": "M10 bolt", "qty": 1, "need_in_days": 5,
+        "buyer_company": "Co", "buyer_name": "Buyer",
+    }).json()
+    assert default["rfq"]["priority_mode"] == "cheapest" and default["rfq"]["source"] == "form"
+
+
+def test_compare_endpoint_returns_winner_per_mode():
+    body = {
+        "quotes": [
+            {"id": "A", "supplier": "A", "item": "M10 bolt", "pack_price": 10, "pack_size": 1, "freight": 0, "lead_days": 5},
+            {"id": "C", "supplier": "C", "item": "M10 bolt", "pack_price": 12, "pack_size": 1, "freight": 0, "lead_days": 1},
+        ],
+        "need": {"item": "M10 bolt", "qty": 100, "need_in_days": 5},
+        "mode": "fastest",
+    }
+    res = client.post("/api/compare", json=body).json()
+    assert res["winner"]["quote_id"] == "C"
+    assert res["winners"]["cheapest"]["quote_id"] == "A"

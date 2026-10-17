@@ -145,6 +145,7 @@ class RFQStore:
             buyer_city=payload.buyer_city, buyer_state=payload.buyer_state,
             note=payload.note, created_at=datetime.now().isoformat(),
             status="Open", supplier_tokens=tokens,
+            priority_mode=payload.priority_mode, source=payload.source,
         )
         self.rfqs[rfq_id] = rfq
         self.quotes[rfq_id] = {}

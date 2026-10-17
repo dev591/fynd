@@ -87,3 +87,41 @@ def test_no_max_qty_keeps_default_behaviour():
     q = Quote(id="A", supplier="A", item="M10 bolt", pack_price=10.0, pack_size=1, freight=200.0, lead_days=3)
     row = evaluate([q], need).rows[0]
     assert row.status == "eligible" and row.fill_qty is None
+
+
+def _mode_quotes():
+    # A cheapest but slow, B 4% dearer and faster, C 20% dearer and fastest
+    mk = lambda i, price, lead: Quote(id=i, supplier=i, item="M10 bolt", pack_price=price,
+                                      pack_size=1, freight=0.0, lead_days=lead)
+    return [mk("A", 10.0, 5), mk("B", 10.4, 3), mk("C", 12.0, 1)]
+
+
+def test_priority_modes_pick_different_winners():
+    need = Need(item="M10 bolt", qty=100, need_in_days=5)
+    res = evaluate(_mode_quotes(), need)
+    assert res.mode == "cheapest" and res.winner.quote_id == "A"
+    assert {m: w.quote_id for m, w in res.winners.items()} == {
+        "cheapest": "A", "fastest": "C", "balanced": "B",
+    }
+    assert evaluate(_mode_quotes(), need, mode="fastest").winner.quote_id == "C"
+    assert evaluate(_mode_quotes(), need, mode="balanced").winner.quote_id == "B"
+
+
+def test_balanced_threshold_is_a_setting():
+    need = Need(item="M10 bolt", qty=100, need_in_days=5)
+    assert evaluate(_mode_quotes(), need, mode="balanced", threshold=0.01).winner.quote_id == "A"
+    assert evaluate(_mode_quotes(), need, mode="balanced", threshold=0.25).winner.quote_id == "C"
+
+
+def test_fastest_tie_goes_to_cheaper():
+    need = Need(item="M10 bolt", qty=100, need_in_days=5)
+    mk = lambda i, price: Quote(id=i, supplier=i, item="M10 bolt", pack_price=price,
+                                pack_size=1, freight=0.0, lead_days=2)
+    assert evaluate([mk("X", 12.0), mk("Y", 11.0)], need, mode="fastest").winner.quote_id == "Y"
+
+
+def test_unknown_mode_falls_back_to_cheapest_and_late_never_wins():
+    need = Need(item="M10 bolt", qty=100, need_in_days=2)
+    res = evaluate(_mode_quotes(), need, mode="nonsense")
+    assert res.mode == "cheapest" and res.winner.quote_id == "C"  # A, B arrive too late
+    assert all(w is None or w.quote_id == "C" for w in res.winners.values())
