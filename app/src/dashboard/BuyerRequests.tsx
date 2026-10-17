@@ -1,12 +1,14 @@
 import { Link } from "react-router-dom";
 import { Plus, ArrowRight, Package, AlertTriangle, Building2 } from "lucide-react";
 import { useApiPoll } from "../lib/useApi";
-import { getRFQs, type RFQDTO } from "../api/client";
+import { getRFQs, getSavings, type RFQDTO } from "../api/client";
 
 export function BuyerRequests() {
   const { data: rfqs, loading, error } = useApiPoll<RFQDTO[]>(
     () => getRFQs(), 3000, [],
   );
+
+  const { data: savings } = useApiPoll(() => getSavings(), 5000, []);
 
   return (
     <div className="landing grain min-h-screen bg-ink text-bone pb-16">
@@ -45,6 +47,14 @@ export function BuyerRequests() {
             </Link>
           </div>
         </div>
+
+        {savings && savings.decided_count > 0 && (
+          <div className="rounded-xl border border-success/30 bg-success/10 px-4 py-2.5 text-[13px] text-bone">
+            Saved <strong className="num text-success">₹{Math.round(savings.total).toLocaleString("en-IN")}</strong> versus
+            spreadsheet picks across {savings.decided_count} decided request{savings.decided_count === 1 ? "" : "s"}
+            <span className="text-muted"> ({savings.label})</span>
+          </div>
+        )}
 
         {/* States */}
         {loading && !rfqs ? (

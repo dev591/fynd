@@ -47,6 +47,7 @@ class RFQStore:
         self.supplier_products: Dict[str, List[SupplierProduct]] = {}
         self.chats: Dict[str, Dict[str, List[ChatMessage]]] = {}
         self.notifications: Dict[str, List[Notification]] = {}  # supplier_id -> inbox
+        self.shares: Dict[str, str] = {}  # unguessable share token -> rfq_id, created only by an explicit click
         self.assists: Dict[str, dict] = {}  # token -> the draft and wording issued, to label quote origin
         self.ai_log: List[dict] = []  # every AI input and output, linked to the request once confirmed
 
@@ -279,6 +280,14 @@ class RFQStore:
             return None
         prod = next((p for p in self.supplier_products.get(n.supplier_id, []) if p.id == n.product_id), None)
         return draft_quote(rfq, prod) if prod else None
+
+    def create_share(self, rfq_id: str) -> str:
+        for tok, rid in self.shares.items():
+            if rid == rfq_id:
+                return tok
+        tok = "shr_" + uuid.uuid4().hex
+        self.shares[tok] = rfq_id
+        return tok
 
     def has_pending_target(self, token: str) -> bool:
         """True while a buyer's target awaits a human answer. Autopilot must not quote while this holds."""

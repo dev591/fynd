@@ -5,6 +5,7 @@ import { LoginWizard } from './wizard/LoginWizard'
 import { BuyerRequests } from './dashboard/BuyerRequests'
 import { NewRequestForm } from './dashboard/NewRequestForm'
 import { DashboardDesk } from './dashboard/DashboardDesk'
+import { DecisionOnePager } from './dashboard/DecisionOnePager'
 import { SupplierDashboard } from './supplier/SupplierDashboard'
 import { SupplierQuotePage } from './supplier/SupplierQuotePage'
 
@@ -20,6 +21,8 @@ export default function App() {
         <Route path="/app" element={<BuyerRequests />} />
         <Route path="/app/new" element={<NewRequestForm />} />
         <Route path="/app/compare/:rfqId" element={<DashboardDesk />} />
+        <Route path="/app/decision/:rfqId" element={<DecisionOnePager />} />
+        <Route path="/share/:token" element={<DecisionOnePager shared />} />
 
         {/* Supplier dashboard */}
         <Route path="/supplier" element={<SupplierDashboard />} />

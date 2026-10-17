@@ -44,6 +44,11 @@
   --text-section: clamp(1.5rem, 3vw, 2.25rem);
 }
 
+@media print {
+  .grain::before, .grain::after { display: none !important; }
+  .onepager { background: #fff; }
+}
+
 html { background: var(--color-ink); color: var(--color-bone); }
 body { font-family: var(--font-sans); font-size: 14px; line-height: 1.5; margin: 0; }
 .landing { font-size: 18px; line-height: 1.6; }

@@ -14,8 +14,8 @@ import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
 import {
   getRFQDetails, sendTarget, lockDecision,
   getChatMessages, postChatMessage,
-  getSupplierProfileForBuyer,
-  type RFQDetailsDTO, type ChatMessageDTO, type SupplierProfileDTO,
+  getSupplierProfileForBuyer, getSummary,
+  type RFQDetailsDTO, type ChatMessageDTO, type SupplierProfileDTO, type SummaryDTO,
 } from "../api/client";
 import { VerifiedBadge } from "../supplier/components/VerifiedBadge";
 
@@ -73,6 +73,13 @@ export function DashboardDesk() {
     () => chatSupplierId ? getChatMessages(rfqId || "rfq_c27_01", chatSupplierId) : Promise.resolve([]),
     2000,
     [chatSupplierId, rfqId],
+  );
+
+  // Savings vs the spreadsheet pick, only once a person has saved the decision
+  const decidedNow = details?.rfq.status === "Decided" || decisionSaved;
+  const { data: summary } = useApiOnce<SummaryDTO | null>(
+    () => decidedNow ? getSummary(rfqId || "rfq_c27_01") : Promise.resolve(null),
+    [decidedNow, rfqId],
   );
 
   // Supplier profile (click-through)
@@ -573,6 +580,17 @@ export function DashboardDesk() {
                   <p>Reason: <span className="text-bone">{rfq.decision.reason as string}</span></p>
                   <p>Approver: <span className="text-bone">{rfq.decision.approver as string}</span></p>
                 </div>
+                {summary?.savings && (
+                  <p className="text-[13px] text-bone">
+                    Spreadsheet pick: {summary.savings.spreadsheet_pick} at {inr(summary.savings.spreadsheet_landed)}.
+                    Crossover pick: {summary.savings.crossover_pick} at {inr(summary.savings.crossover_landed)}.
+                    Difference: <strong className="num text-signal">{inr(summary.savings.difference)}</strong>
+                    <span className="text-muted"> ({summary.savings.label})</span>
+                  </p>
+                )}
+                <Link to={`/app/decision/${rfq.id}`} className="inline-block rounded-full border border-success/40 px-3 py-1 text-[12px] font-medium text-success hover:bg-success/10">
+                  Open decision one-pager
+                </Link>
               </div>
             )}
 

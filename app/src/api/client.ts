@@ -296,6 +296,63 @@ export async function confirmRFQ(payload: ConfirmPayload): Promise<RFQCreateResp
   return apiFetch("/api/rfqs/confirm", { method: "POST", body: JSON.stringify(payload) });
 }
 
+// ─── Decision one-pager, savings, share ───────────────────────────────────
+
+export interface SummaryRowDTO {
+  quote_id: string;
+  supplier: string;
+  status: "eligible" | "exception" | "blocked";
+  reason: string | null;
+  approved: boolean;
+  landed: number | null;
+  lead_days: number;
+  packs: number;
+  units: number;
+  overbuy: number;
+  freight: number;
+  fill_qty: number | null;
+}
+
+export interface SummaryDTO {
+  rfq: {
+    id: string; item: string; qty: number; need_in_days: number; buyer_company: string; buyer_name: string;
+    priority_mode: PriorityMode; source: string; status: string; created_at: string;
+  };
+  decided: boolean;
+  decision: { winner_id: string; reason: string; approver: string; decided_at: string } | null;
+  pick: SummaryRowDTO | null;
+  engine_winner: SummaryRowDTO | null;
+  overrode_engine: boolean;
+  winners_by_mode: Record<string, SummaryRowDTO | null>;
+  rows: SummaryRowDTO[];
+  cheaper_excluded: SummaryRowDTO[];
+  reasons: string[];
+  explainer: { text: string; source: "ai" | "engine"; discarded_reason: string | null } | null;
+  savings: {
+    spreadsheet_pick: string; spreadsheet_landed: number; crossover_pick: string;
+    crossover_landed: number; difference: number; label: string;
+  } | null;
+  fingerprint: string;
+  ai_calls: Array<{ request_id: string; kind: string; at: string }>;
+  synthetic_note: string;
+}
+
+export async function getSummary(rfqId: string): Promise<SummaryDTO> {
+  return apiFetch(`/api/rfqs/${rfqId}/summary`);
+}
+
+export async function getSharedSummary(token: string): Promise<SummaryDTO> {
+  return apiFetch(`/api/share/${token}`);
+}
+
+export async function createShareLink(rfqId: string): Promise<{ token: string; url: string }> {
+  return apiFetch(`/api/rfqs/${rfqId}/share`, { method: "POST" });
+}
+
+export async function getSavings(): Promise<{ total: number; decided_count: number; label: string }> {
+  return apiFetch("/api/savings");
+}
+
 // ─── Negotiation Targets ──────────────────────────────────────────────────
 
 export interface TargetPayload {

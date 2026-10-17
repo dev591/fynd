@@ -40,6 +40,7 @@ from .models import (
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
 from . import ai, assistant
+from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
 
@@ -217,6 +218,40 @@ def confirm_rfq(payload: ConfirmIn):
     if payload.intake_id:
         store.link_ai_log(payload.intake_id, rfq.id)
     return _rfq_response(rfq)
+
+
+@app.get("/api/rfqs/{rfq_id}/summary")
+def rfq_summary(rfq_id: str):
+    s = build_summary(store, rfq_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="RFQ not found.")
+    return s
+
+
+@app.post("/api/rfqs/{rfq_id}/share")
+def share_rfq(rfq_id: str):
+    """Explicit click only. The link is read-only, unguessable, and shows every quote price."""
+    rfq = store.get_rfq(rfq_id)
+    if not rfq:
+        raise HTTPException(status_code=404, detail="RFQ not found.")
+    if not rfq.decision:
+        raise HTTPException(status_code=409, detail="Save the decision before sharing the one-pager.")
+    tok = store.create_share(rfq_id)
+    return {"token": tok, "url": f"/share/{tok}"}
+
+
+@app.get("/api/share/{token}")
+def shared_summary(token: str):
+    rid = store.shares.get(token)
+    s = build_summary(store, rid) if rid else None
+    if not s:
+        raise HTTPException(status_code=404, detail="This link isn't valid.")
+    return s
+
+
+@app.get("/api/savings")
+def savings():
+    return savings_total(store)
 
 
 @app.get("/api/rfqs/{rfq_id}/ai-log")
