@@ -21,7 +21,7 @@ from .models import (
     AutopilotSettings,
 )
 from .engine import order
-from .intake import singular
+from .intake import item_key
 from .assistant import template_message
 from .matching import draft_quote, matching_product, normalise_item, verdict_for
 
@@ -217,7 +217,7 @@ class RFQStore:
             for p in prods:
                 for n in [*p.aliases, p.name]:
                     if n.strip():
-                        names.setdefault(" ".join(singular(t) for t in normalise_item(n).split()), n.strip())
+                        names.setdefault(item_key(n), n.strip())
         return names
 
     def log_ai(self, kind: str, request_id: str, inp: dict, out: dict) -> None:

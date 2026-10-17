@@ -201,3 +201,23 @@ def test_env_file_loader(tmp_path, monkeypatch):
     assert os.environ["KEEP"] == "shell"                     # real environment wins
     for k in ("MODEL_INTAKE", "ELEVENLABS_STT_MODEL"):
         monkeypatch.delenv(k, raising=False)
+
+
+def test_item_snap_ignores_word_order_and_plurals():
+    names = store.catalog_names()
+    assert intake.snap_item("copper wire 1.5mm", names) == ("1.5mm copper wire", True)
+    assert intake.snap_item("M10 bolts", names)[1] is True
+    assert intake.snap_item("titanium widgets", names) == ("titanium widgets", False)
+
+
+def test_quantity_phrase_is_read_in_code_when_model_leaves_quantity_empty():
+    names = store.catalog_names()
+    raw = {**GOLD["cases"][0]["raw"], "quantity": None, "quantity_phrase": "2 hazaar"}
+    assert build_draft("Looking for 2 hazaar M10 bolts in 5 days", raw, names, TODAY)["draft"]["qty"] == 2000
+    raw = {**raw, "quantity_phrase": "a dozen"}
+    assert build_draft("need a dozen M10 bolts in 5 days", raw, names, TODAY)["draft"]["qty"] == 12
+    # vague or unsupported phrases never become a number
+    raw = {**raw, "quantity_phrase": "a lot"}
+    assert build_draft("need a lot of M10 bolts in 5 days", raw, names, TODAY)["draft"]["qty"] is None
+    raw = {**raw, "quantity_phrase": "5000 pieces"}
+    assert build_draft("need M10 bolts in 5 days", raw, names, TODAY)["draft"]["qty"] is None

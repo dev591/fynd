@@ -15,6 +15,8 @@ SYSTEM = (
     "Copy values exactly as stated. If a value was not stated, return null. Never guess, convert, or infer "
     "a quantity, an item or a date. need_in_days is set only when the buyer said a number of days; "
     "otherwise put the buyer's own words for the deadline (for example 'by Friday') in need_by_phrase. "
+    "quantity is an integer only when the buyer gave a plain number; always also copy the buyer's own words for the "
+    "amount (for example '2 hazaar' or 'a dozen') into quantity_phrase, or null if no amount was said. "
     "If the buyer names more than one item, return the first in item and list the rest in other_items. "
     "priority is cheapest, fastest or balanced only if the buyer clearly asked for it."
 )
@@ -22,10 +24,11 @@ SYSTEM = (
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["item", "quantity", "need_in_days", "need_by_phrase", "priority", "note", "other_items"],
+    "required": ["item", "quantity", "quantity_phrase", "need_in_days", "need_by_phrase", "priority", "note", "other_items"],
     "properties": {
         "item": {"type": ["string", "null"]},
         "quantity": {"type": ["integer", "null"]},
+        "quantity_phrase": {"type": ["string", "null"]},
         "need_in_days": {"type": ["integer", "null"]},
         "need_by_phrase": {"type": ["string", "null"]},
         "priority": {"type": ["string", "null"], "enum": ["cheapest", "fastest", "balanced", None]},
@@ -69,7 +72,12 @@ def numbers_in_text(text: str) -> set[int]:
         found.add(int(base * mult))
     words = re.findall(r"[a-z]+|\d+", low)
     total, current, seen = 0, 0, False
+    prev = ""
     for w in words + ["#"]:
+        if w in _MULT and prev.isdigit():
+            prev = w        # '2 hazaar' was already counted as 2000 by the digit pass above
+            continue
+        prev = w
         if w in _WORDS:
             current += _WORDS[w]; seen = True
         elif w in _MULT:
@@ -117,10 +125,14 @@ def resolve_need_days(phrase: str, today: Optional[date] = None) -> Optional[int
     return None
 
 
+def item_key(name: str) -> str:
+    """Plural- and word-order-insensitive key: 'copper wire 1.5mm' and '1.5mm copper wire' are the same item."""
+    return " ".join(sorted(singular(t) for t in _tokens(name)))
+
+
 def snap_item(item: str, catalog_names: dict[str, str]) -> tuple[str, bool]:
-    """Use the catalog's own spelling when the item matches a name or alias (plural-insensitive)."""
-    key = " ".join(singular(t) for t in _tokens(item))
-    hit = catalog_names.get(key)
+    """Use the catalog's own spelling when the item matches a name or alias."""
+    hit = catalog_names.get(item_key(item))
     return (hit, True) if hit else (item.strip(), False)
 
 
@@ -150,6 +162,13 @@ def build_draft(text: str, raw: Optional[dict[str, Any]], catalog_names: dict[st
             draft["qty"] = qty
         else:
             warnings.append("Dropped a quantity the buyer did not say.")
+
+    # The model left the amount empty but quoted the buyer's words ('2 hazaar', 'a dozen'): read them in code.
+    qphrase = (raw.get("quantity_phrase") or "").strip()
+    if draft["qty"] is None and qphrase and qphrase.lower() in low:
+        nums = {n for n in numbers_in_text(qphrase) if n > 0}
+        if len(nums) == 1:
+            draft["qty"] = nums.pop()
 
     days = raw.get("need_in_days")
     if isinstance(days, int) and days > 0:

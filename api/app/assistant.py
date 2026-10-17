@@ -15,7 +15,7 @@ from .models import DraftQuote, Quote, RFQ, SupplierProduct
 
 REPLY_SYSTEM = (
     "You write two or three short, plain sentences a seller will send a buyer alongside a quote. "
-    "Use only the facts given. Copy every number exactly as given. Do not add any other number, "
+    "Use only the facts given. Copy every number exactly as given and write money with the ₹ symbol. Do not add any other number, "
     "discount, guarantee, date or promise. Do not mention stock unless the facts say it is short."
 )
 REPLY_SCHEMA = {
@@ -65,7 +65,16 @@ def landed_for(rfq: RFQ, draft: DraftQuote) -> float | None:
     return o.landed if o else None
 
 
+def tidy(v: Any) -> Any:
+    """Whole floats as ints (10, not 10.0) so the model writes numbers the way people do."""
+    return int(v) if isinstance(v, float) and v.is_integer() else v
+
+
 def facts_for(rfq: RFQ, draft: DraftQuote) -> dict[str, Any]:
+    return {k: tidy(v) for k, v in _facts(rfq, draft).items()}
+
+
+def _facts(rfq: RFQ, draft: DraftQuote) -> dict[str, Any]:
     landed = landed_for(rfq, draft)
     covered = min(rfq.qty, draft.max_qty) if draft.max_qty else rfq.qty
     return {

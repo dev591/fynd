@@ -14,7 +14,7 @@ from .models import EvaluatedRow, Need, RFQ
 EXPLAIN_SYSTEM = (
     "You explain, in two or three plain sentences, why one supplier was chosen for a purchase. "
     "The winner is already decided by rules; never change it or suggest another. Use only the facts given. "
-    "Copy numbers exactly. Do not add any other number, discount or promise."
+    "Copy numbers exactly and write money with the ₹ symbol. Do not add any other number, discount or promise."
 )
 EXPLAIN_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["text"],
@@ -107,6 +107,7 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True) -> Optional[d
             "excluded": [{"supplier": r.supplier, "reason": r.reason} for r in ev.rows if r.status != "eligible"],
             "savings_vs_spreadsheet": savings["difference"] if savings else None,
         }
+        facts = {k: (int(v) if isinstance(v, float) and v.is_integer() else v) for k, v in facts.items()}
         allowed = {float(v) for v in facts.values() if isinstance(v, (int, float)) and not isinstance(v, bool)}
         for e in facts["excluded"]:
             from .assistant import numbers_used
