@@ -344,8 +344,9 @@ export function DashboardDesk() {
                               </span>
                             )}
                             {versions[latestVer - 1]?.origin && versions[latestVer - 1].origin !== "manual" && (
-                              <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] font-medium text-muted" title="Wording drafted by the seller's assistant; numbers are from their catalog">
-                                {versions[latestVer - 1].origin === "ai_draft_sent" ? "assistant draft" : "assistant draft, edited"}
+                              <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] font-medium text-muted" title="Numbers come from the seller's own catalog. Auto quotes were sent without a person reviewing them.">
+                                {versions[latestVer - 1].origin === "auto" ? "auto · seller autopilot, not reviewed"
+                                  : versions[latestVer - 1].origin === "ai_draft_sent" ? "assistant draft" : "assistant draft, edited"}
                               </span>
                             )}
                             {isWin && (

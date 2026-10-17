@@ -137,6 +137,8 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True) -> Optional[d
         "fingerprint": fingerprint({"need": need.model_dump(), "mode": rfq.priority_mode,
                                     "quotes": [q.model_dump() for q in quotes]}),
         "ai_calls": (decision or {}).get("ai_calls", []),
+        # Suppliers whose current quote was sent by their autopilot, with no person reviewing it.
+        "auto_quotes": [v[-1].supplier_name for v in store.quotes.get(rfq_id, {}).values() if v and v[-1].origin == "auto"],
         "synthetic_note": "Demo data is synthetic. Savings figures come from demo data.",
     }
 

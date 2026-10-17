@@ -10,7 +10,7 @@ import { useApiPoll, useApiOnce } from "../lib/useApi";
 import { useSupplierId } from "../lib/useSupplierId";
 import { computeStatus } from "./types";
 import {
-  getSellers, getNotifications, markNotificationViewed,
+  getSellers, getNotifications, markNotificationViewed, getAutopilot, setAutopilot,
   getSupplierProfile, getSupplierProducts,
   addSupplierProduct, deleteSupplierProduct,
   type NotificationDTO, type SellerSummary, type SupplierProfileDTO, type SupplierProductDTO,
@@ -37,6 +37,15 @@ export function SupplierDashboard() {
   );
 
   const [activeTab, setActiveTab] = useState<"rfqs" | "products">("rfqs")
+  const { data: autopilot, refetch: refetchAutopilot } = useApiPoll(() => getAutopilot(supplierId), 5000, [supplierId]);
+  const toggleAutopilot = async () => {
+    try {
+      await setAutopilot(supplierId, !autopilot?.enabled);
+      refetchAutopilot();
+    } catch (e) {
+      console.error("Failed to change autopilot:", e);
+    }
+  };
   const unread = (inbox || []).filter(n => n.status === "new").length;
 
   // Product form state
@@ -157,6 +166,35 @@ export function SupplierDashboard() {
               ))}
             </div>
           </div>
+        </div>
+
+        {/* Autopilot: off by default */}
+        <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-0.5">
+            <span className="label text-muted">Autopilot</span>
+            <p className="text-[13px] text-bone">
+              {autopilot?.enabled ? "On: " : "Off. "}
+              Sends a first quote from your catalog, without review, only when stock covers the request, lead time fits and the
+              minimum order fits. Buyers see these marked "auto".
+            </p>
+            <p className="text-[12px] text-muted">
+              It never answers a buyer's counter-offer and never revises a quote. Those stay with you.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!!autopilot?.enabled}
+            aria-label="Autopilot"
+            onClick={toggleAutopilot}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+              autopilot?.enabled ? "bg-signal" : "bg-line"
+            }`}
+          >
+            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-surface shadow transition ${
+              autopilot?.enabled ? "translate-x-5" : "translate-x-0"
+            }`} />
+          </button>
         </div>
 
         {/* Tabs */}

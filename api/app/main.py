@@ -36,6 +36,7 @@ from .models import (
     Activity,
     IntakeIn,
     ConfirmIn,
+    AutopilotSettings,
 )
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
@@ -286,6 +287,18 @@ def list_notifications(supplier_id: str):
     return store.list_notifications(supplier_id)
 
 
+@app.get("/api/supplier/{supplier_id}/autopilot", response_model=AutopilotSettings)
+def get_autopilot(supplier_id: str):
+    return store.get_autopilot(supplier_id)
+
+
+@app.put("/api/supplier/{supplier_id}/autopilot", response_model=AutopilotSettings)
+def put_autopilot(supplier_id: str, payload: AutopilotSettings):
+    if supplier_id not in store.supplier_profiles:
+        raise HTTPException(status_code=404, detail="Seller not found.")
+    return store.set_autopilot(supplier_id, payload.enabled)
+
+
 @app.post("/api/supplier/{supplier_id}/notifications/{notification_id}/read", response_model=NotificationOut)
 def read_notification(supplier_id: str, notification_id: str):
     n = store.mark_notification_viewed(supplier_id, notification_id)
@@ -381,8 +394,7 @@ def submit_supplier_quote(token: str, payload: QuoteSubmitIn):
             moq=payload.moq,
             notes=payload.notes,
             max_qty=payload.max_qty,
-            origin=payload.origin,
-        )
+        )   # origin is decided by the server, never taken from the client
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -102,7 +102,7 @@ class EvaluatedRow(BaseModel):
 
 
 PriorityMode = Literal["cheapest", "fastest", "balanced"]
-QuoteOrigin = Literal["manual", "ai_draft_edited", "ai_draft_sent"]
+QuoteOrigin = Literal["manual", "ai_draft_edited", "ai_draft_sent", "auto"]
 RequestSource = Literal["form", "chat", "voice"]
 
 
@@ -378,3 +378,8 @@ class ConfirmIn(BaseModel):
     buyer_state: str = "Maharashtra"
     note: str | None = None
     intake_id: str | None = None
+
+
+class AutopilotSettings(BaseModel):
+    """Seller autopilot. Off by default. It only ever opens a quote; it never answers a buyer's target."""
+    enabled: bool = False

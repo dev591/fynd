@@ -18,9 +18,11 @@ from .models import (
     Verdict,
     DraftQuote,
     Activity,
+    AutopilotSettings,
 )
 from .engine import order
 from .intake import singular
+from .assistant import template_message
 from .matching import draft_quote, matching_product, normalise_item, verdict_for
 
 # Default supplier labels for demo invites
@@ -47,6 +49,7 @@ class RFQStore:
         self.supplier_products: Dict[str, List[SupplierProduct]] = {}
         self.chats: Dict[str, Dict[str, List[ChatMessage]]] = {}
         self.notifications: Dict[str, List[Notification]] = {}  # supplier_id -> inbox
+        self.autopilot: Dict[str, AutopilotSettings] = {}  # supplier_id -> settings; absent means off
         self.shares: Dict[str, str] = {}  # unguessable share token -> rfq_id, created only by an explicit click
         self.assists: Dict[str, dict] = {}  # token -> the draft and wording issued, to label quote origin
         self.ai_log: List[dict] = []  # every AI input and output, linked to the request once confirmed
@@ -236,6 +239,35 @@ class RFQStore:
                 product_id=prod.id, token=rfq.supplier_tokens[sid],
                 created_at=datetime.now().isoformat(),
             ))
+            self.maybe_autopilot_quote(rfq, sid)
+
+    def get_autopilot(self, supplier_id: str) -> AutopilotSettings:
+        return self.autopilot.get(supplier_id, AutopilotSettings())
+
+    def set_autopilot(self, supplier_id: str, enabled: bool) -> AutopilotSettings:
+        self.autopilot[supplier_id] = AutopilotSettings(enabled=enabled)
+        return self.autopilot[supplier_id]
+
+    def maybe_autopilot_quote(self, rfq: RFQ, supplier_id: str) -> Optional[QuoteVersion]:
+        """Send a first quote from the catalog row, with no review, only when every rule holds:
+        autopilot is on, the request is open, the seller has not quoted, no target is waiting,
+        and the rules verdict is a clean yes (stock covers it, lead time fits, minimum order fits).
+        Anything else stays in the inbox for a person. It never revises and never answers a target."""
+        if not self.get_autopilot(supplier_id).enabled or rfq.status != "Open":
+            return None
+        token = rfq.supplier_tokens.get(supplier_id)
+        if not token or supplier_id in self.quotes.get(rfq.id, {}) or self.has_pending_target(token):
+            return None
+        draft = self.draft_for_token(token)
+        if not draft or draft.verdict.can_fulfil != "yes":
+            return None
+        qv = self.submit_quote(
+            token=token, supplier_name=self._supplier_name(supplier_id), pack_price=draft.pack_price,
+            pack_size=draft.pack_size, freight=draft.freight, lead_days=draft.lead_days, moq=draft.moq,
+            max_qty=draft.max_qty, notes=template_message(rfq, draft), origin="auto",
+        )
+        qv.origin = "auto"
+        return qv
 
     def _notification_out(self, n: Notification) -> Optional[NotificationOut]:
         rfq = self.rfqs.get(n.rfq_id)
@@ -419,7 +451,9 @@ class RFQStore:
             submitted_at=datetime.now().strftime("%I:%M %p"),
         )
         issued = self.assists.get(token)
-        if issued and issued["source"] == "ai":
+        if origin == "auto":
+            qv.origin = "auto"          # only maybe_autopilot_quote passes this; the HTTP layer never does
+        elif issued and issued["source"] == "ai":
             d = issued["draft"]
             same = (pack_price, pack_size, freight, lead_days, moq, max_qty) == (
                 d.pack_price, d.pack_size, d.freight, d.lead_days, d.moq, d.max_qty) and (notes or "") == issued["text"]

@@ -149,7 +149,7 @@ export interface QuoteVersionDTO {
   moq?: number;
   max_qty?: number;
   notes?: string;
-  origin?: "manual" | "ai_draft_edited" | "ai_draft_sent";
+  origin?: "manual" | "ai_draft_edited" | "ai_draft_sent" | "auto";
   landed_cost: number;
   units: number;
   packs: number;
@@ -334,6 +334,8 @@ export interface SummaryDTO {
   } | null;
   fingerprint: string;
   ai_calls: Array<{ request_id: string; kind: string; at: string }>;
+  /** Suppliers whose current quote was sent by autopilot with no one reviewing it. */
+  auto_quotes: string[];
   synthetic_note: string;
 }
 
@@ -403,7 +405,7 @@ export interface QuoteSubmitPayload {
   moq?: number;
   max_qty?: number;
   notes?: string;
-  origin?: "manual" | "ai_draft_edited" | "ai_draft_sent";
+  origin?: "manual" | "ai_draft_edited" | "ai_draft_sent" | "auto";
 }
 
 export async function getRFQByToken(token: string): Promise<SupplierRFQView> {
@@ -589,6 +591,14 @@ export async function getNotifications(supplierId: string): Promise<Notification
 
 export async function markNotificationViewed(supplierId: string, id: string): Promise<NotificationDTO> {
   return apiFetch(`/api/supplier/${supplierId}/notifications/${id}/read`, { method: "POST" });
+}
+
+export async function getAutopilot(supplierId: string): Promise<{ enabled: boolean }> {
+  return apiFetch(`/api/supplier/${supplierId}/autopilot`);
+}
+
+export async function setAutopilot(supplierId: string, enabled: boolean): Promise<{ enabled: boolean }> {
+  return apiFetch(`/api/supplier/${supplierId}/autopilot`, { method: "PUT", body: JSON.stringify({ enabled }) });
 }
 
 // ─── Buyer-side supplier profile (click-through) ──────────────────────────

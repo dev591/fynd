@@ -177,6 +177,9 @@ export function DecisionOnePager({ shared = false }: { shared?: boolean }) {
             AI calls on this request: {s.ai_calls.length === 0 ? "none" : s.ai_calls.map(c => c.kind).join(", ")}.
             AI proposes wording and drafts; the engine and the catalog decide; a person confirms.
           </p>
+          {s.auto_quotes.length > 0 && (
+            <p>Sent automatically by seller autopilot, with no one reviewing them: {s.auto_quotes.join(", ")}.</p>
+          )}
           <p>{s.synthetic_note}</p>
         </section>
       </main>
