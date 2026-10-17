@@ -61,6 +61,7 @@ class Quote(BaseModel):
     freight: float = 0.0
     lead_days: int
     moq: int | None = None
+    max_qty: int | None = None  # stock / capacity cap; None = unlimited
     raw: str = ""
     channel: str = "Portal"
 
@@ -97,6 +98,7 @@ class EvaluatedRow(BaseModel):
     pack_price: float
     pack_size: int | None = None
     freight: float
+    fill_qty: int | None = None  # units the seller can actually cover when below the need
 
 
 class CompareResult(BaseModel):
@@ -143,6 +145,7 @@ class QuoteSubmitIn(BaseModel):
     freight: float
     lead_days: int
     moq: int | None = None
+    max_qty: int | None = None
     notes: str | None = None
 
 
@@ -155,6 +158,7 @@ class QuoteVersion(BaseModel):
     freight: float
     lead_days: int
     moq: int | None = None
+    max_qty: int | None = None
     notes: str | None = None
     landed_cost: float
     units: int
@@ -191,6 +195,11 @@ class DecisionIn(BaseModel):
 
 # ─── Supplier Profile & Products ───────────────────────────────────────────
 
+class PriceBreak(BaseModel):
+    min_qty: int
+    pack_price: float
+
+
 class SupplierProductIn(BaseModel):
     name: str
     category: str = "general"
@@ -200,6 +209,9 @@ class SupplierProductIn(BaseModel):
     usual_lead_days: int = 3
     capacity_cap: int | None = None
     unit: str = "pc"
+    stock: int | None = None  # snapshot, not reserved; None = not tracked
+    freight: float = 0.0
+    price_breaks: list[PriceBreak] = Field(default_factory=list)
 
 
 class SupplierProduct(BaseModel):
@@ -212,6 +224,9 @@ class SupplierProduct(BaseModel):
     usual_lead_days: int = 3
     capacity_cap: int | None = None
     unit: str = "pc"
+    stock: int | None = None  # snapshot, not reserved; None = not tracked
+    freight: float = 0.0
+    price_breaks: list[PriceBreak] = Field(default_factory=list)
 
 
 class SupplierProfileIn(BaseModel):

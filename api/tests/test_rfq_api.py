@@ -280,3 +280,27 @@ def test_send_target_creates_chat_message():
     target_msgs = [m for m in msgs if m.get("target") is not None]
     assert len(target_msgs) >= 1
     assert target_msgs[-1]["target"]["target_freight"] == 149.0
+
+
+def test_catalog_stock_caps_quote_in_compare():
+    # Seller adds an item with stock 60
+    prod = client.post("/api/supplier/products/A", json={
+        "name": "M10 bolt", "pack_price": 9.0, "pack_size": 1, "stock": 60,
+        "freight": 100.0, "price_breaks": [{"min_qty": 100, "pack_price": 8.0}],
+    })
+    assert prod.status_code == 201
+    assert prod.json()["stock"] == 60
+
+    rfq = client.post("/api/rfqs", json={
+        "item": "M10 bolt", "qty": 100, "need_in_days": 5,
+        "buyer_company": "Co", "buyer_name": "Buyer",
+    }).json()
+    token = rfq["supplier_tokens"]["A"]
+    # Quote carries the stock as its cap
+    client.post(f"/api/rfq-by-token/{token}/quotes", json={
+        "pack_price": 9.0, "pack_size": 1, "freight": 100.0, "lead_days": 3, "max_qty": 60,
+    })
+    ev = client.get(f"/api/rfqs/{rfq['id']}").json()["evaluation"]
+    row = next(r for r in ev["rows"] if r["quote_id"] == "A")
+    assert row["status"] == "exception"
+    assert row["fill_qty"] == 60

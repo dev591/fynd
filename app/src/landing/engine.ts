@@ -17,6 +17,8 @@ export type Quote = {
   freight: number
   leadDays: number
   moq?: number
+  /** Stock / capacity cap. Undefined = unlimited. */
+  maxQty?: number
   /** The quote as it arrived, for the messy card. */
   raw: string
   channel: string
@@ -36,6 +38,8 @@ export type Row = {
   units: number
   overbuy: number
   landed: number | null
+  /** Units the seller can cover when stock is below the need. */
+  fillQty?: number
 }
 
 export function order(q: Quote, qty: number) {
@@ -62,14 +66,20 @@ const rank = (a: Row, b: Row) =>
 export function evaluate(quotes: Quote[], need: Need, exceptions: Record<string, Exception> = {}) {
   const rows: Row[] = quotes.map((q) => {
     if (q.item !== need.item) return blocked(q, 'different item')
-    const o = order(q, need.qty)
+    const short = q.maxQty !== undefined && q.maxQty < need.qty
+    const o = order(q, short ? q.maxQty! : need.qty)
     if (!o) return blocked(q, 'pack size unknown')
     const late = q.leadDays > need.needInDays
+    const reasons = [
+      late && `arrives in ${q.leadDays} days, needed in ${need.needInDays}`,
+      short && `stock covers ${q.maxQty} of ${need.qty} units`,
+    ].filter(Boolean)
     return {
       quote: q,
-      status: late ? 'exception' : 'eligible',
-      reason: late ? `arrives in ${q.leadDays} days, needed in ${need.needInDays}` : null,
-      approved: late && validException(exceptions[q.id]),
+      status: late || short ? 'exception' : 'eligible',
+      reason: reasons.length ? reasons.join('; ') : null,
+      approved: (late || short) && validException(exceptions[q.id]),
+      fillQty: short ? q.maxQty : undefined,
       ...o,
     }
   })

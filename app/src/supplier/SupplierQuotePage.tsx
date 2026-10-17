@@ -77,6 +77,7 @@ export function SupplierQuotePage() {
         freight: target.target_freight ?? (latestQuote?.freight ?? 150),
         leadDays: latestQuote?.lead_days ?? 3,
         moq: latestQuote?.moq ?? 1,
+        maxQty: latestQuote?.max_qty,
         notes: `Revised to match buyer counter-offer: ${target.message}`,
       };
     }
@@ -87,6 +88,7 @@ export function SupplierQuotePage() {
         freight: latestQuote.freight,
         leadDays: latestQuote.lead_days,
         moq: latestQuote.moq,
+        maxQty: latestQuote.max_qty,
         notes: latestQuote.notes,
       };
     }
@@ -107,6 +109,7 @@ export function SupplierQuotePage() {
         freight: data.freight,
         lead_days: data.leadDays,
         moq: data.moq,
+        max_qty: data.maxQty,
         notes: data.notes,
       });
       setIsRevising(false);

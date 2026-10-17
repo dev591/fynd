@@ -143,6 +143,7 @@ export interface QuoteVersionDTO {
   freight: number;
   lead_days: number;
   moq?: number;
+  max_qty?: number;
   notes?: string;
   landed_cost: number;
   units: number;
@@ -251,6 +252,7 @@ export interface QuoteSubmitPayload {
   freight: number;
   lead_days: number;
   moq?: number;
+  max_qty?: number;
   notes?: string;
 }
 
@@ -294,6 +296,10 @@ export interface SupplierProductDTO {
   usual_lead_days: number;
   capacity_cap?: number | null;
   unit: string;
+  /** Snapshot, not reserved. */
+  stock?: number | null;
+  freight?: number;
+  price_breaks?: Array<{ min_qty: number; pack_price: number }>;
 }
 
 export async function getSupplierProfile(supplierId: string): Promise<SupplierProfileDTO> {

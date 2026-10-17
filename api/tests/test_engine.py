@@ -61,3 +61,29 @@ def test_negotiation_freight_cut():
     assert neg["cut"] == 51.0
     # freight cut from 200 by 51 is valid since cut <= loser freight
     assert neg["freight"] == 51.0
+
+
+def test_stock_below_need_is_partial_fill_needing_exception():
+    from app.models import ExceptionRecord
+    need = Need(item="M10 bolt", qty=100, need_in_days=5)
+    short = Quote(id="S", supplier="Short", item="M10 bolt", pack_price=5.0, pack_size=1,
+                  freight=0.0, lead_days=3, max_qty=60)
+    full = Quote(id="F", supplier="Full", item="M10 bolt", pack_price=11.0, pack_size=1,
+                 freight=50.0, lead_days=3)
+
+    res = evaluate([short, full], need)
+    row = next(r for r in res.rows if r.quote_id == "S")
+    assert row.status == "exception"
+    assert row.fill_qty == 60
+    assert "stock covers 60 of 100" in row.reason
+    assert res.winner.quote_id == "F"  # cheaper but short never wins unsigned
+
+    signed = evaluate([short, full], need, {"S": ExceptionRecord(reason="Split order", approver="Plant head")})
+    assert signed.winner.quote_id == "S"
+
+
+def test_no_max_qty_keeps_default_behaviour():
+    need = Need(item="M10 bolt", qty=100, need_in_days=5)
+    q = Quote(id="A", supplier="A", item="M10 bolt", pack_price=10.0, pack_size=1, freight=200.0, lead_days=3)
+    row = evaluate([q], need).rows[0]
+    assert row.status == "eligible" and row.fill_qty is None

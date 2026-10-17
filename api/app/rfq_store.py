@@ -186,6 +186,7 @@ class RFQStore:
         lead_days: int,
         moq: Optional[int] = None,
         notes: Optional[str] = None,
+        max_qty: Optional[int] = None,
     ) -> QuoteVersion:
         rfq_id = self.token_to_rfq_id.get(token)
         if not rfq_id or rfq_id not in self.rfqs:
@@ -206,9 +207,9 @@ class RFQStore:
         q_obj = Quote(
             id=supplier_id, supplier=supplier_name, item=rfq.item,
             pack_price=pack_price, pack_size=pack_size, freight=freight,
-            lead_days=lead_days, moq=moq,
+            lead_days=lead_days, moq=moq, max_qty=max_qty,
         )
-        calc = order(q_obj, rfq.qty)
+        calc = order(q_obj, min(rfq.qty, max_qty) if max_qty else rfq.qty)
         landed = calc.landed if calc else pack_price * pack_size + freight
         units = calc.units if calc else rfq.qty
         packs = calc.packs if calc else 1
@@ -216,7 +217,7 @@ class RFQStore:
         qv = QuoteVersion(
             version=next_ver, supplier_id=supplier_id, supplier_name=supplier_name,
             pack_price=pack_price, pack_size=pack_size, freight=freight,
-            lead_days=lead_days, moq=moq, notes=notes,
+            lead_days=lead_days, moq=moq, max_qty=max_qty, notes=notes,
             landed_cost=landed, units=units, packs=packs,
             submitted_at=datetime.now().strftime("%I:%M %p"),
         )
@@ -305,7 +306,7 @@ class RFQStore:
                 id=s_id, supplier=latest.supplier_name, item=rfq.item,
                 pack_price=latest.pack_price, pack_size=latest.pack_size,
                 freight=latest.freight, lead_days=latest.lead_days,
-                moq=latest.moq, raw=f"v{latest.version}: ₹{latest.pack_price} + ₹{latest.freight}",
+                moq=latest.moq, max_qty=latest.max_qty, raw=f"v{latest.version}: ₹{latest.pack_price} + ₹{latest.freight}",
             ))
         return res
 
@@ -349,6 +350,7 @@ class RFQStore:
             pack_price=payload.pack_price, pack_size=payload.pack_size,
             moq=payload.moq, usual_lead_days=payload.usual_lead_days,
             capacity_cap=payload.capacity_cap, unit=payload.unit,
+            stock=payload.stock, freight=payload.freight, price_breaks=payload.price_breaks,
         )
         self.supplier_products.setdefault(supplier_id, []).append(prod)
         return prod
@@ -365,6 +367,9 @@ class RFQStore:
                 p.usual_lead_days = payload.usual_lead_days
                 p.capacity_cap = payload.capacity_cap
                 p.unit = payload.unit
+                p.stock = payload.stock
+                p.freight = payload.freight
+                p.price_breaks = payload.price_breaks
                 return p
         return None
 

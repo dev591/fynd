@@ -259,6 +259,7 @@ def submit_supplier_quote(token: str, payload: QuoteSubmitIn):
             lead_days=payload.lead_days,
             moq=payload.moq,
             notes=payload.notes,
+            max_qty=payload.max_qty,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

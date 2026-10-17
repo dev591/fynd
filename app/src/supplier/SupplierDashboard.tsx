@@ -49,6 +49,7 @@ export function SupplierDashboard() {
   const [newProdPackSize, setNewProdPackSize] = useState<number | "">(50);
   const [newProdMoq, setNewProdMoq] = useState<number | "">(50);
   const [newProdLead, setNewProdLead] = useState<number | "">(2);
+  const [newProdStock, setNewProdStock] = useState<number | "">("");
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,10 +63,12 @@ export function SupplierDashboard() {
         moq: typeof newProdMoq === "number" ? newProdMoq : 1,
         usual_lead_days: typeof newProdLead === "number" ? newProdLead : 3,
         unit: Number(newProdPackSize) > 1 ? "box" : "pc",
+        stock: typeof newProdStock === "number" ? newProdStock : null,
       });
       refetchProducts();
       setShowAddProduct(false);
       setNewProdName("");
+      setNewProdStock("");
     } catch (e) {
       console.error("Failed to add product:", e);
     }
@@ -280,6 +283,10 @@ export function SupplierDashboard() {
                       <span className="text-muted">MOQ:</span>
                       <p className="num font-medium text-bone">{p.moq} units</p>
                     </div>
+                    <div>
+                      <span className="text-muted">Stock (snapshot):</span>
+                      <p className="num font-medium text-bone">{p.stock ?? "not tracked"}</p>
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -332,6 +339,14 @@ export function SupplierDashboard() {
                           onChange={e => setNewProdMoq(e.target.value === "" ? "" : Number(e.target.value))}
                           className="num w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-bone" />
                       </div>
+                    </div>
+                    <div>
+                      <label className="label mb-1 block text-bone">Stock on hand (units)</label>
+                      <input type="number" min="0" value={newProdStock}
+                        onChange={e => setNewProdStock(e.target.value === "" ? "" : Number(e.target.value))}
+                        placeholder="Leave blank if not tracked"
+                        className="num w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-bone" />
+                      <p className="mt-1 text-[11px] text-muted">A snapshot, not reserved. Orders above stock become a partial fill.</p>
                     </div>
                     <div className="flex justify-end gap-2 pt-2">
                       <button type="button" onClick={() => setShowAddProduct(false)}

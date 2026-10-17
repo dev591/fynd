@@ -15,6 +15,7 @@ export function toEngineQuote(qv: QuoteVersionDTO, item: string): Quote {
     freight: qv.freight,
     leadDays: qv.lead_days,
     moq: qv.moq,
+    maxQty: qv.max_qty ?? undefined,
     raw: `v${qv.version}: ₹${qv.pack_price}/${qv.pack_size > 1 ? qv.pack_size + "pcs" : "pc"} + ₹${qv.freight} freight`,
     channel: "Portal",
   };

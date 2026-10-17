@@ -51,7 +51,9 @@ def evaluate(
             )
             continue
 
-        o = order(q, need.qty)
+        # Stock below the need is a partial fill: it needs a signed exception, like a late quote.
+        short = q.max_qty is not None and q.max_qty < need.qty
+        o = order(q, q.max_qty if short else need.qty)
         if not o:
             rows.append(
                 EvaluatedRow(
@@ -70,14 +72,19 @@ def evaluate(
 
         late = q.lead_days > need.need_in_days
         exc = exceptions.get(q.id)
-        approved = late and is_valid_exception(exc)
+        approved = (late or short) and is_valid_exception(exc)
+        reasons = []
+        if late:
+            reasons.append(f"arrives in {q.lead_days} days, needed in {need.need_in_days}")
+        if short:
+            reasons.append(f"stock covers {q.max_qty} of {need.qty} units")
 
         rows.append(
             EvaluatedRow(
                 quote_id=q.id,
                 supplier=q.supplier,
-                status="exception" if late else "eligible",
-                reason=f"arrives in {q.lead_days} days, needed in {need.need_in_days}" if late else None,
+                status="exception" if (late or short) else "eligible",
+                reason="; ".join(reasons) if reasons else None,
                 approved=approved,
                 packs=o.packs,
                 units=o.units,
@@ -87,6 +94,7 @@ def evaluate(
                 pack_price=q.pack_price,
                 pack_size=q.pack_size,
                 freight=q.freight,
+                fill_qty=q.max_qty if short else None,
             )
         )
 

@@ -76,6 +76,9 @@ export function QuoteForm({
     setPackSize(p.pack_size);
     setMoq(p.moq);
     setLeadDays(p.usual_lead_days);
+    if (p.freight) setFreight(p.freight);
+    setMaxQty(p.stock ?? p.capacity_cap ?? "");
+    if (p.stock != null || p.capacity_cap != null) setShowOptional(true);
   };
 
   // AI Item-match check (warn only, doesn't block)
@@ -307,7 +310,7 @@ export function QuoteForm({
 
               {/* Max Capacity */}
               <div>
-                <label className="label mb-1 block text-muted">Max Capacity Cap</label>
+                <label className="label mb-1 block text-muted">Max Capacity Cap (stock snapshot, not reserved)</label>
                 <input
                   type="number"
                   min="1"
