@@ -55,9 +55,13 @@ export function NewRequestForm() {
 
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<RFQCreateResponse | null>(null);
+  const [createdMore, setCreatedMore] = useState<RFQCreateResponse[]>([]);
+  // More items on the same order. Each one becomes its own request, compared on its own.
+  const [extras, setExtras] = useState<{ item: string; qty: number | "" }[]>([]);
+  const extraOk = (x: { item: string; qty: number | "" }) => x.item.trim() && typeof x.qty === "number" && x.qty > 0;
   const [error, setError] = useState<string | null>(null);
 
-  const isValid = item.trim() && typeof qty === "number" && qty > 0 && needInDays >= 1;
+  const isValid = item.trim() && typeof qty === "number" && qty > 0 && needInDays >= 1 && extras.every(extraOk);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,9 +69,9 @@ export function NewRequestForm() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await createRFQ({
-        item: item.trim(),
-        qty: Number(qty),
+      const make = (it: string, q: number) => createRFQ({
+        item: it.trim(),
+        qty: q,
         need_in_days: Number(needInDays),
         buyer_company: buyerCompany,
         buyer_name: buyerName,
@@ -79,6 +83,10 @@ export function NewRequestForm() {
         window: windowKey === "auto" ? undefined : windowKey,
         source: "form",
       });
+      const res = await make(item, Number(qty));
+      const more: RFQCreateResponse[] = [];
+      for (const x of extras) more.push(await make(x.item, Number(x.qty)));
+      setCreatedMore(more);
       setCreated(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create request");
@@ -121,6 +129,18 @@ export function NewRequestForm() {
             </p>
           </div>
 
+          {createdMore.length > 0 && (
+            <ul className="rounded-2xl border border-line bg-surface/90 divide-y divide-line text-[13px]">
+              {[created, ...createdMore].map(r => (
+                <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="text-bone"><strong>{r.rfq.item}</strong> <span className="text-muted">· {r.rfq.qty} units · {r.matched} seller{r.matched === 1 ? "" : "s"} notified</span></span>
+                  <button type="button" onClick={() => navigate(`/app/compare/${r.id}`)} className="text-signal underline">Compare</button>
+                </li>
+              ))}
+              <li className="px-4 py-2 text-[11px] text-muted">Each item is its own request, so each is compared and decided on its own.</li>
+            </ul>
+          )}
+
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               type="button"
@@ -132,7 +152,7 @@ export function NewRequestForm() {
             </button>
             <button
               type="button"
-              onClick={() => { setCreated(null); setItem(""); setQty(""); setNote(""); }}
+              onClick={() => { setCreated(null); setCreatedMore([]); setExtras([]); setItem(""); setQty(""); setNote(""); }}
               className="flex items-center justify-center gap-2 rounded-full border border-line bg-raised px-5 py-3 text-[14px] font-medium text-bone hover:border-signal/50"
             >
               <Package size={16} /><span>Create another</span>
@@ -219,6 +239,30 @@ export function NewRequestForm() {
               />
               {needInDays >= 1 && <p className="mt-1 text-[11px] text-muted">{needInDays} day{needInDays === 1 ? "" : "s"} from today</p>}
             </div>
+          </div>
+
+          {extras.map((x, i) => (
+            <div key={i} className="grid grid-cols-[1fr_7rem_auto] items-end gap-3">
+              <div>
+                <label className="label mb-1.5 block text-bone">Item {i + 2}</label>
+                <input type="text" value={x.item} placeholder="e.g. M8 nut" aria-label={`Item ${i + 2}`}
+                  onChange={e => setExtras(extras.map((y, j) => j === i ? { ...y, item: e.target.value } : y))}
+                  className="w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-[15px] text-bone placeholder:text-muted/40 focus:border-signal focus:outline-none" />
+              </div>
+              <div>
+                <label className="label mb-1.5 block text-bone">Qty</label>
+                <input type="number" min="1" value={x.qty} placeholder="100" aria-label={`Quantity ${i + 2}`}
+                  onChange={e => setExtras(extras.map((y, j) => j === i ? { ...y, qty: e.target.value === "" ? "" : Number(e.target.value) } : y))}
+                  className="num w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-[15px] text-bone placeholder:text-muted/40 focus:border-signal focus:outline-none" />
+              </div>
+              <button type="button" onClick={() => setExtras(extras.filter((_, j) => j !== i))}
+                className="mb-1 rounded-full border border-line px-3 py-2 text-[12px] text-muted hover:text-bone">Remove</button>
+            </div>
+          ))}
+          <div>
+            <button type="button" onClick={() => setExtras([...extras, { item: "", qty: "" }])} disabled={extras.length >= 9}
+              className="text-[13px] text-signal underline disabled:opacity-40">+ Add another item to this order</button>
+            {extras.length > 0 && <p className="mt-1 text-[11px] text-muted">Same need-by date and settings for every item. Each item is sent to sellers as its own request.</p>}
           </div>
 
           <div>
