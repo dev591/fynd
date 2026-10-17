@@ -43,6 +43,7 @@ from .models import (
     RoleIn,
     ExceptionIn,
     DeclineIn,
+    ImportIn,
 )
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
@@ -54,6 +55,7 @@ from . import persist
 from starlette.concurrency import run_in_threadpool
 from .auth import AuthUser, get_current_user
 from . import views
+from . import importer
 from fastapi.responses import JSONResponse
 
 
@@ -419,10 +421,19 @@ def _seller_by_alias(rfq_id: str, alias: str) -> str:
     return sid
 
 
+def _networked_seller(rfq_id: str, alias: str) -> str:
+    """Like _seller_by_alias, but refuses suppliers the buyer imported: they have no portal to receive a message."""
+    sid = _seller_by_alias(rfq_id, alias)
+    if store.is_known(sid):
+        raise HTTPException(status_code=409, detail="This quote was imported by you, so there is no seller portal. "
+                                                    "Negotiate with them directly.")
+    return sid
+
+
 @app.post("/api/rfqs/{rfq_id}/targets", response_model=NegotiationTarget)
 def send_target_to_supplier(rfq_id: str, payload: NegotiationTargetIn, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
-    sid = _seller_by_alias(rfq_id, payload.supplier_id)         # the buyer speaks in aliases
+    sid = _networked_seller(rfq_id, payload.supplier_id)        # the buyer speaks in aliases
     try:
         target = store.send_target(
             rfq_id=rfq_id, supplier_id=sid, cut_needed=payload.cut_needed,
@@ -446,7 +457,7 @@ def reveal_seller(rfq_id: str, alias: str, user: AuthUser = Depends(buyer_only))
         return JSONResponse(status_code=402, content={
             "code": "reveals_exhausted", "message": "You have used your free reveals.",
             **views.plan_info(store, user.id)})
-    return {"alias": alias, "kind": kind, "seller": views.identity_of(store, sid), "plan": views.plan_info(store, user.id)}
+    return {"alias": alias, "kind": kind, "seller": views.identity_of(store, sid, rfq_id), "plan": views.plan_info(store, user.id)}
 
 
 @app.post("/api/rfqs/{rfq_id}/exceptions")
@@ -467,6 +478,30 @@ def withdraw_exception(rfq_id: str, alias: str, user: AuthUser = Depends(buyer_o
         raise HTTPException(status_code=409, detail="This request is already decided.")
     store.clear_exception(rfq_id, _seller_by_alias(rfq_id, alias))
     return {"exceptions": {a: r.model_dump() for a, r in store.exceptions_by_alias(rfq_id).items()}}
+
+
+@app.post("/api/rfqs/{rfq_id}/import-quotes")
+def import_quotes(rfq_id: str, payload: ImportIn, user: AuthUser = Depends(buyer_only)):
+    """Bring in quotes the buyer already has (CSV or JSON). Bad rows are reported by row number; good rows load."""
+    rfq = _rfq_for(user, rfq_id)
+    if rfq.status != "Open":
+        raise HTTPException(status_code=409, detail="This request is already decided.")
+    try:
+        rows = importer.parse_csv(payload.data) if payload.format == "csv" else importer.parse_json(payload.data)
+        good, errors = importer.validate_rows(rows, rfq.item)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    loaded = [store.import_quote(rfq_id, r) for r in good]
+    return {"imported": len(loaded), "errors": errors, "skipped_rows": len({e["row"] for e in errors}),
+            "suppliers": sorted({store.alias_for(rfq_id, q.supplier_id) for q in loaded}, key=str)}
+
+
+@app.get("/api/import-template")
+def import_template():
+    """A file the importer accepts as-is, so nobody guesses the columns."""
+    rows = importer.parse_csv(importer.TEMPLATE_CSV)
+    return {"csv": importer.TEMPLATE_CSV, "json": json.dumps({"quotes": rows}, indent=2),
+            "required_columns": list(importer.REQUIRED)}
 
 
 @app.get("/api/me/plan")
@@ -687,7 +722,7 @@ def get_chat_messages(rfq_id: str, alias: str, user: AuthUser = Depends(buyer_on
 @app.post("/api/rfqs/{rfq_id}/threads/{alias}/messages", response_model=ChatMessage, status_code=201)
 def post_chat_message(rfq_id: str, alias: str, payload: ChatMessageIn, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
-    sid = _seller_by_alias(rfq_id, alias)
+    sid = _networked_seller(rfq_id, alias)
     # The signed-in buyer is always the buyer here; the request body cannot pick the sender.
     return store.add_chat_message(rfq_id, sid, "buyer", payload.sender_name, payload.text)
 

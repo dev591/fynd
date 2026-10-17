@@ -176,7 +176,7 @@ class QuoteVersion(BaseModel):
     supplier_id: str
     supplier_name: str
     pack_price: float
-    pack_size: int
+    pack_size: int | None = None              # None only for imported rows that did not say; the engine blocks those
     freight: float
     lead_days: int
     moq: int | None = None
@@ -187,10 +187,12 @@ class QuoteVersion(BaseModel):
     price_includes_tax: bool | None = None
     compare_price: float | None = None        # the pack price the engine compared, on the buyer's GST basis
     tax_basis: Literal["stated", "assumed_exclusive"] = "assumed_exclusive"
-    landed_cost: float
-    units: int
-    packs: int
+    landed_cost: float | None = None          # None when the pack size is unknown: no honest total exists
+    units: int = 0
+    packs: int = 0
     submitted_at: str
+    item: str | None = None                   # only set when an imported row names a different item than the request
+    imported: bool = False                    # brought in by the buyer from a file; the seller has no portal
 
 
 class NegotiationTargetIn(BaseModel):
@@ -425,3 +427,8 @@ class ExceptionIn(BaseModel):
 
 class DeclineIn(BaseModel):
     reason: str | None = Field(default=None, max_length=300)    # stays with the seller; never shown to the buyer
+
+
+class ImportIn(BaseModel):
+    format: Literal["csv", "json"]
+    data: str = Field(max_length=200_000)

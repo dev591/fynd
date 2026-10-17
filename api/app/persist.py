@@ -35,6 +35,7 @@ FIELDS: Dict[str, Any] = {
     "notifications": Dict[str, List[Notification]],
     "aliases": Dict[str, Dict[str, str]],
     "revealed": Dict[str, Dict[str, dict]],
+    "known_suppliers": Dict[str, Dict[str, str]],
     "exceptions": Dict[str, Dict[str, ExceptionRecord]],
     "reveal_log": List[dict],
     "plans": Dict[str, str],

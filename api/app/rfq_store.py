@@ -60,6 +60,7 @@ class RFQStore:
         self.revealed: Dict[str, Dict[str, dict]] = {}    # rfq_id -> {supplier_id: {buyer_id, at, kind}}
         self.reveal_log: List[dict] = []                  # every first-time reveal: buyer, seller, request, free/paid/repeat
         self.history: List[dict] = []                     # synthetic past orders, labelled as such
+        self.known_suppliers: Dict[str, Dict[str, str]] = {}      # rfq -> {imp_id: the name the buyer gave}
         self.exceptions: Dict[str, Dict[str, ExceptionRecord]] = {}   # rfq -> supplier -> written exception
         self.plans: Dict[str, str] = {}                   # buyer_id -> "free" | "pro" (mock billing)
         self.supplier_owner: Dict[str, str] = {}  # supplier_id -> owning user id; demo sellers have none
@@ -256,17 +257,51 @@ class RFQStore:
     def clear_exception(self, rfq_id: str, supplier_id: str) -> bool:
         return self.exceptions.get(rfq_id, {}).pop(supplier_id, None) is not None
 
+    @staticmethod
+    def is_known(supplier_id: str) -> bool:
+        """Imported by the buyer from their own file: they named the supplier, so there is nothing to reveal."""
+        return supplier_id.startswith("imp_")
+
     def alias_for(self, rfq_id: str, supplier_id: str, create: bool = False) -> Optional[str]:
         table = self.aliases.setdefault(rfq_id, {}) if create else self.aliases.get(rfq_id, {})
         if supplier_id not in table and create:
-            table[supplier_id] = f"Seller {len(table) + 1}"
+            prefix = "Imported" if self.is_known(supplier_id) else "Seller"
+            table[supplier_id] = f"{prefix} {sum(1 for a in table.values() if a.startswith(prefix + ' ')) + 1}"
         return table.get(supplier_id)
+
+    def import_quote(self, rfq_id: str, row: dict) -> QuoteVersion:
+        """Add one validated row from a buyer's CSV/JSON. Same supplier name again = next version of that supplier."""
+        rfq = self.rfqs[rfq_id]
+        names = self.known_suppliers.setdefault(rfq_id, {})
+        name = row["supplier"].strip()
+        sid = next((s for s, n in names.items() if n.lower() == name.lower()), None) or "imp_" + uuid.uuid4().hex[:8]
+        names.setdefault(sid, name)
+        history = self.quotes.setdefault(rfq_id, {}).setdefault(sid, [])
+        self.alias_for(rfq_id, sid, create=True)
+        price, basis = normalise_price(row["pack_price"], row["tax_rate"], row["price_includes_tax"], rfq.gst_claimable)
+        landed = units = packs = None
+        if row["pack_size"]:
+            qty = min(rfq.qty, row["max_qty"]) if row["max_qty"] else rfq.qty
+            calc = order(Quote(id="x", supplier="x", item=rfq.item, pack_price=price, pack_size=row["pack_size"],
+                               freight=row["freight"], lead_days=row["lead_days"], moq=row["moq"]), qty)
+            landed, units, packs = (calc.landed, calc.units, calc.packs) if calc else (None, 0, 0)
+        different = row["item"] and item_key(row["item"]) != item_key(rfq.item)
+        qv = QuoteVersion(
+            version=len(history) + 1, supplier_id=sid, supplier_name=name, pack_price=row["pack_price"],
+            pack_size=row["pack_size"], freight=row["freight"], lead_days=row["lead_days"], moq=row["moq"],
+            max_qty=row["max_qty"], notes=row["notes"], origin="manual", tax_rate=row["tax_rate"],
+            price_includes_tax=row["price_includes_tax"], compare_price=price, tax_basis=basis,
+            landed_cost=landed, units=units or 0, packs=packs or 0, submitted_at=datetime.now().strftime("%I:%M %p"),
+            item=row["item"] if different else None, imported=True,
+        )
+        history.append(qv)
+        return qv
 
     def supplier_for_alias(self, rfq_id: str, alias: str) -> Optional[str]:
         return next((sid for sid, a in self.aliases.get(rfq_id, {}).items() if a == alias), None)
 
     def is_revealed(self, rfq_id: str, supplier_id: str) -> bool:
-        return supplier_id in self.revealed.get(rfq_id, {})
+        return self.is_known(supplier_id) or supplier_id in self.revealed.get(rfq_id, {})
 
     @staticmethod
     def free_reveal_limit() -> int:
@@ -706,7 +741,7 @@ class RFQStore:
             latest = versions[-1]
             alias = self.alias_for(rfq_id, s_id, create=True)   # the engine only ever sees the alias
             res.append(Quote(
-                id=alias, supplier=alias, item=rfq.item,
+                id=alias, supplier=alias, item=latest.item or rfq.item,
                 pack_price=latest.compare_price if latest.compare_price is not None else latest.pack_price,
                 pack_size=latest.pack_size,
                 freight=latest.freight, lead_days=latest.lead_days,

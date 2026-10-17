@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, AlertTriangle, FileSpreadsheet,
   TrendingDown, Target, MessageSquare, Check,
-  Save, Lock, X, Unlock, ShieldCheck,
+  Save, Lock, X, Unlock, ShieldCheck, Upload, Download,
 } from "lucide-react";
 import { FactTag } from "../components/FactTag";
 import { evaluate, giveUp, inr, MODES, naivePick, negotiation, type Mode, type Quote } from "../landing/engine";
@@ -15,7 +15,7 @@ import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
 import {
   getRFQDetails, sendTarget, lockDecision,
   getChatMessages, postChatMessage,
-  getSupplierProfileForBuyer, getSummary, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException,
+  getSupplierProfileForBuyer, getSummary, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, type ImportResult,
   type RFQDetailsDTO, type ChatMessageDTO, type SellerPanelDTO, type SellerIdentity, type PlanInfo, type SummaryDTO,
 } from "../api/client";
 
@@ -41,6 +41,7 @@ export function DashboardDesk() {
   const [profileSupplierId, setProfileSupplierId] = useState<string | null>(null);
   const [paywall, setPaywall] = useState(false);
   const [exceptionFor, setExceptionFor] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const [revealingAlias, setRevealingAlias] = useState<string | null>(null);
   const [revealError, setRevealError] = useState<string | null>(null);
 
@@ -305,6 +306,12 @@ export function DashboardDesk() {
                     {engineQuotes.length} supplier{engineQuotes.length !== 1 ? "s" : ""} quoted
                   </p>
                 </div>
+                {!isDecided && (
+                  <button type="button" onClick={() => setShowImport(true)}
+                    className="mr-2 flex items-center gap-1.5 rounded-full border border-line bg-raised px-3 py-1 text-[12px] font-medium text-muted hover:text-bone">
+                    <Upload size={13} /><span>Import quotes</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setSheetMode(s => !s)}
@@ -375,6 +382,7 @@ export function DashboardDesk() {
                   const target = targets[row.quote.id];
                   const badge = details?.badges?.[row.quote.id];
                   const identity = details?.revealed?.[row.quote.id];
+                  const imported = !!versions[latestVer - 1]?.imported;
 
                   return (
                     <div
@@ -465,7 +473,9 @@ export function DashboardDesk() {
                           {identity && (
                             <div className="mt-2 rounded-lg border border-live/40 bg-live/10 p-2 text-[12px] text-bone">
                               <strong>{identity.business_name}</strong>
-                              <span className="text-muted"> · {identity.city}, {identity.state}</span>
+                              {imported
+                                ? <span className="text-muted"> · imported by you, not checked by Crossover</span>
+                                : <span className="text-muted"> · {identity.city}, {identity.state}</span>}
                               <div className="num text-muted">
                                 {identity.contact_name}{identity.phone ? ` · ${identity.phone}` : ""}{identity.email ? ` · ${identity.email}` : ""}
                               </div>
@@ -496,14 +506,20 @@ export function DashboardDesk() {
                             )}
                           </div>
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setChatSupplierId(row.quote.id)}
-                              className="flex items-center gap-1 rounded-full border border-line px-2.5 py-0.5 text-[11px] hover:text-bone hover:border-signal/50"
-                            >
-                              <MessageSquare size={11} /><span>Chat</span>
-                            </button>
-                            {identity ? (
+                            {!imported && (
+                              <button
+                                type="button"
+                                onClick={() => setChatSupplierId(row.quote.id)}
+                                className="flex items-center gap-1 rounded-full border border-line px-2.5 py-0.5 text-[11px] hover:text-bone hover:border-signal/50"
+                              >
+                                <MessageSquare size={11} /><span>Chat</span>
+                              </button>
+                            )}
+                            {imported ? (
+                              <span className="flex items-center gap-1 rounded-full border border-line bg-raised px-2.5 py-0.5 text-[11px] text-muted">
+                                <Upload size={11} /><span>Imported</span>
+                              </span>
+                            ) : identity ? (
                               <span className="flex items-center gap-1 rounded-full border border-live/40 bg-live/10 px-2.5 py-0.5 text-[11px] text-live">
                                 <Unlock size={11} /><span>Unlocked</span>
                               </span>
@@ -606,7 +622,8 @@ export function DashboardDesk() {
 
                 <div className="space-y-3">
                   {evaluation.rows
-                    .filter(r => r.quote.id !== winner?.quote.id && r.status === "eligible" && r.landed !== null)
+                    .filter(r => r.quote.id !== winner?.quote.id && r.status === "eligible" && r.landed !== null
+                      && !details?.quotes?.[r.quote.id]?.slice(-1)[0]?.imported)
                     .map(loser => {
                       const neg = winner ? negotiation(loser, winner) : null;
                       if (!neg) return null;
@@ -817,6 +834,14 @@ export function DashboardDesk() {
           onReveal={handleReveal}
           onSave={handleSaveDecision}
           onClose={() => setShowDecisionModal(false)}
+        />
+      )}
+
+      {showImport && (
+        <ImportModal
+          rfqId={rfqId ?? ""}
+          onClose={() => setShowImport(false)}
+          onLoaded={() => refetch()}
         />
       )}
 
@@ -1125,6 +1150,101 @@ function WhyCard({ row, qty, needInDays, mode }: { row: EngineRow; qty: number; 
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+
+// ─── Import quotes (CSV or JSON) ───────────────────────────────────────────
+
+/** Quotes the buyer already has. Good rows load; bad rows are listed by row number and skipped. */
+function ImportModal({ rfqId, onClose, onLoaded }: { rfqId: string; onClose: () => void; onLoaded: () => void }) {
+  const [text, setText] = useState("");
+  const [format, setFormat] = useState<"csv" | "json">("csv");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
+
+  const readFile = async (file: File) => {
+    const body = await file.text();
+    setText(body);
+    setFormat(file.name.toLowerCase().endsWith(".json") || /^\s*[\[{]/.test(body) ? "json" : "csv");
+    setResult(null); setError(null);
+  };
+  const template = async () => {
+    const t = await getImportTemplate();
+    setText(format === "json" ? t.json : t.csv);
+    setResult(null); setError(null);
+  };
+  const run = async () => {
+    setBusy(true); setError(null); setResult(null);
+    try {
+      const r = await importQuotes(rfqId, format, text);
+      setResult(r);
+      if (r.imported > 0) onLoaded();
+    } catch (e) {
+      // A rejected file (empty, wrong columns, too big) comes back as one clear sentence.
+      const m = e instanceof Error ? e.message : "Could not import.";
+      setError(m.replace(/^API \d+: /, "").replace(/^\{"detail":"?|"?\}$/g, ""));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 backdrop-blur-md p-4">
+      <div className="max-h-[90vh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-2xl border border-line bg-surface p-6 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="display text-xl text-bone">Import quotes you already have</h3>
+          <button onClick={onClose} className="text-muted hover:text-bone"><X size={18} /></button>
+        </div>
+        <p className="text-[13px] text-muted">
+          Upload a CSV or JSON file, or paste it. Needed columns: supplier, pack price, lead days. Units per pack, freight,
+          minimum order, stock, GST rate and "price includes GST" are optional. A missing pack size is not guessed: that quote is
+          blocked as "pack size unknown". These suppliers are yours, so there is nothing to reveal. Crossover has not checked them.
+        </p>
+        <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          <label className="flex cursor-pointer items-center gap-1.5 rounded-full border border-line bg-raised px-3 py-1 text-bone hover:border-signal/50">
+            <Upload size={12} /><span>Choose a file</span>
+            <input type="file" accept=".csv,.json,text/csv,application/json" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) readFile(f); e.target.value = ""; }} />
+          </label>
+          <button type="button" onClick={template} className="flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-muted hover:text-bone">
+            <Download size={12} /><span>Use the template</span>
+          </button>
+          <div role="group" aria-label="Format" className="ml-auto flex rounded-full border border-line p-0.5">
+            {(["csv", "json"] as const).map(f => (
+              <button key={f} type="button" aria-pressed={format === f} onClick={() => setFormat(f)}
+                className={`rounded-full px-2.5 py-0.5 uppercase ${format === f ? "bg-signal text-ink" : "text-muted"}`}>{f}</button>
+            ))}
+          </div>
+        </div>
+        <textarea value={text} onChange={e => { setText(e.target.value); setResult(null); setError(null); }} rows={9} spellCheck={false}
+          placeholder={"supplier,units_per_pack,pack_price,freight,lead_days\nAcme Traders,1,10,200,3"}
+          className="num w-full rounded-lg border border-line bg-raised px-3 py-2 text-[12px] text-bone" />
+        {error && <p role="alert" className="rounded-lg border border-error/40 bg-error/10 p-2.5 text-[13px] text-error">{error}</p>}
+        {result && (
+          <div className="space-y-2 rounded-lg border border-line bg-raised/40 p-3 text-[13px]" aria-live="polite">
+            <p className="text-bone">
+              <strong>{result.imported}</strong> quote{result.imported === 1 ? "" : "s"} loaded
+              {result.skipped_rows > 0 && <>, <strong className="text-warn">{result.skipped_rows}</strong> row{result.skipped_rows === 1 ? "" : "s"} skipped</>}.
+            </p>
+            {result.errors.length > 0 && (
+              <ul className="list-disc space-y-0.5 pl-5 text-[12px] text-warn">
+                {result.errors.map((e, i) => <li key={i}>{e.message}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-full border border-line px-4 py-1.5 text-[13px] text-muted hover:text-bone">
+            {result && result.imported > 0 ? "Done" : "Cancel"}
+          </button>
+          <button onClick={run} disabled={busy || !text.trim()}
+            className="rounded-full bg-signal px-5 py-1.5 text-[13px] font-semibold text-ink disabled:opacity-40">
+            {busy ? "Importing…" : "Import"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

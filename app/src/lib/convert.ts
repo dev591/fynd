@@ -9,14 +9,15 @@ export function toEngineQuote(qv: QuoteVersionDTO, item: string): Quote {
   return {
     id: qv.supplier_id,
     supplier: qv.supplier_name,
-    item,
-    packPrice: qv.pack_price,
+    item: qv.item ?? item,
+    // The price the server compared, on the buyer's GST basis, so the slider and the server always agree.
+    packPrice: qv.compare_price ?? qv.pack_price,
     packSize: qv.pack_size,
     freight: qv.freight,
     leadDays: qv.lead_days,
     moq: qv.moq,
     maxQty: qv.max_qty ?? undefined,
-    raw: `v${qv.version}: ₹${qv.pack_price}/${qv.pack_size > 1 ? qv.pack_size + "pcs" : "pc"} + ₹${qv.freight} freight`,
+    raw: `v${qv.version}: ₹${qv.pack_price}/${qv.pack_size === null ? "pack of unknown size" : qv.pack_size > 1 ? qv.pack_size + "pcs" : "pc"} + ₹${qv.freight} freight`,
     channel: "Portal",
   };
 }

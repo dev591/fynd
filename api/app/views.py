@@ -24,8 +24,14 @@ def verification_text(tier: str, synthetic: bool) -> str:
     return f"{text}; synthetic demo seller" if synthetic else text
 
 
-def identity_of(store, supplier_id: str) -> dict[str, Any]:
-    """Everything that identifies a seller. Only ever returned after a reveal."""
+def identity_of(store, supplier_id: str, rfq_id: Optional[str] = None) -> dict[str, Any]:
+    """Everything that identifies a seller. Only ever returned after a reveal (or for a supplier the buyer named)."""
+    if store.is_known(supplier_id):
+        name = store.known_suppliers.get(rfq_id or "", {}).get(supplier_id, "Imported supplier")
+        return {"business_name": name, "contact_name": None, "phone": None, "email": None, "city": "", "state": "",
+                "categories": [], "description": "Imported by you from a file.", "synthetic": False, "imported": True,
+                "verification_tier": "none",
+                "verification_text": "Imported by you. Crossover has not checked this seller."}
     p = store.supplier_profiles.get(supplier_id)
     if not p:
         return {}
@@ -67,10 +73,6 @@ def public_rfq(store, rfq) -> dict[str, Any]:
     }
 
 
-def _alias_order(alias: str) -> int:
-    return int(alias.rsplit(" ", 1)[-1])
-
-
 def buyer_quotes(store, rfq) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {}
     for sid, versions in store.quotes.get(rfq.id, {}).items():
@@ -80,7 +82,8 @@ def buyer_quotes(store, rfq) -> dict[str, list[dict]]:
         shown = store.is_revealed(rfq.id, sid)
         out[alias] = [v.model_copy(update={"supplier_id": alias, "supplier_name": alias,
                                            "notes": v.notes if shown else scrub(v.notes)}).model_dump() for v in versions]
-    return dict(sorted(out.items(), key=lambda kv: _alias_order(kv[0])))
+    order = {a: i for i, a in enumerate(store.aliases.get(rfq.id, {}).values())}      # the order sellers first quoted
+    return dict(sorted(out.items(), key=lambda kv: order.get(kv[0], 0)))
 
 
 def buyer_targets(store, rfq) -> dict[str, dict]:
@@ -93,8 +96,13 @@ def buyer_targets(store, rfq) -> dict[str, dict]:
 
 
 def buyer_revealed(store, rfq) -> dict[str, dict]:
-    return {store.alias_for(rfq.id, sid): identity_of(store, sid)
-            for sid in store.revealed.get(rfq.id, {}) if store.alias_for(rfq.id, sid)}
+    """Sellers this buyer unlocked, plus suppliers they imported by name."""
+    out = {store.alias_for(rfq.id, sid): identity_of(store, sid, rfq.id)
+           for sid in store.revealed.get(rfq.id, {}) if store.alias_for(rfq.id, sid)}
+    for sid in store.known_suppliers.get(rfq.id, {}):
+        if store.alias_for(rfq.id, sid):
+            out[store.alias_for(rfq.id, sid)] = identity_of(store, sid, rfq.id)
+    return out
 
 
 def buyer_badges(store, rfq) -> dict[str, dict]:
@@ -102,7 +110,10 @@ def buyer_badges(store, rfq) -> dict[str, dict]:
     out = {}
     for sid, alias in store.aliases.get(rfq.id, {}).items():
         p = store.supplier_profiles.get(sid)
-        if p:
+        if store.is_known(sid):
+            out[alias] = {"verification_tier": "none", "region": "", "synthetic": False,
+                          "verification_text": "Imported by you. Crossover has not checked this seller."}
+        elif p:
             out[alias] = {"verification_tier": p.verification_tier, "verification_text": verification_text(p.verification_tier, p.synthetic),
                           "region": p.location_state, "synthetic": p.synthetic}
     return out
@@ -135,6 +146,11 @@ def supplier_for_buyer(store, rfq, alias: str) -> Optional[dict[str, Any]]:
     p = store.supplier_profiles.get(sid) if sid else None
     if not sid:
         return None
+    if store.is_known(sid):
+        ident = identity_of(store, sid, rfq.id)
+        return {"supplier_id": alias, "business_name": ident["business_name"], "location_city": "", "location_state": "",
+                "categories": [], "description": ident["description"], "products": [], "revealed": True,
+                "verification_tier": "none", "verification_text": ident["verification_text"], "synthetic": False}
     base = {"supplier_id": alias, "business_name": alias, "location_city": "", "location_state": p.location_state if p else "",
             "categories": p.categories if p else [], "description": None, "products": [], "revealed": False,
             "verification_tier": p.verification_tier if p else "none",

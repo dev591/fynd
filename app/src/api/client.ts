@@ -157,19 +157,22 @@ export interface QuoteVersionDTO {
   supplier_id: string;
   supplier_name: string;
   pack_price: number;
-  pack_size: number;
+  pack_size: number | null;
   freight: number;
   lead_days: number;
   moq?: number;
   max_qty?: number;
   notes?: string;
   origin?: "manual" | "ai_draft_edited" | "ai_draft_sent" | "auto";
+  /** Brought in by the buyer from a file. Such suppliers have no portal. */
+  imported?: boolean;
+  item?: string | null;
   tax_rate?: number | null;
   price_includes_tax?: boolean | null;
   /** The pack price actually compared, on the buyer's GST basis. */
   compare_price?: number | null;
   tax_basis?: "stated" | "assumed_exclusive";
-  landed_cost: number;
+  landed_cost: number | null;
   units: number;
   packs: number;
   submitted_at: string;
@@ -749,6 +752,22 @@ export async function recordException(rfqId: string, alias: string, reason: stri
 export async function withdrawException(rfqId: string, alias: string) {
   return apiFetch<{ exceptions: Record<string, { reason: string; approver: string }> }>(
     `/api/rfqs/${rfqId}/exceptions/${encodeURIComponent(alias)}`, { method: "DELETE" });
+}
+
+export interface ImportResult {
+  imported: number;
+  skipped_rows: number;
+  errors: Array<{ row: number; field: string; message: string }>;
+  suppliers: string[];
+}
+
+/** Bad rows come back by row number; good rows are already loaded. A rejected file throws with the reason. */
+export async function importQuotes(rfqId: string, format: "csv" | "json", data: string): Promise<ImportResult> {
+  return apiFetch(`/api/rfqs/${rfqId}/import-quotes`, { method: "POST", body: JSON.stringify({ format, data }) });
+}
+
+export async function getImportTemplate(): Promise<{ csv: string; json: string; required_columns: string[] }> {
+  return apiFetch("/api/import-template");
 }
 
 export async function getPlan(): Promise<PlanInfo> {

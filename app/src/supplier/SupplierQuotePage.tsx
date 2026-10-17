@@ -100,7 +100,7 @@ export function SupplierQuotePage() {
     if (latestQuote) {
       return {
         packPrice: latestQuote.pack_price,
-        packSize: latestQuote.pack_size,
+        packSize: latestQuote.pack_size ?? undefined,
         freight: latestQuote.freight,
         leadDays: latestQuote.lead_days,
         moq: latestQuote.moq,
