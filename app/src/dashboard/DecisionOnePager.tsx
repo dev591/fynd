@@ -83,7 +83,7 @@ export function DecisionOnePager({ shared = false }: { shared?: boolean }) {
           <p className="label text-signal">DECISION ONE-PAGER</p>
           <h1 className="display text-3xl">{s.rfq.item} · <span className="num">{s.rfq.qty}</span> units</h1>
           <p className="text-muted">
-            {s.rfq.buyer_company} · needed within {s.rfq.need_in_days} days · priority: <span className="capitalize">{mode}</span> · request came from {s.rfq.source}
+            {s.rfq.buyer_company ? `${s.rfq.buyer_company} · ` : ""}needed within {s.rfq.need_in_days} days · priority: <span className="capitalize">{mode}</span> · request came from {s.rfq.source}
           </p>
         </section>
 
@@ -94,6 +94,12 @@ export function DecisionOnePager({ shared = false }: { shared?: boolean }) {
               <h2 className="display text-2xl">{pick?.supplier} · <span className="num">{pick?.landed != null ? inr(pick.landed) : "—"}</span> landed</h2>
               <p className="text-muted">Reason: {s.decision.reason}</p>
               <p className="text-muted">Approved by {s.decision.approver} on {new Date(s.decision.decided_at).toLocaleString()}</p>
+              {s.revealed[s.decision.winner_id] && (
+                <p className="num text-muted">
+                  Seller: {s.revealed[s.decision.winner_id].business_name} · {s.revealed[s.decision.winner_id].phone} · {s.revealed[s.decision.winner_id].email}
+                </p>
+              )}
+              <p className="text-muted">{s.decision.payment_note ?? "Cash on delivery. Crossover never holds money."}</p>
               {s.overrode_engine && s.engine_winner && (
                 <p className="text-warn">The approver chose a different supplier than the engine's pick ({s.engine_winner.supplier}).</p>
               )}

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { QRCodeSVG } from "qrcode.react";
 import {
-  ArrowLeft, Package, Send, Copy, Check, ExternalLink,
+  ArrowLeft, Package, Send, Check, ExternalLink,
 } from "lucide-react";
 import { IntakePanel } from "./IntakePanel";
 import { useApiOnce } from "../lib/useApi";
@@ -42,7 +41,6 @@ export function NewRequestForm() {
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<RFQCreateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   const isValid = item.trim() && typeof qty === "number" && qty > 0 && typeof needInDays === "number";
 
@@ -72,18 +70,9 @@ export function NewRequestForm() {
     }
   };
 
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard?.writeText(text);
-    setCopiedToken(id);
-    setTimeout(() => setCopiedToken(null), 2000);
-  };
-
-  // ─── Created State: show QR + supplier links ─────────────────────────
+  // ─── Created State ────────────────────────────────────────────────────
 
   if (created) {
-    const supplierEntries = Object.entries(created.supplier_urls);
-    const firstUrl = `${window.location.origin}${supplierEntries[0]?.[1] || created.supplier_url}`;
-
     return (
       <div className="landing grain min-h-screen bg-ink text-bone pb-16">
         <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
@@ -96,87 +85,32 @@ export function NewRequestForm() {
         </header>
 
         <main className="mx-auto max-w-3xl px-4 py-6 space-y-6">
-          {/* Success Banner */}
-          <div className="rounded-2xl border border-signal/40 bg-signal/10 p-5 text-center space-y-2">
+          <div className="rounded-2xl border border-signal/40 bg-signal/10 p-6 text-center space-y-2">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-signal/20">
               <Check size={24} className="text-signal" strokeWidth={2.5} />
             </div>
-            <h1 className="display text-2xl text-bone">Request Created</h1>
+            <h1 className="display text-2xl text-bone">Request created</h1>
             <p className="text-[13px] text-muted">
               <strong className="text-bone">{created.rfq.item}</strong> · {created.rfq.qty} units · needed within {created.rfq.need_in_days} days
             </p>
-            <p className="text-[12px] text-signal">
+            <p className="text-[13px] text-signal">
               {created.matched
-                ? `${created.matched} seller${created.matched === 1 ? "" : "s"} stock this item and ${created.matched === 1 ? "was" : "were"} notified (synthetic demo sellers).`
-                : "No seller in the network stocks this item yet. Share the link below with your own suppliers."}
+                ? `${created.matched} seller${created.matched === 1 ? "" : "s"} stock this item and ${created.matched === 1 ? "was" : "were"} notified.`
+                : "No seller in the network stocks this item yet."}
+            </p>
+            <p className="mx-auto max-w-[52ch] text-[12px] text-muted">
+              Quotes arrive without seller names, so you compare on cost and lead time only. You unlock a seller's
+              contact when you choose them. All demo sellers are synthetic.
             </p>
           </div>
 
-          {/* QR Moment — the big QR display */}
-          <div className="rounded-2xl border border-line bg-surface/90 p-6 text-center space-y-4">
-            <h2 className="display text-xl text-bone">Invite Suppliers</h2>
-            <p className="text-[13px] text-muted">
-              Suppliers scan this QR or open the link on their phone. No login needed — they can quote in under a minute.
-            </p>
-
-            {/* The QR Code */}
-            <div className="mx-auto w-fit rounded-2xl border border-line bg-bone p-5">
-              <QRCodeSVG
-                value={firstUrl}
-                size={200}
-                level="M"
-                bgColor="#ffffff"
-                fgColor="#0a0a0a"
-              />
-            </div>
-
-            <p className="num text-[11px] text-muted">{firstUrl}</p>
-
-            {/* Copy Link */}
-            <button
-              type="button"
-              onClick={() => handleCopy(firstUrl, "first")}
-              className="w-full max-w-sm mx-auto flex items-center justify-center gap-2 rounded-full border border-line bg-raised py-2.5 text-[13px] font-medium text-bone hover:border-signal/50"
-            >
-              {copiedToken === "first" ? <Check size={14} /> : <Copy size={14} />}
-              <span>{copiedToken === "first" ? "Link Copied!" : "Copy Supplier Link"}</span>
-            </button>
-
-            {/* All Supplier Links */}
-            {supplierEntries.length > 1 && (
-              <div className="space-y-2 pt-2 border-t border-line/60">
-                <p className="label text-muted">All Supplier Invite Links ({supplierEntries.length})</p>
-                {supplierEntries.map(([sid, url]) => {
-                  const fullUrl = `${window.location.origin}${url}`;
-                  return (
-                    <div key={sid} className="flex items-center justify-between rounded-lg border border-line bg-raised/30 px-3 py-2">
-                      <div>
-                        <span className="font-medium text-bone text-[13px]">Supplier {sid}</span>
-                        <p className="num text-[10px] text-muted truncate max-w-[200px]">{fullUrl}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => handleCopy(fullUrl, sid)}>
-                          {copiedToken === sid ? <Check size={14} className="text-signal" /> : <Copy size={14} className="text-muted hover:text-bone" />}
-                        </button>
-                        <Link to={url} target="_blank" className="text-muted hover:text-bone">
-                          <ExternalLink size={14} />
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Actions */}
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               type="button"
               onClick={() => navigate(`/app/compare/${created.id}`)}
               className="flex-1 flex items-center justify-center gap-2 rounded-full bg-signal py-3 text-[14px] font-semibold text-ink hover:opacity-95"
             >
-              <span>Go to Compare Screen</span>
+              <span>Watch quotes arrive</span>
               <ExternalLink size={16} />
             </button>
             <button
@@ -184,7 +118,7 @@ export function NewRequestForm() {
               onClick={() => { setCreated(null); setItem(""); setQty(""); setNote(""); }}
               className="flex items-center justify-center gap-2 rounded-full border border-line bg-raised px-5 py-3 text-[14px] font-medium text-bone hover:border-signal/50"
             >
-              <Package size={16} /><span>Create Another</span>
+              <Package size={16} /><span>Create another</span>
             </button>
           </div>
         </main>

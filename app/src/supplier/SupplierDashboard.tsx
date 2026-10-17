@@ -266,12 +266,19 @@ export function SupplierDashboard() {
                         </div>
                         <p className="text-[13px] text-muted flex items-center gap-2">
                           <Building2 size={13} />
-                          <span>{n.buyer_company} ({n.buyer_city})</span>
+                          <span>{n.buyer_descriptor}</span>
                           <span>·</span>
                           <span>Needed within {n.need_in_days} days</span>
                           <span>·</span>
                           <span className="capitalize">Priority: {n.priority_mode}</span>
                         </p>
+                        {n.unlocked && n.buyer_contact && (
+                          <div className="rounded-lg border border-live/40 bg-live/10 p-2.5 text-[12px] text-bone">
+                            <strong>A buyer unlocked you.</strong> Contact: {n.buyer_contact.name}, {n.buyer_contact.company}
+                            {n.buyer_contact.phone ? ` · ${n.buyer_contact.phone}` : ""}
+                            {n.buyer_contact.email ? ` · ${n.buyer_contact.email}` : ""}
+                          </div>
+                        )}
                         <ul className="text-[12px] text-muted list-disc pl-5">
                           {n.verdict.reasons.map(r => <li key={r}>{r}</li>)}
                         </ul>

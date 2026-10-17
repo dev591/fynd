@@ -183,7 +183,6 @@ export interface NegotiationTargetDTO {
 
 export interface RFQDTO {
   id: string;
-  token: string;
   item: string;
   qty: number;
   need_in_days: number;
@@ -197,15 +196,52 @@ export interface RFQDTO {
   decision?: Record<string, unknown> | null;
   priority_mode?: PriorityMode;
   source?: "form" | "chat" | "voice";
-  supplier_tokens: Record<string, string>;
+  /** How many sellers stock this item and were notified. Who they are stays hidden. */
+  matched_count: number;
+  quote_count: number;
+}
+
+/** What a revealed seller looks like. Present only for sellers this buyer has unlocked. */
+export interface SellerIdentity {
+  business_name: string;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  city: string;
+  state: string;
+  categories: string[];
+  description: string | null;
+  synthetic: boolean;
+  verification_tier: string;
+  verification_text: string;
+}
+
+export interface SellerBadge {
+  verification_tier: string;
+  /** Says exactly what was checked, and no more. */
+  verification_text: string;
+  /** State only. The city stays hidden until reveal. */
+  region: string;
+  synthetic: boolean;
+}
+
+export interface PlanInfo {
+  plan: "free" | "pro";
+  free_limit: number;
+  /** Null on the paid plan (unlimited). */
+  reveals_left: number | null;
 }
 
 export interface RFQDetailsDTO {
   rfq: RFQDTO;
+  /** Keyed by alias ("Seller 1"). */
   quotes: Record<string, QuoteVersionDTO[]>;
   targets: Record<string, NegotiationTargetDTO>;
   evaluation: CompareResult | null;
   activity?: ActivityDTO;
+  revealed: Record<string, SellerIdentity>;
+  badges: Record<string, SellerBadge>;
+  plan: PlanInfo;
 }
 
 export interface ActivityDTO {
@@ -216,12 +252,8 @@ export interface ActivityDTO {
 }
 
 export interface RFQCreateResponse {
-  matched?: number;
   id: string;
-  token: string;
-  supplier_url: string;
-  supplier_tokens: Record<string, string>;
-  supplier_urls: Record<string, string>;
+  matched: number;
   rfq: RFQDTO;
 }
 
@@ -327,11 +359,11 @@ export interface SummaryRowDTO {
 
 export interface SummaryDTO {
   rfq: {
-    id: string; item: string; qty: number; need_in_days: number; buyer_company: string; buyer_name: string;
+    id: string; item: string; qty: number; need_in_days: number; buyer_company?: string; buyer_name?: string;
     priority_mode: PriorityMode; source: string; status: string; created_at: string;
   };
   decided: boolean;
-  decision: { winner_id: string; reason: string; approver: string; decided_at: string } | null;
+  decision: { winner_id: string; reason: string; approver: string; decided_at: string; payment_note?: string } | null;
   pick: SummaryRowDTO | null;
   engine_winner: SummaryRowDTO | null;
   overrode_engine: boolean;
@@ -348,6 +380,8 @@ export interface SummaryDTO {
   ai_calls: Array<{ request_id: string; kind: string; at: string }>;
   /** Suppliers whose current quote was sent by autopilot with no one reviewing it. */
   auto_quotes: string[];
+  /** Sellers this buyer has unlocked. Always empty on a shared link. */
+  revealed: Record<string, SellerIdentity>;
   synthetic_note: string;
 }
 
@@ -393,15 +427,25 @@ export async function lockDecision(rfqId: string, winnerId: string, reason: stri
 
 // ─── Supplier (token-gated) ───────────────────────────────────────────────
 
+export interface BuyerContact {
+  name: string;
+  company: string;
+  phone: string | null;
+  email: string | null;
+  city: string;
+}
+
 export interface SupplierRFQView {
   id: string;
   item: string;
   qty: number;
   need_in_days: number;
-  buyer_company: string;
-  buyer_name: string;
-  buyer_city: string;
-  buyer_state: string;
+  /** Kind of business and state, like "Manufacturer, Telangana". Never a name, company or city. */
+  buyer_descriptor: string;
+  priority_mode?: PriorityMode;
+  unlocked: boolean;
+  /** Present only after the buyer has unlocked this seller. */
+  buyer_contact?: BuyerContact;
   note?: string;
   status: string;
   supplier_id?: string | null;
@@ -580,9 +624,9 @@ export interface NotificationDTO {
   item: string;
   qty: number;
   need_in_days: number;
-  buyer_company: string;
-  buyer_city: string;
-  buyer_state: string;
+  buyer_descriptor: string;
+  unlocked: boolean;
+  buyer_contact?: BuyerContact | null;
   note?: string | null;
   priority_mode: PriorityMode;
   rfq_status: string;
@@ -615,8 +659,65 @@ export async function setAutopilot(supplierId: string, enabled: boolean): Promis
 
 // ─── Buyer-side supplier profile (click-through) ──────────────────────────
 
-export async function getSupplierProfileForBuyer(rfqId: string, supplierId: string): Promise<SupplierProfileDTO> {
-  return apiFetch(`/api/rfqs/${rfqId}/suppliers/${supplierId}`);
+/** The click-through panel. Before a reveal: alias, state and what was checked. After: the seller. */
+export interface SellerPanelDTO {
+  supplier_id: string;
+  business_name: string;
+  location_city: string;
+  location_state: string;
+  categories: string[];
+  description: string | null;
+  products: SupplierProductDTO[];
+  revealed: boolean;
+  verification_tier: string;
+  verification_text: string;
+  synthetic: boolean;
+  contact?: { contact_name: string | null; phone: string | null; email: string | null };
+}
+
+export async function getSupplierProfileForBuyer(rfqId: string, alias: string): Promise<SellerPanelDTO> {
+  return apiFetch(`/api/rfqs/${rfqId}/suppliers/${encodeURIComponent(alias)}`);
+}
+
+// ─── Reveal, plan, sample request ──────────────────────────────────────────
+
+export interface RevealResult {
+  alias: string;
+  /** free = used one of your free reveals; paid = on the paid plan; repeat = a seller you had already unlocked. */
+  kind: "free" | "paid" | "repeat" | "already";
+  seller: SellerIdentity;
+  plan: PlanInfo;
+}
+
+export class RevealsExhausted extends Error {
+  plan: PlanInfo;
+  constructor(plan: PlanInfo) {
+    super("You have used your free reveals.");
+    this.plan = plan;
+  }
+}
+
+export async function revealSeller(rfqId: string, alias: string): Promise<RevealResult> {
+  const res = await fetch(`${BASE_URL}/api/rfqs/${rfqId}/quotes/${encodeURIComponent(alias)}/reveal`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...(await authHeader()) },
+  });
+  if (res.status === 402) throw new RevealsExhausted(await res.json());
+  if (res.status === 401) await signOut();
+  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+export async function getPlan(): Promise<PlanInfo> {
+  return apiFetch("/api/me/plan");
+}
+
+/** DEV ONLY: flips the account to unlimited reveals. No payment happens. */
+export async function mockUpgrade(): Promise<PlanInfo & { note: string }> {
+  return apiFetch("/api/dev/mock-upgrade", { method: "POST" });
+}
+
+export async function createSampleRequest(): Promise<RFQCreateResponse> {
+  return apiFetch("/api/demo/sample-request", { method: "POST" });
 }
 
 // ─── Chat ──────────────────────────────────────────────────────────────────
@@ -631,7 +732,7 @@ export interface ChatMessageDTO {
 }
 
 export async function getChatMessages(rfqId: string, supplierId: string): Promise<ChatMessageDTO[]> {
-  return apiFetch(`/api/rfqs/${rfqId}/threads/${supplierId}/messages`);
+  return apiFetch(`/api/rfqs/${rfqId}/threads/${encodeURIComponent(supplierId)}/messages`);
 }
 
 export async function postChatMessage(rfqId: string, supplierId: string, payload: {
@@ -639,7 +740,7 @@ export async function postChatMessage(rfqId: string, supplierId: string, payload
   sender_name: string;
   text: string;
 }): Promise<ChatMessageDTO> {
-  return apiFetch(`/api/rfqs/${rfqId}/threads/${supplierId}/messages`, { method: "POST", body: JSON.stringify(payload) });
+  return apiFetch(`/api/rfqs/${rfqId}/threads/${encodeURIComponent(supplierId)}/messages`, { method: "POST", body: JSON.stringify(payload) });
 }
 
 export async function getChatByToken(token: string): Promise<ChatMessageDTO[]> {

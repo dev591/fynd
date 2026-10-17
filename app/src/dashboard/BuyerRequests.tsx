@@ -1,10 +1,25 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Plus, ArrowRight, Package, AlertTriangle, Building2 } from "lucide-react";
 import { useApiPoll } from "../lib/useApi";
 import { AccountMenu } from "../components/AccountMenu";
-import { getRFQs, getSavings, type RFQDTO } from "../api/client";
+import { createSampleRequest, getRFQs, getSavings, type RFQDTO } from "../api/client";
 
 export function BuyerRequests() {
+  const navigate = useNavigate();
+  const [sampling, setSampling] = useState(false);
+  const [sampleError, setSampleError] = useState<string | null>(null);
+  const trySample = async () => {
+    setSampling(true); setSampleError(null);
+    try {
+      const r = await createSampleRequest();
+      navigate(`/app/compare/${r.id}`);
+    } catch (e) {
+      setSampleError(e instanceof Error ? e.message : "Could not create the sample request.");
+      setSampling(false);
+    }
+  };
+
   const { data: rfqs, loading, error } = useApiPoll<RFQDTO[]>(
     () => getRFQs(), 3000, [],
   );
@@ -40,7 +55,7 @@ export function BuyerRequests() {
               <span className="label text-signal">BUYER OPERATIONS</span>
               <h1 className="display text-2xl text-bone mt-1">Quote Requests</h1>
               <p className="text-[13px] text-muted mt-0.5">
-                Create a request, invite suppliers via QR, compare on landed cost, and negotiate.
+                Raise a request, compare anonymous quotes on landed cost, negotiate, then reveal the seller you choose.
               </p>
             </div>
             <Link
@@ -79,16 +94,24 @@ export function BuyerRequests() {
             <div>
               <h3 className="display text-lg text-bone">No requests yet</h3>
               <p className="text-[13px] text-muted max-w-sm mx-auto mt-1">
-                A request for quotation (RFQ) lets you invite suppliers to bid on an item.
+                A request for quotation (RFQ) asks every seller who stocks an item to quote.
                 The Crossover engine compares them on total landed cost, not sticker price.
               </p>
             </div>
-            <Link
-              to="/app/new"
-              className="inline-flex items-center gap-2 rounded-full bg-signal px-5 py-2.5 text-[14px] font-semibold text-ink hover:opacity-95"
-            >
-              <Plus size={16} /><span>Create your first request</span>
-            </Link>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Link
+                to="/app/new"
+                className="inline-flex items-center gap-2 rounded-full bg-signal px-5 py-2.5 text-[14px] font-semibold text-ink hover:opacity-95"
+              >
+                <Plus size={16} /><span>Create your first request</span>
+              </Link>
+              <button type="button" onClick={trySample} disabled={sampling}
+                className="inline-flex items-center gap-2 rounded-full border border-line bg-raised px-5 py-2.5 text-[14px] font-medium text-bone hover:border-signal/50 disabled:opacity-40">
+                {sampling ? "Setting up…" : "Try a sample request"}
+              </button>
+            </div>
+            <p className="text-[12px] text-muted">The sample uses synthetic demo sellers and prices.</p>
+            {sampleError && <p className="text-[12px] text-error">{sampleError}</p>}
           </div>
         ) : (
           /* Request Rows */
@@ -127,7 +150,7 @@ export function BuyerRequests() {
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <span className="text-[12px] text-muted">
-                        {Object.keys(rfq.supplier_tokens || {}).length} suppliers invited
+                        {rfq.matched_count} seller{rfq.matched_count === 1 ? "" : "s"} notified · {rfq.quote_count} quoted
                       </span>
                       <div className="flex items-center gap-1 text-signal text-[13px] font-medium">
                         <span>Compare</span>

@@ -128,7 +128,7 @@ export function TaxStep({
               }`}
             >
               <ShieldCheck size={13} strokeWidth={2} />
-              <span>{registryVerified ? "Verified (demo registry)" : "Registry pending"}</span>
+              <span>{registryVerified ? "Demo check done (simulated)" : "Demo check not run"}</span>
             </span>
           </div>
         </div>
@@ -238,10 +238,10 @@ export function TaxStep({
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <div>
               <p className="text-[13px] font-medium text-bone">
-                Simulate Registry Cross-Check
+                Demo registry check (simulated)
               </p>
               <p className="text-[12px] text-muted">
-                Verifies company name consistency against the tax registration ledger.
+                Demo only: no government registry is queried. Your GSTIN and PAN are checked for format and for consistency with each other and your state.
               </p>
             </div>
 

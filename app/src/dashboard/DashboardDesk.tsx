@@ -2,8 +2,8 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, AlertTriangle, FileSpreadsheet,
-  TrendingDown, Target, ExternalLink, MessageSquare, Check,
-  Save, Lock, X,
+  TrendingDown, Target, MessageSquare, Check,
+  Save, Lock, X, Unlock, ShieldCheck,
 } from "lucide-react";
 import { evaluate, giveUp, inr, MODES, negotiation, type Mode, type Quote } from "../landing/engine";
 import { CostChart } from "../landing/CostChart";
@@ -14,17 +14,16 @@ import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
 import {
   getRFQDetails, sendTarget, lockDecision,
   getChatMessages, postChatMessage,
-  getSupplierProfileForBuyer, getSummary,
-  type RFQDetailsDTO, type ChatMessageDTO, type SupplierProfileDTO, type SummaryDTO,
+  getSupplierProfileForBuyer, getSummary, revealSeller, mockUpgrade, RevealsExhausted,
+  type RFQDetailsDTO, type ChatMessageDTO, type SellerPanelDTO, type SellerIdentity, type PlanInfo, type SummaryDTO,
 } from "../api/client";
-import { VerifiedBadge } from "../supplier/components/VerifiedBadge";
 
 export function DashboardDesk() {
   const { rfqId } = useParams<{ rfqId: string }>();
 
   // Poll RFQ details every 2s for live updates
   const { data: details, loading, error, refetch } = useApiPoll<RFQDetailsDTO>(
-    () => getRFQDetails(rfqId || "rfq_c27_01"),
+    () => getRFQDetails(rfqId ?? ""),
     2000,
     [rfqId],
   );
@@ -39,6 +38,9 @@ export function DashboardDesk() {
   const [showDecisionModal, setShowDecisionModal] = useState(false);
   const [decisionSaved, setDecisionSaved] = useState(false);
   const [profileSupplierId, setProfileSupplierId] = useState<string | null>(null);
+  const [paywall, setPaywall] = useState(false);
+  const [revealingAlias, setRevealingAlias] = useState<string | null>(null);
+  const [revealError, setRevealError] = useState<string | null>(null);
 
   const rfq = details?.rfq;
   const apiQuotes = useMemo(() => details?.quotes || {}, [details]);
@@ -70,7 +72,7 @@ export function DashboardDesk() {
 
   // Chat polling
   const { data: chatMessages } = useApiPoll<ChatMessageDTO[]>(
-    () => chatSupplierId ? getChatMessages(rfqId || "rfq_c27_01", chatSupplierId) : Promise.resolve([]),
+    () => chatSupplierId ? getChatMessages(rfqId ?? "", chatSupplierId) : Promise.resolve([]),
     2000,
     [chatSupplierId, rfqId],
   );
@@ -78,20 +80,36 @@ export function DashboardDesk() {
   // Savings vs the spreadsheet pick, only once a person has saved the decision
   const decidedNow = details?.rfq.status === "Decided" || decisionSaved;
   const { data: summary } = useApiOnce<SummaryDTO | null>(
-    () => decidedNow ? getSummary(rfqId || "rfq_c27_01") : Promise.resolve(null),
+    () => decidedNow ? getSummary(rfqId ?? "") : Promise.resolve(null),
     [decidedNow, rfqId],
   );
 
   // Supplier profile (click-through)
-  const { data: supplierProfile } = useApiOnce<SupplierProfileDTO>(
-    () => profileSupplierId ? getSupplierProfileForBuyer(rfqId || "rfq_c27_01", profileSupplierId) : Promise.resolve(null as any),
+  const { data: supplierProfile, refetch: refetchPanel } = useApiOnce<SellerPanelDTO | null>(
+    () => profileSupplierId ? getSupplierProfileForBuyer(rfqId ?? "", profileSupplierId) : Promise.resolve(null),
     [profileSupplierId, rfqId],
   );
+
+  // Unlock one seller. Uses a free reveal; when none are left the paywall opens. Never throws into the UI.
+  const handleReveal = useCallback(async (alias: string) => {
+    setRevealingAlias(alias); setRevealError(null);
+    try {
+      const r = await revealSeller(rfqId ?? "", alias);
+      refetch(); refetchPanel();
+      return r;
+    } catch (e) {
+      if (e instanceof RevealsExhausted) setPaywall(true);
+      else setRevealError(e instanceof Error ? e.message : "Could not reveal this seller.");
+      return null;
+    } finally {
+      setRevealingAlias(null);
+    }
+  }, [rfqId, refetch, refetchPanel]);
 
   // Send target concession to runner-up supplier
   const handleSendTarget = useCallback(async (loserId: string, cutNeeded: number, message: string, targetFreight?: number, targetPerUnit?: number) => {
     try {
-      await sendTarget(rfqId || "rfq_c27_01", {
+      await sendTarget(rfqId ?? "", {
         supplier_id: loserId,
         cut_needed: cutNeeded,
         target_freight: targetFreight,
@@ -111,7 +129,7 @@ export function DashboardDesk() {
 
   const handleSaveDecision = async (winnerId: string, reason: string, approver: string) => {
     try {
-      await lockDecision(rfqId || "rfq_c27_01", winnerId, reason, approver);
+      await lockDecision(rfqId ?? "", winnerId, reason, approver);
       setDecisionSaved(true);
       setShowDecisionModal(false);
       refetch();
@@ -123,7 +141,7 @@ export function DashboardDesk() {
   const handleSendMessage = async (text: string) => {
     if (!chatSupplierId) return;
     try {
-      await postChatMessage(rfqId || "rfq_c27_01", chatSupplierId, {
+      await postChatMessage(rfqId ?? "", chatSupplierId, {
         sender: "buyer",
         sender_name: rfq?.buyer_name || "Buyer",
         text,
@@ -190,6 +208,7 @@ export function DashboardDesk() {
           </div>
 
           <div className="flex items-center gap-3">
+            {details?.plan && <PlanChip plan={details.plan} />}
             {liveDot && (
               <span className="flex items-center gap-1.5 text-[12px] text-live">
                 <span className="h-1.5 w-1.5 rounded-full bg-live animate-pulse" /> Live
@@ -323,6 +342,8 @@ export function DashboardDesk() {
                   const versions = apiQuotes[row.quote.id] || [];
                   const latestVer = versions.length;
                   const target = targets[row.quote.id];
+                  const badge = details?.badges?.[row.quote.id];
+                  const identity = details?.revealed?.[row.quote.id];
 
                   return (
                     <div
@@ -366,6 +387,21 @@ export function DashboardDesk() {
                             )}
                           </div>
                           <p className="mt-1 font-mono text-[13px] text-muted">"{row.quote.raw}"</p>
+                          {badge && (
+                            <p className="mt-1 flex items-center gap-1 text-[11px] text-muted">
+                              <ShieldCheck size={11} className="shrink-0" />
+                              <span>{badge.region} · {badge.verification_text}</span>
+                            </p>
+                          )}
+                          {identity && (
+                            <div className="mt-2 rounded-lg border border-live/40 bg-live/10 p-2 text-[12px] text-bone">
+                              <strong>{identity.business_name}</strong>
+                              <span className="text-muted"> · {identity.city}, {identity.state}</span>
+                              <div className="num text-muted">
+                                {identity.contact_name}{identity.phone ? ` · ${identity.phone}` : ""}{identity.email ? ` · ${identity.email}` : ""}
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <div className="text-right">
                           <p className="label text-muted">Total Landed</p>
@@ -393,6 +429,21 @@ export function DashboardDesk() {
                             >
                               <MessageSquare size={11} /><span>Chat</span>
                             </button>
+                            {identity ? (
+                              <span className="flex items-center gap-1 rounded-full border border-live/40 bg-live/10 px-2.5 py-0.5 text-[11px] text-live">
+                                <Unlock size={11} /><span>Unlocked</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={revealingAlias === row.quote.id}
+                                onClick={() => handleReveal(row.quote.id)}
+                                title="Unlock this seller's name and contact"
+                                className="flex items-center gap-1 rounded-full border border-signal/50 bg-signal/10 px-2.5 py-0.5 text-[11px] font-medium text-signal hover:bg-signal hover:text-ink disabled:opacity-40"
+                              >
+                                <Unlock size={11} /><span>{revealingAlias === row.quote.id ? "Revealing…" : "Reveal"}</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}
@@ -429,7 +480,7 @@ export function DashboardDesk() {
                 <div>
                   <h2 className="display text-lg text-bone">Crossover Cost Curves</h2>
                   <p className="text-[12px] text-muted">
-                    At <strong className="text-bone">{qty} units</strong>, Supplier {winner?.quote.id ?? "None"} wins.
+                    At <strong className="text-bone">{qty} units</strong>, {winner?.quote.supplier ?? "No one"} wins.
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 text-success text-[12px] font-medium">
@@ -553,14 +604,6 @@ export function DashboardDesk() {
                                 <><Target size={12} /><span>Review target</span></>
                               )}
                             </button>
-
-                            <Link
-                              to="/supplier/quote"
-                              target="_blank"
-                              className="text-[11px] text-muted underline hover:text-bone flex items-center gap-1"
-                            >
-                              <span>Open as Supplier</span><ExternalLink size={10} />
-                            </Link>
                           </div>
                         </div>
                       );
@@ -577,7 +620,13 @@ export function DashboardDesk() {
                   <h3 className="display text-base font-semibold text-success">Decision Saved</h3>
                 </div>
                 <div className="text-[13px] text-muted space-y-1">
-                  <p>Winner: <strong className="text-bone">Supplier {rfq.decision.winner_id as string}</strong></p>
+                  <p>Winner: <strong className="text-bone">{(details?.revealed?.[rfq.decision.winner_id as string]?.business_name) ?? (rfq.decision.winner_id as string)}</strong></p>
+                  {details?.revealed?.[rfq.decision.winner_id as string] && (
+                    <p className="num">Contact: <span className="text-bone">
+                      {details.revealed[rfq.decision.winner_id as string].contact_name} · {details.revealed[rfq.decision.winner_id as string].phone} · {details.revealed[rfq.decision.winner_id as string].email}
+                    </span></p>
+                  )}
+                  <p>Payment: <span className="text-bone">{(rfq.decision.payment_note as string) ?? "Cash on delivery. Crossover never holds money."}</span></p>
                   <p>Reason: <span className="text-bone">{rfq.decision.reason as string}</span></p>
                   <p>Approver: <span className="text-bone">{rfq.decision.approver as string}</span></p>
                 </div>
@@ -608,7 +657,7 @@ export function DashboardDesk() {
         </div>
       </main>
 
-      {/* Supplier Profile Side Panel (click-through) */}
+      {/* Seller panel (click-through): anonymous until revealed */}
       {profileSupplierId && supplierProfile && (
         <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setProfileSupplierId(null)}>
           <div className="absolute inset-0 bg-ink/60 backdrop-blur-sm" />
@@ -617,24 +666,48 @@ export function DashboardDesk() {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="display text-lg text-bone">Supplier Profile</h3>
+              <h3 className="display text-lg text-bone">{supplierProfile.revealed ? "Seller" : "Anonymous seller"}</h3>
               <button onClick={() => setProfileSupplierId(null)} className="text-muted hover:text-bone">
                 <X size={18} />
               </button>
             </div>
             <div>
               <h4 className="text-base font-semibold text-bone">{supplierProfile.business_name}</h4>
-              <p className="text-[13px] text-muted">{supplierProfile.location_city}, {supplierProfile.location_state}</p>
-              <div className="mt-2"><VerifiedBadge tier={supplierProfile.verification_tier} /></div>
-              {supplierProfile.description && (
-                <p className="mt-2 text-[12px] text-muted">{supplierProfile.description}</p>
-              )}
+              <p className="text-[13px] text-muted">
+                {supplierProfile.revealed ? `${supplierProfile.location_city}, ${supplierProfile.location_state}` : supplierProfile.location_state}
+              </p>
+              <p className="mt-2 flex items-start gap-1.5 text-[12px] text-muted">
+                <ShieldCheck size={13} className="mt-0.5 shrink-0" /><span>{supplierProfile.verification_text}</span>
+              </p>
+              {supplierProfile.description && <p className="mt-2 text-[12px] text-muted">{supplierProfile.description}</p>}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {supplierProfile.categories.map(c => (
                   <span key={c} className="rounded-full bg-raised px-2 py-0.5 text-[11px] text-muted">{c}</span>
                 ))}
               </div>
             </div>
+
+            {supplierProfile.revealed && supplierProfile.contact ? (
+              <div className="rounded-lg border border-live/40 bg-live/10 p-3 text-[13px] text-bone space-y-0.5">
+                <div className="font-semibold">Contact</div>
+                <div>{supplierProfile.contact.contact_name}</div>
+                <div className="num">{supplierProfile.contact.phone}</div>
+                <div className="num">{supplierProfile.contact.email}</div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-line bg-raised/40 p-3 space-y-2">
+                <p className="text-[12px] text-muted">
+                  Name, city, products and contact are hidden until you reveal this seller. {details?.plan && <PlanLine plan={details.plan} />}
+                </p>
+                <button type="button" disabled={revealingAlias === supplierProfile.supplier_id}
+                  onClick={() => handleReveal(supplierProfile.supplier_id)}
+                  className="flex items-center gap-1.5 rounded-full bg-signal px-4 py-1.5 text-[12px] font-semibold text-ink disabled:opacity-40">
+                  <Unlock size={13} /><span>Reveal {supplierProfile.supplier_id}</span>
+                </button>
+                {revealError && <p className="text-[12px] text-error">{revealError}</p>}
+              </div>
+            )}
+
             {supplierProfile.products.length > 0 && (
               <div className="border-t border-line/60 pt-3">
                 <span className="label text-muted">Products</span>
@@ -660,8 +733,19 @@ export function DashboardDesk() {
         <SaveDecisionModal
           evaluation={evaluation}
           buyerName={rfq.buyer_name}
+          revealed={details?.revealed ?? {}}
+          revealing={revealingAlias !== null}
+          onReveal={handleReveal}
           onSave={handleSaveDecision}
           onClose={() => setShowDecisionModal(false)}
+        />
+      )}
+
+      {paywall && (
+        <PaywallModal
+          plan={details?.plan}
+          onClose={() => setPaywall(false)}
+          onUpgraded={() => { setPaywall(false); refetch(); }}
         />
       )}
     </div>
@@ -671,10 +755,13 @@ export function DashboardDesk() {
 // ─── Save Decision Modal ───────────────────────────────────────────────────
 
 function SaveDecisionModal({
-  evaluation, buyerName, onSave, onClose,
+  evaluation, buyerName, revealed, revealing, onReveal, onSave, onClose,
 }: {
   evaluation: ReturnType<typeof evaluate>;
   buyerName: string;
+  revealed: Record<string, SellerIdentity>;
+  revealing: boolean;
+  onReveal: (alias: string) => Promise<unknown>;
   onSave: (winnerId: string, reason: string, approver: string) => void;
   onClose: () => void;
 }) {
@@ -695,7 +782,9 @@ function SaveDecisionModal({
           <h3 className="display text-xl text-bone">Save Decision</h3>
           <button onClick={onClose} className="text-muted hover:text-bone"><X size={18} /></button>
         </div>
-        <p className="text-[13px] text-muted">This locks the RFQ. Suppliers can no longer revise quotes.</p>
+        <p className="text-[13px] text-muted">
+          This places the order and locks the request. Payment is cash on delivery; Crossover never holds money.
+        </p>
 
         <div>
           <label className="label mb-1.5 block text-bone">Winner</label>
@@ -732,16 +821,92 @@ function SaveDecisionModal({
           />
         </div>
 
+        {winnerId && !revealed[winnerId] && (
+          <p className="rounded-lg border border-line bg-raised/40 p-2.5 text-[12px] text-muted">
+            To place the order you need {winnerId}'s contact. Reveal them first. It uses one of your free reveals,
+            unless you have unlocked this seller before.
+          </p>
+        )}
+
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="rounded-full border border-line px-4 py-1.5 text-[13px] text-muted hover:text-bone">
             Cancel
           </button>
-          <button
-            onClick={() => onSave(winnerId, reason, approver)}
-            disabled={!winnerId || !reason.trim() || !approver.trim()}
-            className="flex items-center gap-1.5 rounded-full bg-signal px-5 py-1.5 text-[13px] font-medium text-ink hover:opacity-90 disabled:opacity-40"
-          >
-            <Save size={14} /><span>Save & Lock</span>
+          {winnerId && !revealed[winnerId] ? (
+            <button
+              onClick={() => onReveal(winnerId)}
+              disabled={revealing}
+              className="flex items-center gap-1.5 rounded-full bg-signal px-5 py-1.5 text-[13px] font-medium text-ink hover:opacity-90 disabled:opacity-40"
+            >
+              <Unlock size={14} /><span>{revealing ? "Revealing…" : `Reveal ${winnerId}`}</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => onSave(winnerId, reason, approver)}
+              disabled={!winnerId || !reason.trim() || !approver.trim()}
+              className="flex items-center gap-1.5 rounded-full bg-signal px-5 py-1.5 text-[13px] font-medium text-ink hover:opacity-90 disabled:opacity-40"
+            >
+              <Save size={14} /><span>Place order & lock</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── Reveals left, and the mock paywall ────────────────────────────────────
+
+function PlanLine({ plan }: { plan: PlanInfo }) {
+  return plan.plan === "pro"
+    ? <>You are on the demo paid plan (mock), so reveals are unlimited.</>
+    : <>You have {plan.reveals_left} of {plan.free_limit} free reveals left. A seller you have already unlocked costs nothing.</>;
+}
+
+function PlanChip({ plan }: { plan: PlanInfo }) {
+  return (
+    <span className="num rounded-full border border-line bg-surface px-2.5 py-1 text-[12px] text-muted"
+      title="Reveals unlock a seller's name and contact">
+      {plan.plan === "pro" ? "Reveals: unlimited (mock plan)" : `${plan.reveals_left} of ${plan.free_limit} free reveals left`}
+    </span>
+  );
+}
+
+/** The paywall is a mock. The upgrade button flips a flag on the demo server; no payment is taken or stored. */
+function PaywallModal({ plan, onClose, onUpgraded }: { plan?: PlanInfo; onClose: () => void; onUpgraded: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const upgrade = async () => {
+    setBusy(true); setError(null);
+    try { await mockUpgrade(); onUpgraded(); }
+    catch (e) { setError(e instanceof Error ? e.message : "Could not upgrade."); setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 backdrop-blur-md p-4">
+      <div className="w-full max-w-md space-y-4 rounded-2xl border border-line bg-surface p-6 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="display text-xl text-bone">You've used your free reveals</h3>
+          <button onClick={onClose} className="text-muted hover:text-bone"><X size={18} /></button>
+        </div>
+        <p className="text-[13px] text-muted">
+          Comparing quotes is free and stays free. Revealing a seller's name and contact uses a reveal.
+          {plan ? ` You used ${plan.free_limit} of ${plan.free_limit}.` : ""} Sellers you have already unlocked stay unlocked.
+        </p>
+        <div className="space-y-2 rounded-xl border border-line bg-raised/40 p-3 text-[13px]">
+          <div className="flex justify-between"><span className="text-bone">Reveal pack</span><span className="num text-muted">₹ 499 for 10 reveals</span></div>
+          <div className="flex justify-between"><span className="text-bone">Monthly plan</span><span className="num text-muted">₹ 1,499 per month, unlimited</span></div>
+          <p className="text-[11px] text-muted">Prices are assumptions for this demo, not results. Sellers pay nothing.</p>
+        </div>
+        <p className="rounded-lg border border-warn/40 bg-warn/10 p-2.5 text-[12px] text-warn">
+          Mock screen: no payment is taken. The button below only switches this demo account to unlimited reveals.
+        </p>
+        {error && <p className="text-[12px] text-error">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-full border border-line px-4 py-1.5 text-[13px] text-muted hover:text-bone">Not now</button>
+          <button onClick={upgrade} disabled={busy}
+            className="rounded-full bg-signal px-5 py-1.5 text-[13px] font-semibold text-ink disabled:opacity-40">
+            {busy ? "Switching…" : "Switch to the mock paid plan"}
           </button>
         </div>
       </div>

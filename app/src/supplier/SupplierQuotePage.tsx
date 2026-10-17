@@ -9,7 +9,6 @@ import { StatusChip } from "./components/StatusChip";
 import { NegotiationTargetCard } from "./components/NegotiationTargetCard";
 import { SupplierChat } from "./components/SupplierChat";
 import { Money } from "./components/Money";
-import { VerifiedBadge } from "./components/VerifiedBadge";
 import { useApiPoll, useApiOnce } from "../lib/useApi";
 import {
   getRFQByToken, getMyQuotes, submitQuoteByToken,
@@ -221,7 +220,6 @@ export function SupplierQuotePage() {
             <span className="label text-signal">SUPPLIER QUOTE DESK</span>
           </div>
           <div className="flex items-center gap-2">
-            <VerifiedBadge tier="tax_ids" />
             <button
               type="button"
               onClick={handleCopyLink}
@@ -240,9 +238,7 @@ export function SupplierQuotePage() {
             <div>
               <div className="flex items-center gap-2 text-[12px] text-muted">
                 <Building2 size={13} className="text-signal" />
-                <span className="font-semibold text-bone">{rfq.buyer_company}</span>
-                <span>·</span>
-                <span>{rfq.buyer_city}, {rfq.buyer_state}</span>
+                <span className="font-semibold text-bone">{rfq.buyer_descriptor}</span>
               </div>
               <h1 className="display text-2xl text-bone mt-1.5">
                 Request: <span className="text-signal">{rfq.item}</span>
@@ -265,8 +261,16 @@ export function SupplierQuotePage() {
               <span className="num text-base font-bold text-bone">Within {rfq.need_in_days} days</span>
             </div>
             <div className="col-span-2 sm:col-span-1">
-              <span className="label text-muted block">Contact</span>
-              <span className="font-medium text-bone">{rfq.buyer_name}</span>
+              <span className="label text-muted block">Buyer contact</span>
+              {rfq.unlocked && rfq.buyer_contact ? (
+                <span className="font-medium text-bone">
+                  {rfq.buyer_contact.name}, {rfq.buyer_contact.company}
+                  {rfq.buyer_contact.phone ? ` · ${rfq.buyer_contact.phone}` : ""}
+                  {rfq.buyer_contact.email ? ` · ${rfq.buyer_contact.email}` : ""}
+                </span>
+              ) : (
+                <span className="text-muted">Shared when the buyer unlocks you</span>
+              )}
             </div>
           </div>
 

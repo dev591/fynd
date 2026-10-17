@@ -69,7 +69,7 @@ export function SummaryStep({ profile }: SummaryStepProps) {
             {profile.verification.tax_ids_consistent ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-live/40 bg-live/15 px-3 py-1 text-[12px] font-medium text-live">
                 <ShieldCheck size={13} strokeWidth={2.5} />
-                <span>Tax IDs Cross-Checked</span>
+                <span>GSTIN/PAN format checked</span>
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1 text-[12px] text-muted">
@@ -80,7 +80,7 @@ export function SummaryStep({ profile }: SummaryStepProps) {
             {profile.verification.registry === "demo" && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-signal/40 bg-signal/15 px-3 py-1 text-[12px] font-medium text-signal">
                 <TrendingUp size={13} strokeWidth={2.5} />
-                <span>Demo Registry Verified</span>
+                <span>Demo registry check (simulated)</span>
               </span>
             )}
 
