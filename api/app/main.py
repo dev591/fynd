@@ -3,7 +3,7 @@ from .env import load_env
 
 load_env()  # reads api/.env before anything reads os.environ
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -47,6 +47,29 @@ from . import ai, assistant
 from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
+from .auth import AuthUser, get_current_user
+
+
+def _rfq_for(user: AuthUser, rfq_id: str) -> RFQ:
+    """The request, only if this user owns it (or it is the shared demo request). 404 otherwise, never 403."""
+    rfq = store.get_rfq(rfq_id)
+    if not rfq or (rfq.owner_id is not None and rfq.owner_id != user.id):
+        raise HTTPException(status_code=404, detail="RFQ not found.")
+    return rfq
+
+
+def _demo_sellers_allowed() -> bool:
+    return os.environ.get("ALLOW_DEMO_SELLERS", "true").lower() != "false"
+
+
+def _seller_for(user: AuthUser, supplier_id: str) -> str:
+    """A seller id this user may act as: their own, or a synthetic demo seller while demo sellers are allowed."""
+    owner = store.supplier_owner.get(supplier_id)
+    if owner == user.id:
+        return supplier_id
+    if owner is None and supplier_id in store.supplier_profiles and _demo_sellers_allowed():
+        return supplier_id
+    raise HTTPException(status_code=404, detail="Seller not found.")
 
 # Pipeline configuration
 REGISTRY = {"exact": ExactCache, "rules": Rules, "semantic": SemanticCache, "llm": LLMCascade}
@@ -86,19 +109,19 @@ def health():
 
 
 @app.post("/run")
-async def run(body: RunIn):
+async def run(body: RunIn, user: AuthUser = Depends(get_current_user)):
     ctx = Ctx(body.query, body.tenant, body.meta)
     r = await pipeline.run(ctx)
     return {"request_id": ctx.request_id, **r.__dict__}
 
 
 @app.get("/stats")
-def stats():
+def stats(user: AuthUser = Depends(get_current_user)):
     return pipeline.summary()
 
 
 @app.get("/trace/stream")
-async def trace_stream():
+async def trace_stream(user: AuthUser = Depends(get_current_user)):
     q = bus.subscribe()
 
     async def gen():
@@ -130,20 +153,24 @@ def validate_tax(body: TaxValidationIn):
 
 
 @app.post("/api/profile", response_model=Profile)
-def save_profile(profile: Profile):
-    # Mask PAN before saving to prevent raw leak
+def save_profile(profile: Profile, user: AuthUser = Depends(get_current_user)):
+    """Saves the signed-in user's own profile. The id and email come from the verified login, not the request."""
+    profile.id = user.id
+    if user.email:
+        profile.email = user.email
     if profile.pan_masked is None and profile.gstin:
-        profile.pan_masked = mask_pan(profile.gstin[2:12])
-    store.profiles[profile.id] = profile
+        profile.pan_masked = mask_pan(profile.gstin[2:12])    # never keep a raw PAN
+    store.register_profile(user.id, profile)
     return profile
 
 
-@app.get("/api/profile/{profile_id}", response_model=Profile)
-def get_profile(profile_id: str):
-    p = store.profiles.get(profile_id)
-    if not p:
-        raise HTTPException(status_code=404, detail="Profile not found.")
-    return p
+@app.get("/api/me")
+def me(user: AuthUser = Depends(get_current_user)):
+    return {
+        "user": user,
+        "profile": store.profiles.get(user.id),
+        "supplier_id": store.supplier_id_for_user(user.id),
+    }
 
 
 # --- Buyer intake (draft only: nothing here saves a request) ---
@@ -156,7 +183,7 @@ def intake_status():
 
 
 @app.post("/api/intake/draft")
-def intake_draft(payload: IntakeIn):
+def intake_draft(payload: IntakeIn, user: AuthUser = Depends(get_current_user)):
     key = payload.text.strip().lower()
     if key in _intake_cache:
         result = dict(_intake_cache[key])
@@ -170,7 +197,7 @@ def intake_draft(payload: IntakeIn):
 
 
 @app.post("/api/intake/transcribe")
-async def intake_transcribe(request: Request):
+async def intake_transcribe(request: Request, user: AuthUser = Depends(get_current_user)):
     """Raw audio bytes in the body (no multipart dependency). Returns the transcript, or fallback=true."""
     audio = await request.body()
     text = ai.transcribe(audio, request.headers.get("content-type", "audio/webm"))
@@ -206,26 +233,27 @@ def get_case_checks():
 
 # --- 4. RFQ Lifecycle (Buyer Side) ---
 @app.post("/api/rfqs")
-def create_rfq(payload: RFQCreate):
-    return _rfq_response(store.create_rfq(payload))
+def create_rfq(payload: RFQCreate, user: AuthUser = Depends(get_current_user)):
+    return _rfq_response(store.create_rfq(payload, owner_id=user.id))
 
 
 @app.post("/api/rfqs/confirm")
-def confirm_rfq(payload: ConfirmIn):
+def confirm_rfq(payload: ConfirmIn, user: AuthUser = Depends(get_current_user)):
     """Creates the request from the confirm card. The only way an intake draft becomes a request."""
     rfq = store.create_rfq(RFQCreate(
         item=payload.item.strip(), qty=payload.qty, need_in_days=payload.need_in_days,
         buyer_company=payload.buyer_company, buyer_name=payload.buyer_name,
         buyer_city=payload.buyer_city, buyer_state=payload.buyer_state,
         note=payload.note, priority_mode=payload.priority_mode, source=payload.source,
-    ))
+    ), owner_id=user.id)
     if payload.intake_id:
         store.link_ai_log(payload.intake_id, rfq.id)
     return _rfq_response(rfq)
 
 
 @app.get("/api/rfqs/{rfq_id}/summary")
-def rfq_summary(rfq_id: str):
+def rfq_summary(rfq_id: str, user: AuthUser = Depends(get_current_user)):
+    _rfq_for(user, rfq_id)
     s = build_summary(store, rfq_id)
     if not s:
         raise HTTPException(status_code=404, detail="RFQ not found.")
@@ -233,11 +261,9 @@ def rfq_summary(rfq_id: str):
 
 
 @app.post("/api/rfqs/{rfq_id}/share")
-def share_rfq(rfq_id: str):
+def share_rfq(rfq_id: str, user: AuthUser = Depends(get_current_user)):
     """Explicit click only. The link is read-only, unguessable, and shows every quote price."""
-    rfq = store.get_rfq(rfq_id)
-    if not rfq:
-        raise HTTPException(status_code=404, detail="RFQ not found.")
+    rfq = _rfq_for(user, rfq_id)
     if not rfq.decision:
         raise HTTPException(status_code=409, detail="Save the decision before sharing the one-pager.")
     tok = store.create_share(rfq_id)
@@ -254,14 +280,13 @@ def shared_summary(token: str):
 
 
 @app.get("/api/savings")
-def savings():
-    return savings_total(store)
+def savings(user: AuthUser = Depends(get_current_user)):
+    return savings_total(store, owner_id=user.id)
 
 
 @app.get("/api/rfqs/{rfq_id}/ai-log")
-def rfq_ai_log(rfq_id: str):
-    if not store.get_rfq(rfq_id):
-        raise HTTPException(status_code=404, detail="RFQ not found.")
+def rfq_ai_log(rfq_id: str, user: AuthUser = Depends(get_current_user)):
+    _rfq_for(user, rfq_id)
     return store.ai_log_for(rfq_id)
 
 
@@ -281,29 +306,34 @@ def _rfq_response(rfq: RFQ) -> dict:
 
 
 @app.get("/api/suppliers")
-def list_suppliers():
-    return store.list_suppliers()
+def list_suppliers(user: AuthUser = Depends(get_current_user)):
+    """The sellers this user may act as: their own, plus the synthetic demo sellers while those are allowed."""
+    return [x for x in store.list_suppliers()
+            if x["supplier_id"] == store.supplier_id_for_user(user.id)
+            or (store.supplier_owner.get(x["supplier_id"]) is None and _demo_sellers_allowed())]
 
 
 @app.get("/api/supplier/{supplier_id}/notifications", response_model=List[NotificationOut])
-def list_notifications(supplier_id: str):
+def list_notifications(supplier_id: str, user: AuthUser = Depends(get_current_user)):
+    _seller_for(user, supplier_id)
     return store.list_notifications(supplier_id)
 
 
 @app.get("/api/supplier/{supplier_id}/autopilot", response_model=AutopilotSettings)
-def get_autopilot(supplier_id: str):
+def get_autopilot(supplier_id: str, user: AuthUser = Depends(get_current_user)):
+    _seller_for(user, supplier_id)
     return store.get_autopilot(supplier_id)
 
 
 @app.put("/api/supplier/{supplier_id}/autopilot", response_model=AutopilotSettings)
-def put_autopilot(supplier_id: str, payload: AutopilotSettings):
-    if supplier_id not in store.supplier_profiles:
-        raise HTTPException(status_code=404, detail="Seller not found.")
+def put_autopilot(supplier_id: str, payload: AutopilotSettings, user: AuthUser = Depends(get_current_user)):
+    _seller_for(user, supplier_id)
     return store.set_autopilot(supplier_id, payload.enabled)
 
 
 @app.post("/api/supplier/{supplier_id}/notifications/{notification_id}/read", response_model=NotificationOut)
-def read_notification(supplier_id: str, notification_id: str):
+def read_notification(supplier_id: str, notification_id: str, user: AuthUser = Depends(get_current_user)):
+    _seller_for(user, supplier_id)
     n = store.mark_notification_viewed(supplier_id, notification_id)
     if not n:
         raise HTTPException(status_code=404, detail="Notification not found.")
@@ -311,15 +341,14 @@ def read_notification(supplier_id: str, notification_id: str):
 
 
 @app.get("/api/rfqs", response_model=List[RFQ])
-def list_rfqs():
-    return list(store.rfqs.values())
+def list_rfqs(user: AuthUser = Depends(get_current_user)):
+    """Only this buyer's requests, plus the shared demo request."""
+    return [r for r in store.rfqs.values() if r.owner_id in (None, user.id)]
 
 
 @app.get("/api/rfqs/{rfq_id}")
-def get_rfq_details(rfq_id: str):
-    rfq = store.get_rfq(rfq_id)
-    if not rfq:
-        raise HTTPException(status_code=404, detail="RFQ not found.")
+def get_rfq_details(rfq_id: str, user: AuthUser = Depends(get_current_user)):
+    rfq = _rfq_for(user, rfq_id)
 
     quotes_by_supplier = store.quotes.get(rfq_id, {})
     targets_by_supplier = store.targets.get(rfq_id, {})
@@ -341,7 +370,8 @@ def get_rfq_details(rfq_id: str):
 
 
 @app.post("/api/rfqs/{rfq_id}/targets", response_model=NegotiationTarget)
-def send_target_to_supplier(rfq_id: str, payload: NegotiationTargetIn):
+def send_target_to_supplier(rfq_id: str, payload: NegotiationTargetIn, user: AuthUser = Depends(get_current_user)):
+    _rfq_for(user, rfq_id)
     try:
         return store.send_target(
             rfq_id=rfq_id,
@@ -358,7 +388,8 @@ def send_target_to_supplier(rfq_id: str, payload: NegotiationTargetIn):
 
 
 @app.post("/api/rfqs/{rfq_id}/decision")
-def record_decision(rfq_id: str, payload: DecisionIn):
+def record_decision(rfq_id: str, payload: DecisionIn, user: AuthUser = Depends(get_current_user)):
+    _rfq_for(user, rfq_id)
     try:
         return store.save_decision(
             rfq_id=rfq_id,
@@ -371,8 +402,8 @@ def record_decision(rfq_id: str, payload: DecisionIn):
 
 
 @app.get("/api/recommendations")
-def list_recommendations():
-    return store.decisions
+def list_recommendations(user: AuthUser = Depends(get_current_user)):
+    return {rid: d for rid, d in store.decisions.items() if store.rfqs[rid].owner_id in (None, user.id)}
 
 
 # --- 5. Supplier Sealed Bids (Token Routes) ---
@@ -453,9 +484,8 @@ def mark_quoting(token: str):
 
 
 @app.get("/api/rfqs/{rfq_id}/activity", response_model=Activity)
-def rfq_activity(rfq_id: str):
-    if not store.get_rfq(rfq_id):
-        raise HTTPException(status_code=404, detail="RFQ not found.")
+def rfq_activity(rfq_id: str, user: AuthUser = Depends(get_current_user)):
+    _rfq_for(user, rfq_id)
     return store.activity(rfq_id)
 
 
@@ -466,7 +496,8 @@ def get_my_quotes(token: str):
 
 # --- 6. Supplier Profile & Products ---
 @app.get("/api/supplier/profile/{supplier_id}", response_model=SupplierProfileOut)
-def get_supplier_profile(supplier_id: str):
+def get_supplier_profile(supplier_id: str, user: AuthUser = Depends(get_current_user)):
+    _seller_for(user, supplier_id)
     p = store.get_supplier_profile(supplier_id)
     if not p:
         raise HTTPException(status_code=404, detail="Supplier profile not found.")
@@ -474,22 +505,26 @@ def get_supplier_profile(supplier_id: str):
 
 
 @app.put("/api/supplier/profile/{supplier_id}", response_model=SupplierProfileOut)
-def update_supplier_profile(supplier_id: str, payload: SupplierProfileIn):
+def update_supplier_profile(supplier_id: str, payload: SupplierProfileIn, user: AuthUser = Depends(get_current_user)):
+    _seller_for(user, supplier_id)
     return store.upsert_supplier_profile(supplier_id, payload)
 
 
 @app.get("/api/supplier/products/{supplier_id}", response_model=List[SupplierProduct])
-def list_supplier_products(supplier_id: str):
+def list_supplier_products(supplier_id: str, user: AuthUser = Depends(get_current_user)):
+    _seller_for(user, supplier_id)
     return store.get_supplier_products(supplier_id)
 
 
 @app.post("/api/supplier/products/{supplier_id}", response_model=SupplierProduct, status_code=201)
-def add_supplier_product(supplier_id: str, payload: SupplierProductIn):
+def add_supplier_product(supplier_id: str, payload: SupplierProductIn, user: AuthUser = Depends(get_current_user)):
+    _seller_for(user, supplier_id)
     return store.add_supplier_product(supplier_id, payload)
 
 
 @app.put("/api/supplier/products/{supplier_id}/{product_id}", response_model=SupplierProduct)
-def update_supplier_product(supplier_id: str, product_id: str, payload: SupplierProductIn):
+def update_supplier_product(supplier_id: str, product_id: str, payload: SupplierProductIn, user: AuthUser = Depends(get_current_user)):
+    _seller_for(user, supplier_id)
     p = store.update_supplier_product(supplier_id, product_id, payload)
     if not p:
         raise HTTPException(status_code=404, detail="Product not found.")
@@ -497,7 +532,8 @@ def update_supplier_product(supplier_id: str, product_id: str, payload: Supplier
 
 
 @app.delete("/api/supplier/products/{supplier_id}/{product_id}", status_code=204)
-def delete_supplier_product(supplier_id: str, product_id: str):
+def delete_supplier_product(supplier_id: str, product_id: str, user: AuthUser = Depends(get_current_user)):
+    _seller_for(user, supplier_id)
     ok = store.delete_supplier_product(supplier_id, product_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Product not found.")
@@ -506,7 +542,8 @@ def delete_supplier_product(supplier_id: str, product_id: str):
 
 # --- 7. Buyer-side supplier profile (click-through) ---
 @app.get("/api/rfqs/{rfq_id}/suppliers/{supplier_id}")
-def get_supplier_profile_for_buyer(rfq_id: str, supplier_id: str):
+def get_supplier_profile_for_buyer(rfq_id: str, supplier_id: str, user: AuthUser = Depends(get_current_user)):
+    _rfq_for(user, rfq_id)
     data = store.get_supplier_profile_for_buyer(rfq_id, supplier_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Supplier not found on this request.")
@@ -515,15 +552,16 @@ def get_supplier_profile_for_buyer(rfq_id: str, supplier_id: str):
 
 # --- 8. Chat (buyer + supplier token routes) ---
 @app.get("/api/rfqs/{rfq_id}/threads/{supplier_id}/messages", response_model=List[ChatMessage])
-def get_chat_messages(rfq_id: str, supplier_id: str):
+def get_chat_messages(rfq_id: str, supplier_id: str, user: AuthUser = Depends(get_current_user)):
+    _rfq_for(user, rfq_id)
     return store.get_chat_messages(rfq_id, supplier_id)
 
 
 @app.post("/api/rfqs/{rfq_id}/threads/{supplier_id}/messages", response_model=ChatMessage, status_code=201)
-def post_chat_message(rfq_id: str, supplier_id: str, payload: ChatMessageIn):
-    if rfq_id not in store.rfqs:
-        raise HTTPException(status_code=404, detail="RFQ not found.")
-    return store.add_chat_message(rfq_id, supplier_id, payload.sender, payload.sender_name, payload.text)
+def post_chat_message(rfq_id: str, supplier_id: str, payload: ChatMessageIn, user: AuthUser = Depends(get_current_user)):
+    _rfq_for(user, rfq_id)
+    # The signed-in buyer is always the buyer here; the request body cannot pick the sender.
+    return store.add_chat_message(rfq_id, supplier_id, "buyer", payload.sender_name, payload.text)
 
 
 @app.get("/api/rfq-by-token/{token}/messages", response_model=List[ChatMessage])
@@ -533,7 +571,8 @@ def get_chat_by_token(token: str):
 
 @app.post("/api/rfq-by-token/{token}/messages", response_model=ChatMessage, status_code=201)
 def post_chat_by_token(token: str, payload: ChatMessageIn):
-    msg = store.add_chat_by_token(token, payload.sender, payload.sender_name, payload.text)
+    # A supplier link can only ever speak as the supplier, whatever the body says.
+    msg = store.add_chat_by_token(token, "supplier", payload.sender_name, payload.text)
     if msg is None:
         raise HTTPException(status_code=404, detail="Invalid or expired link.")
     return msg

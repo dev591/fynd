@@ -147,6 +147,7 @@ class RFQ(BaseModel):
     decision: dict | None = None
     priority_mode: PriorityMode = "cheapest"
     source: RequestSource = "form"
+    owner_id: str | None = None   # the signed-in buyer who created it; None only for the shared demo request
     supplier_tokens: dict[str, str] = Field(default_factory=dict)  # supplier_id -> token
 
 

@@ -144,9 +144,12 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True) -> Optional[d
     }
 
 
-def savings_total(store) -> dict[str, Any]:
+def savings_total(store, owner_id: Optional[str] = None) -> dict[str, Any]:
+    """Savings across decided requests the user owns (plus the shared demo request)."""
     total, n = 0.0, 0
     for rid, d in store.decisions.items():
+        if store.rfqs[rid].owner_id not in (None, owner_id):
+            continue
         s = build_summary(store, rid, with_explainer=False)
         if s and s["savings"]:
             total += s["savings"]["difference"]

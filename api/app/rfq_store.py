@@ -49,6 +49,7 @@ class RFQStore:
         self.supplier_products: Dict[str, List[SupplierProduct]] = {}
         self.chats: Dict[str, Dict[str, List[ChatMessage]]] = {}
         self.notifications: Dict[str, List[Notification]] = {}  # supplier_id -> inbox
+        self.supplier_owner: Dict[str, str] = {}  # supplier_id -> owning user id; demo sellers have none
         self.autopilot: Dict[str, AutopilotSettings] = {}  # supplier_id -> settings; absent means off
         self.shares: Dict[str, str] = {}  # unguessable share token -> rfq_id, created only by an explicit click
         self.assists: Dict[str, dict] = {}  # token -> the draft and wording issued, to label quote origin
@@ -241,6 +242,27 @@ class RFQStore:
             ))
             self.maybe_autopilot_quote(rfq, sid)
 
+    def register_profile(self, user_id: str, profile: Profile) -> None:
+        """Remember a signed-in user's profile. A supplier gets their own seller record, owned by them."""
+        self.profiles[user_id] = profile
+        if profile.role.value != "supplier":
+            return
+        self.supplier_owner[user_id] = user_id
+        tier = "registry" if profile.verification.registry != "none" else \
+               "tax_ids" if profile.verification.tax_ids_consistent else \
+               "email" if profile.verification.email else "none"
+        existing = self.supplier_profiles.get(user_id)
+        self.supplier_profiles[user_id] = SupplierProfileOut(
+            supplier_id=user_id, business_name=profile.company, location_city=profile.city,
+            location_state=profile.state, categories=profile.categories,
+            description=existing.description if existing else None,
+            verification_tier=tier, synthetic=False,
+        )
+        self.supplier_products.setdefault(user_id, [])
+
+    def supplier_id_for_user(self, user_id: str) -> Optional[str]:
+        return user_id if self.supplier_owner.get(user_id) == user_id else None
+
     def get_autopilot(self, supplier_id: str) -> AutopilotSettings:
         return self.autopilot.get(supplier_id, AutopilotSettings())
 
@@ -348,7 +370,7 @@ class RFQStore:
 
     # ─── RFQ Lifecycle ─────────────────────────────────────────────────
 
-    def create_rfq(self, payload: RFQCreate) -> RFQ:
+    def create_rfq(self, payload: RFQCreate, owner_id: Optional[str] = None) -> RFQ:
         """Create the request, find every seller whose catalog has the item, notify each once."""
         rfq_id = "rfq_" + uuid.uuid4().hex[:8]
         matches = self.match_suppliers(payload.item)
@@ -368,7 +390,7 @@ class RFQStore:
             buyer_city=payload.buyer_city, buyer_state=payload.buyer_state,
             note=payload.note, created_at=datetime.now().isoformat(),
             status="Open", supplier_tokens=tokens,
-            priority_mode=payload.priority_mode, source=payload.source,
+            priority_mode=payload.priority_mode, source=payload.source, owner_id=owner_id,
         )
         self.rfqs[rfq_id] = rfq
         self.quotes[rfq_id] = {}
