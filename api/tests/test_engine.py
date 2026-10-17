@@ -125,3 +125,50 @@ def test_unknown_mode_falls_back_to_cheapest_and_late_never_wins():
     res = evaluate(_mode_quotes(), need, mode="nonsense")
     assert res.mode == "cheapest" and res.winner.quote_id == "C"  # A, B arrive too late
     assert all(w is None or w.quote_id == "C" for w in res.winners.values())
+
+
+# ─── v2 additions ────────────────────────────────────────────────────────────
+
+def _ab():
+    from app.engine import BENCHMARK_QUOTES
+    return BENCHMARK_QUOTES[:2]
+
+
+def test_crossover_between_a_and_b_is_at_150_and_a_wins_from_151():
+    """A: 10/unit + 200 freight. B: 11/unit + 50 freight. They cost the same at 150 units."""
+    def landed(qty):
+        res = evaluate(_ab(), Need(item="M10 bolt", qty=qty, need_in_days=5))
+        return {r.quote_id: r.landed for r in res.rows}, res.winner.quote_id
+    l, w = landed(100); assert (l["A"], l["B"], w) == (1200, 1150, "B")
+    l, w = landed(149); assert w == "B" and l["B"] < l["A"]
+    l, _ = landed(150); assert l["A"] == l["B"] == 1700
+    l, w = landed(151); assert w == "A" and l["A"] < l["B"]
+    l, w = landed(300); assert w == "A"
+
+
+def test_balanced_tolerance_setting_and_old_name(monkeypatch):
+    from app.engine import balanced_threshold
+    assert balanced_threshold() == 0.05
+    monkeypatch.setenv("BALANCED_THRESHOLD", "0.2")
+    assert balanced_threshold() == 0.2
+    monkeypatch.setenv("BALANCED_TOLERANCE", "0.01")          # the brief's name wins
+    assert balanced_threshold() == 0.01
+    monkeypatch.setenv("BALANCED_TOLERANCE", "oops")
+    assert balanced_threshold() == 0.05
+
+
+def test_what_you_give_up_comes_from_engine_rows_only():
+    need = Need(item="M10 bolt", qty=100, need_in_days=5)
+    mk = lambda i, price, lead: Quote(id=i, supplier=i, item="M10 bolt", pack_price=price, pack_size=1, freight=0.0, lead_days=lead)
+    res = evaluate([mk("A", 10.0, 5), mk("B", 10.4, 3), mk("C", 12.0, 1)], need)
+    t = res.tradeoffs
+    assert t["cheapest"]["extra_cost"] == 0 and "Nothing given up" in t["cheapest"]["line"]
+    assert (t["balanced"]["extra_cost"], t["balanced"]["days_saved"]) == (40, 2)
+    assert t["balanced"]["line"] == "Balanced costs ₹40 more and arrives 2 days earlier."
+    assert (t["fastest"]["extra_cost"], t["fastest"]["days_saved"]) == (200, 4)
+    # one seller only: nothing to give up
+    solo = evaluate([mk("A", 10.0, 3)], need).tradeoffs
+    assert all(v["extra_cost"] == 0 for v in solo.values())
+    # nobody eligible: no invented numbers
+    none = evaluate([mk("A", 10.0, 9)], need).tradeoffs
+    assert all(v["line"] is None for v in none.values())

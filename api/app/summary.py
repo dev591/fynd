@@ -134,6 +134,7 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
         "engine_winner": _row(ev.winner) if ev.winner else None,
         "overrode_engine": bool(decided_row and ev.winner and decided_row.quote_id != ev.winner.quote_id),
         "winners_by_mode": {m: (_row(w) if w else None) for m, w in ev.winners.items()},
+        "tradeoffs": ev.tradeoffs,
         "rows": [_row(r) for r in ev.rows],
         "cheaper_excluded": [_row(r) for r in ev.cheaper_excluded],
         "reasons": reasons,

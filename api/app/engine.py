@@ -14,11 +14,34 @@ MODES = ("cheapest", "fastest", "balanced")
 
 
 def balanced_threshold() -> float:
-    """Share above the lowest landed cost that balanced mode will pay to arrive sooner. Our assumption."""
+    """Share above the lowest landed cost that balanced mode will pay to arrive sooner. Our assumption (5%).
+    Set BALANCED_TOLERANCE; the older BALANCED_THRESHOLD name still works."""
+    raw = os.environ.get("BALANCED_TOLERANCE") or os.environ.get("BALANCED_THRESHOLD") or "0.05"
     try:
-        return float(os.environ.get("BALANCED_THRESHOLD", "0.05"))
+        return max(0.0, float(raw))
     except ValueError:
         return 0.05
+
+
+def give_up(winners: Dict[str, Optional[EvaluatedRow]]) -> Dict[str, dict]:
+    """What each priority mode costs against the cheapest pick, from engine rows only: extra rupees, days saved."""
+    base = winners.get("cheapest")
+    out: Dict[str, dict] = {}
+    for mode in MODES:
+        w = winners.get(mode)
+        if not base or not w or base.landed is None or w.landed is None:
+            out[mode] = {"extra_cost": None, "days_saved": None, "line": None}
+        elif mode == "cheapest":
+            out[mode] = {"extra_cost": 0, "days_saved": 0, "line": "Lowest landed cost. Nothing given up on price."}
+        elif w.quote_id == base.quote_id:
+            out[mode] = {"extra_cost": 0, "days_saved": 0, "line": "Same seller as the cheapest pick. Nothing given up."}
+        else:
+            extra = round(w.landed - base.landed)
+            days = base.lead_days - w.lead_days
+            when = f"arrives {days} day{'' if days == 1 else 's'} earlier" if days > 0 else "arrives no earlier"
+            out[mode] = {"extra_cost": extra, "days_saved": max(days, 0),
+                         "line": f"{mode.capitalize()} costs ₹{extra:,} more and {when}."}
+    return out
 
 
 def order(q: Quote, qty: int) -> Optional[OrderCalc]:
@@ -160,6 +183,7 @@ def evaluate(
         cheaper_excluded=cheaper_excluded,
         mode=mode if mode in MODES else "cheapest",
         winners=winners,
+        tradeoffs=give_up(winners),
     )
 
 

@@ -117,6 +117,8 @@ class CompareResult(BaseModel):
     mode: PriorityMode = "cheapest"
     # Winner under every mode, so the trade-off is visible.
     winners: dict[str, EvaluatedRow | None] = Field(default_factory=dict)
+    # Per mode: extra rupees and days saved against the cheapest pick, plus a plain sentence. Engine numbers only.
+    tradeoffs: dict[str, dict] = Field(default_factory=dict)
 
 
 # RFQ Lifecycle Models
