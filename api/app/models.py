@@ -348,3 +348,24 @@ class Activity(BaseModel):
     viewed: int = 0
     quoting: int = 0
     quoted: int = 0
+
+
+# ─── Buyer intake ──────────────────────────────────────────────────────────
+
+class IntakeIn(BaseModel):
+    text: str = Field(max_length=1000)
+
+
+class ConfirmIn(BaseModel):
+    """The confirm card, after a person has checked every field."""
+    item: str = Field(min_length=1)
+    qty: int = Field(gt=0)
+    need_in_days: int = Field(gt=0)
+    priority_mode: PriorityMode = "cheapest"
+    source: RequestSource = "form"
+    buyer_company: str
+    buyer_name: str
+    buyer_city: str = "Pune"
+    buyer_state: str = "Maharashtra"
+    note: str | None = None
+    intake_id: str | None = None

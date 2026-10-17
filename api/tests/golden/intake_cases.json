@@ -1,0 +1,307 @@
+{
+ "today": "2026-10-17",
+ "cases": [
+  {
+   "tag": "clean",
+   "text": "I need 100 M10 bolts in 5 days",
+   "raw": {
+    "item": "M10 bolts",
+    "quantity": 100,
+    "need_in_days": 5,
+    "need_by_phrase": null,
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "M10 bolt",
+    "qty": 100,
+    "need_in_days": 5,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "hinglish_weekday",
+   "text": "100 M10 bolt chahiye Friday tak",
+   "raw": {
+    "item": "M10 bolt",
+    "quantity": 100,
+    "need_in_days": null,
+    "need_by_phrase": "Friday",
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "M10 bolt",
+    "qty": 100,
+    "need_in_days": 6,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "hinglish_days",
+   "text": "Mujhe 200 M10 bolt chahiye, 3 din mein",
+   "raw": {
+    "item": "M10 bolt",
+    "quantity": 200,
+    "need_in_days": 3,
+    "need_by_phrase": null,
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "M10 bolt",
+    "qty": 200,
+    "need_in_days": 3,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "number_word",
+   "text": "Need fifty 5 ply corrugated boxes by tomorrow",
+   "raw": {
+    "item": "5 ply corrugated boxes",
+    "quantity": 50,
+    "need_in_days": null,
+    "need_by_phrase": "tomorrow",
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "5 Ply Corrugated Box",
+    "qty": 50,
+    "need_in_days": 1,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "hindi_multiplier",
+   "text": "Looking for 2 hazaar M8 washer, need it in 4 days",
+   "raw": {
+    "item": "M8 washer",
+    "quantity": 2000,
+    "need_in_days": 4,
+    "need_by_phrase": null,
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "M8 washer",
+    "qty": 2000,
+    "need_in_days": 4,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "spec_in_name",
+   "text": "send me quotes for copper wire 1.5mm, 20 coils, within 7 days",
+   "raw": {
+    "item": "1.5mm copper wire",
+    "quantity": 20,
+    "need_in_days": 7,
+    "need_by_phrase": null,
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "1.5mm copper wire",
+    "qty": 20,
+    "need_in_days": 7,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "missing_date",
+   "text": "I want 100 M10 bolts",
+   "raw": {
+    "item": "M10 bolts",
+    "quantity": 100,
+    "need_in_days": null,
+    "need_by_phrase": null,
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "M10 bolt",
+    "qty": 100,
+    "need_in_days": null,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "two_items",
+   "text": "100 M10 bolts and 500 M8 washers in 5 days",
+   "raw": {
+    "item": "M10 bolts",
+    "quantity": 100,
+    "need_in_days": 5,
+    "need_by_phrase": null,
+    "priority": null,
+    "note": null,
+    "other_items": [
+     "M8 washers"
+    ]
+   },
+   "expect": {
+    "item": "M10 bolt",
+    "qty": 100,
+    "need_in_days": 5,
+    "priority_mode": null,
+    "has_other_items_warning": true
+   }
+  },
+  {
+   "tag": "vague_quantity",
+   "text": "need a lot of M10 bolts in 5 days",
+   "raw": {
+    "item": "M10 bolts",
+    "quantity": null,
+    "need_in_days": 5,
+    "need_by_phrase": null,
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "M10 bolt",
+    "qty": null,
+    "need_in_days": 5,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "priority_fastest",
+   "text": "M10 bolt 100 piece jaldi chahiye, fastest delivery do",
+   "raw": {
+    "item": "M10 bolt",
+    "quantity": 100,
+    "need_in_days": null,
+    "need_by_phrase": null,
+    "priority": "fastest",
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "M10 bolt",
+    "qty": 100,
+    "need_in_days": null,
+    "priority_mode": "fastest",
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "priority_cheapest",
+   "text": "cheapest quote for 300 M10 bolts, 10 days",
+   "raw": {
+    "item": "M10 bolts",
+    "quantity": 300,
+    "need_in_days": 10,
+    "need_by_phrase": null,
+    "priority": "cheapest",
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "M10 bolt",
+    "qty": 300,
+    "need_in_days": 10,
+    "priority_mode": "cheapest",
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "dozen",
+   "text": "need a dozen M10 bolts by next week",
+   "raw": {
+    "item": "M10 bolts",
+    "quantity": 12,
+    "need_in_days": null,
+    "need_by_phrase": "next week",
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "M10 bolt",
+    "qty": 12,
+    "need_in_days": 7,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "unknown_item",
+   "text": "50 titanium widgets in 6 days",
+   "raw": {
+    "item": "titanium widgets",
+    "quantity": 50,
+    "need_in_days": 6,
+    "need_by_phrase": null,
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "titanium widgets",
+    "qty": 50,
+    "need_in_days": 6,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "no_request",
+   "text": "hello how are you",
+   "raw": {
+    "item": "",
+    "quantity": null,
+    "need_in_days": null,
+    "need_by_phrase": null,
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": null,
+    "qty": null,
+    "need_in_days": null,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  },
+  {
+   "tag": "comma_number",
+   "text": "1,000 M10 bolts within 9 days",
+   "raw": {
+    "item": "M10 bolts",
+    "quantity": 1000,
+    "need_in_days": 9,
+    "need_by_phrase": null,
+    "priority": null,
+    "note": null,
+    "other_items": []
+   },
+   "expect": {
+    "item": "M10 bolt",
+    "qty": 1000,
+    "need_in_days": 9,
+    "priority_mode": null,
+    "has_other_items_warning": false
+   }
+  }
+ ]
+}

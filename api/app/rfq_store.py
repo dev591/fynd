@@ -20,7 +20,8 @@ from .models import (
     Activity,
 )
 from .engine import order
-from .matching import draft_quote, matching_product, verdict_for
+from .intake import singular
+from .matching import draft_quote, matching_product, normalise_item, verdict_for
 
 # Default supplier labels for demo invites
 _DEFAULT_SUPPLIERS = [
@@ -46,6 +47,7 @@ class RFQStore:
         self.supplier_products: Dict[str, List[SupplierProduct]] = {}
         self.chats: Dict[str, Dict[str, List[ChatMessage]]] = {}
         self.notifications: Dict[str, List[Notification]] = {}  # supplier_id -> inbox
+        self.ai_log: List[dict] = []  # every AI input and output, linked to the request once confirmed
 
         self._seed_default_data()
         self._seed_supplier_profiles()
@@ -202,6 +204,28 @@ class RFQStore:
             if hit:
                 found[sid] = hit
         return found
+
+    def catalog_names(self) -> Dict[str, str]:
+        """Plural-insensitive key -> the catalog's own spelling, for snapping intake items to real catalog items."""
+        names: Dict[str, str] = {}
+        for prods in self.supplier_products.values():
+            for p in prods:
+                for n in [*p.aliases, p.name]:
+                    if n.strip():
+                        names.setdefault(" ".join(singular(t) for t in normalise_item(n).split()), n.strip())
+        return names
+
+    def log_ai(self, kind: str, request_id: str, inp: dict, out: dict) -> None:
+        self.ai_log.append({"request_id": request_id, "kind": kind, "at": datetime.now().isoformat(),
+                            "input": inp, "output": out, "rfq_id": None})
+
+    def link_ai_log(self, request_id: str, rfq_id: str) -> None:
+        for e in self.ai_log:
+            if e["request_id"] == request_id:
+                e["rfq_id"] = rfq_id
+
+    def ai_log_for(self, rfq_id: str) -> List[dict]:
+        return [e for e in self.ai_log if e["rfq_id"] == rfq_id]
 
     def _notify(self, rfq: RFQ, matches: Dict[str, SupplierProduct]) -> None:
         for sid, prod in matches.items():

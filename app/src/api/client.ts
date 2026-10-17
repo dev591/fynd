@@ -224,6 +224,77 @@ export async function getRFQDetails(id: string): Promise<RFQDetailsDTO> {
   return apiFetch(`/api/rfqs/${id}`);
 }
 
+// ─── Buyer intake (chat / voice -> confirm card) ──────────────────────────
+
+export interface IntakeDraftDTO {
+  item: string | null;
+  qty: number | null;
+  need_in_days: number | null;
+  need_by_phrase: string | null;
+  priority_mode: PriorityMode | null;
+  note: string | null;
+  catalog_match: boolean;
+}
+
+export interface IntakeResultDTO {
+  draft: IntakeDraftDTO;
+  missing: string[];
+  warnings: string[];
+  fallback: boolean;
+  request_id: string;
+}
+
+export async function getIntakeStatus(): Promise<{ ai_enabled: boolean; voice_enabled: boolean }> {
+  try {
+    return await apiFetch("/api/intake/status");
+  } catch {
+    return { ai_enabled: false, voice_enabled: false };
+  }
+}
+
+/** Draft only: nothing is saved. Any failure resolves to a fallback so the manual form takes over. */
+export async function draftIntake(text: string): Promise<IntakeResultDTO> {
+  try {
+    return await apiFetch("/api/intake/draft", { method: "POST", body: JSON.stringify({ text }) });
+  } catch {
+    return {
+      draft: { item: null, qty: null, need_in_days: null, need_by_phrase: null, priority_mode: null, note: null, catalog_match: false },
+      missing: ["item", "qty", "need_in_days"], warnings: [], fallback: true, request_id: "",
+    };
+  }
+}
+
+export async function transcribeAudio(blob: Blob): Promise<string | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/intake/transcribe`, {
+      method: "POST", headers: { "Content-Type": blob.type || "audio/webm" }, body: blob,
+    });
+    if (!res.ok) return null;
+    const out = await res.json();
+    return out.text ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export interface ConfirmPayload {
+  item: string;
+  qty: number;
+  need_in_days: number;
+  priority_mode: PriorityMode;
+  source: "form" | "chat" | "voice";
+  buyer_company: string;
+  buyer_name: string;
+  buyer_city: string;
+  buyer_state: string;
+  note?: string;
+  intake_id?: string;
+}
+
+export async function confirmRFQ(payload: ConfirmPayload): Promise<RFQCreateResponse> {
+  return apiFetch("/api/rfqs/confirm", { method: "POST", body: JSON.stringify(payload) });
+}
+
 // ─── Negotiation Targets ──────────────────────────────────────────────────
 
 export interface TargetPayload {

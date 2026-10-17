@@ -1,6 +1,6 @@
 import asyncio, json, os
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -34,8 +34,12 @@ from .models import (
     NotificationOut,
     DraftQuote,
     Activity,
+    IntakeIn,
+    ConfirmIn,
 )
 from .validators import cross_check_tax, mask_pan
+from .intake import draft_from_text
+from . import ai
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
 
@@ -137,6 +141,39 @@ def get_profile(profile_id: str):
     return p
 
 
+# --- Buyer intake (draft only: nothing here saves a request) ---
+_intake_cache: dict[str, dict] = {}
+
+
+@app.get("/api/intake/status")
+def intake_status():
+    return {"ai_enabled": ai.ai_enabled(), "voice_enabled": bool(ai.ai_enabled() and ai.transcribe_model())}
+
+
+@app.post("/api/intake/draft")
+def intake_draft(payload: IntakeIn):
+    key = payload.text.strip().lower()
+    if key in _intake_cache:
+        result = dict(_intake_cache[key])
+    else:
+        result = draft_from_text(payload.text, store.catalog_names())
+        if not result["fallback"]:
+            _intake_cache[key] = dict(result)  # cap calls: the same sentence is never sent twice
+    result["request_id"] = "intk_" + os.urandom(4).hex()
+    store.log_ai("intake_draft", result["request_id"], {"text": payload.text}, result)
+    return result
+
+
+@app.post("/api/intake/transcribe")
+async def intake_transcribe(request: Request):
+    """Raw audio bytes in the body (no multipart dependency). Returns the transcript, or fallback=true."""
+    audio = await request.body()
+    text = ai.transcribe(audio, request.headers.get("content-type", "audio/webm"))
+    rid = "intk_" + os.urandom(4).hex()
+    store.log_ai("transcribe", rid, {"bytes": len(audio)}, {"text": text})
+    return {"text": text, "fallback": text is None, "request_id": rid}
+
+
 # --- 3. Crossover Math Engine & Case Checks ---
 class CompareIn(BaseModel):
     quotes: List[Quote]
@@ -165,7 +202,31 @@ def get_case_checks():
 # --- 4. RFQ Lifecycle (Buyer Side) ---
 @app.post("/api/rfqs")
 def create_rfq(payload: RFQCreate):
-    rfq = store.create_rfq(payload)
+    return _rfq_response(store.create_rfq(payload))
+
+
+@app.post("/api/rfqs/confirm")
+def confirm_rfq(payload: ConfirmIn):
+    """Creates the request from the confirm card. The only way an intake draft becomes a request."""
+    rfq = store.create_rfq(RFQCreate(
+        item=payload.item.strip(), qty=payload.qty, need_in_days=payload.need_in_days,
+        buyer_company=payload.buyer_company, buyer_name=payload.buyer_name,
+        buyer_city=payload.buyer_city, buyer_state=payload.buyer_state,
+        note=payload.note, priority_mode=payload.priority_mode, source=payload.source,
+    ))
+    if payload.intake_id:
+        store.link_ai_log(payload.intake_id, rfq.id)
+    return _rfq_response(rfq)
+
+
+@app.get("/api/rfqs/{rfq_id}/ai-log")
+def rfq_ai_log(rfq_id: str):
+    if not store.get_rfq(rfq_id):
+        raise HTTPException(status_code=404, detail="RFQ not found.")
+    return store.ai_log_for(rfq_id)
+
+
+def _rfq_response(rfq: RFQ) -> dict:
     return {
         "id": rfq.id,
         "token": rfq.token,

@@ -1,0 +1,76 @@
+{
+ "cases": [
+  {
+   "tag": "fits",
+   "stock": 500,
+   "lead": 3,
+   "moq": 50,
+   "qty": 100,
+   "need": 5,
+   "expect": "yes"
+  },
+  {
+   "tag": "stock_short",
+   "stock": 80,
+   "lead": 3,
+   "moq": 1,
+   "qty": 100,
+   "need": 5,
+   "expect": "partly"
+  },
+  {
+   "tag": "out_of_stock",
+   "stock": 0,
+   "lead": 3,
+   "moq": 1,
+   "qty": 100,
+   "need": 5,
+   "expect": "no"
+  },
+  {
+   "tag": "too_slow",
+   "stock": 500,
+   "lead": 7,
+   "moq": 1,
+   "qty": 100,
+   "need": 5,
+   "expect": "partly"
+  },
+  {
+   "tag": "moq_high",
+   "stock": 500,
+   "lead": 3,
+   "moq": 200,
+   "qty": 100,
+   "need": 5,
+   "expect": "partly"
+  },
+  {
+   "tag": "untracked_stock",
+   "stock": null,
+   "lead": 2,
+   "moq": 1,
+   "qty": 100,
+   "need": 5,
+   "expect": "yes"
+  },
+  {
+   "tag": "exact_stock",
+   "stock": 100,
+   "lead": 5,
+   "moq": 100,
+   "qty": 100,
+   "need": 5,
+   "expect": "yes"
+  },
+  {
+   "tag": "stock_and_slow",
+   "stock": 10,
+   "lead": 9,
+   "moq": 1,
+   "qty": 100,
+   "need": 5,
+   "expect": "partly"
+  }
+ ]
+}

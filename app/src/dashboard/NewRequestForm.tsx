@@ -4,6 +4,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   ArrowLeft, Package, Send, Copy, Check, ExternalLink,
 } from "lucide-react";
+import { IntakePanel } from "./IntakePanel";
 import { createRFQ, type PriorityMode, type RFQCreateResponse } from "../api/client";
 
 const PRIORITY_OPTIONS: { id: PriorityMode; label: string; hint: string }[] = [
@@ -198,6 +199,15 @@ export function NewRequestForm() {
           <p className="text-[13px] text-muted mt-1">
             Fill in what you need. On submit you'll get supplier invite links and a QR code.
           </p>
+        </div>
+
+        <IntakePanel
+          buyer={{ company: buyerCompany, name: buyerName, city: buyerCity, state: buyerState }}
+          onCreated={setCreated}
+        />
+
+        <div className="flex items-center gap-3 text-[12px] text-muted">
+          <div className="h-px flex-1 bg-line/60" /><span>or fill the form</span><div className="h-px flex-1 bg-line/60" />
         </div>
 
         {error && (
