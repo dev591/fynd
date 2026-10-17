@@ -102,6 +102,7 @@ class EvaluatedRow(BaseModel):
 
 
 PriorityMode = Literal["cheapest", "fastest", "balanced"]
+QuoteOrigin = Literal["manual", "ai_draft_edited", "ai_draft_sent"]
 RequestSource = Literal["form", "chat", "voice"]
 
 
@@ -158,6 +159,7 @@ class QuoteSubmitIn(BaseModel):
     moq: int | None = None
     max_qty: int | None = None
     notes: str | None = None
+    origin: QuoteOrigin = "manual"
 
 
 class QuoteVersion(BaseModel):
@@ -171,6 +173,7 @@ class QuoteVersion(BaseModel):
     moq: int | None = None
     max_qty: int | None = None
     notes: str | None = None
+    origin: QuoteOrigin = "manual"
     landed_cost: float
     units: int
     packs: int
@@ -300,14 +303,14 @@ class Notification(BaseModel):
     product_id: str
     token: str
     created_at: str
-    status: Literal["new", "viewed"] = "new"
+    status: Literal["new", "viewed", "quoting"] = "new"
 
 
 class NotificationOut(BaseModel):
     id: str
     rfq_id: str
     supplier_id: str
-    status: Literal["new", "viewed"]
+    status: Literal["new", "viewed", "quoting"]
     created_at: str
     item: str
     qty: int
@@ -323,3 +326,25 @@ class NotificationOut(BaseModel):
     product: SupplierProduct
     verdict: Verdict
     has_quoted: bool = False
+
+
+class DraftQuote(BaseModel):
+    """A quote prefilled from the seller's own catalog row. Every number is copied by code."""
+    product_id: str
+    product_name: str
+    pack_price: float
+    pack_size: int
+    freight: float
+    lead_days: int
+    moq: int
+    max_qty: int | None = None
+    price_break_applied: int | None = None  # min_qty of the break used, if any
+    verdict: Verdict
+
+
+class Activity(BaseModel):
+    """Funnel of seller reactions for one request. Each stage includes the later ones."""
+    notified: int = 0
+    viewed: int = 0
+    quoting: int = 0
+    quoted: int = 0

@@ -84,3 +84,56 @@ def test_sellers_are_labelled_synthetic():
     sellers = client.get("/api/suppliers").json()
     assert len(sellers) >= 8
     assert all(s["synthetic"] for s in sellers)
+
+
+def test_draft_quote_numbers_come_from_catalog():
+    res = _rfq("M10 bolt", qty=100)
+    d = client.get(f"/api/rfq-by-token/{res['supplier_tokens']['A']}/draft").json()
+    assert (d["pack_price"], d["pack_size"], d["freight"], d["lead_days"], d["moq"], d["max_qty"]) == (10, 1, 200, 3, 50, 500)
+    assert d["verdict"]["can_fulfil"] == "yes"
+    # stock becomes the quote cap
+    b = client.get(f"/api/rfq-by-token/{res['supplier_tokens']['B']}/draft").json()
+    assert b["max_qty"] == 80
+    assert client.get("/api/rfq-by-token/nope/draft").status_code == 404
+
+
+def test_draft_uses_price_break_for_quantity():
+    added = client.post("/api/supplier/products/I", json={
+        "name": "Test Brass Nut", "pack_price": 10, "pack_size": 1, "stock": 1000, "aliases": ["brass nut test"],
+        "price_breaks": [{"min_qty": 100, "pack_price": 8}, {"min_qty": 500, "pack_price": 6}],
+    })
+    assert added.status_code == 201
+    small = _rfq("brass nut test", qty=50)
+    big = _rfq("brass nut test", qty=600)
+    mid = _rfq("brass nut test", qty=100)
+    price = lambda r: client.get(f"/api/rfq-by-token/{r['supplier_tokens']['I']}/draft").json()
+    assert price(small)["pack_price"] == 10 and price(small)["price_break_applied"] is None
+    assert price(mid)["pack_price"] == 8
+    assert price(big)["pack_price"] == 6 and price(big)["price_break_applied"] == 500
+
+
+def test_activity_funnel_and_live_quote_appears_in_compare():
+    res = _rfq("M10 bolt", qty=100)
+    rid, toks = res["id"], res["supplier_tokens"]
+    act = lambda: client.get(f"/api/rfqs/{rid}/activity").json()
+    n = len(toks)
+    assert act() == {"notified": n, "viewed": 0, "quoting": 0, "quoted": 0}
+
+    client.get(f"/api/rfq-by-token/{toks['A']}")                  # A opens the link
+    client.get(f"/api/rfq-by-token/{toks['B']}")                  # B opens it
+    client.post(f"/api/rfq-by-token/{toks['B']}/quoting")         # B starts typing
+    assert act() == {"notified": n, "viewed": 2, "quoting": 1, "quoted": 0}
+
+    d = client.get(f"/api/rfq-by-token/{toks['A']}/draft").json()
+    sent = client.post(f"/api/rfq-by-token/{toks['A']}/quotes", json={
+        "pack_price": d["pack_price"], "pack_size": d["pack_size"], "freight": d["freight"],
+        "lead_days": d["lead_days"], "moq": d["moq"], "max_qty": d["max_qty"], "origin": "manual",
+    })
+    assert sent.status_code == 200 and sent.json()["origin"] == "manual"
+    assert act() == {"notified": n, "viewed": 2, "quoting": 2, "quoted": 1}
+
+    # the buyer's next poll already sees it
+    details = client.get(f"/api/rfqs/{rid}").json()
+    assert details["quotes"]["A"][0]["landed_cost"] == 1200
+    assert details["evaluation"]["winner"]["quote_id"] == "A"
+    assert details["activity"]["quoted"] == 1

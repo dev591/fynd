@@ -32,6 +32,8 @@ from .models import (
     ChatMessageIn,
     ChatMessage,
     NotificationOut,
+    DraftQuote,
+    Activity,
 )
 from .validators import cross_check_tax, mask_pan
 from .engine import evaluate, run_case_checks, negotiation
@@ -222,6 +224,7 @@ def get_rfq_details(rfq_id: str):
         "quotes": quotes_by_supplier,
         "targets": targets_by_supplier,
         "evaluation": evaluation,
+        "activity": store.activity(rfq_id),
     }
 
 
@@ -281,9 +284,33 @@ def submit_supplier_quote(token: str, payload: QuoteSubmitIn):
             moq=payload.moq,
             notes=payload.notes,
             max_qty=payload.max_qty,
+            origin=payload.origin,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/rfq-by-token/{token}/draft", response_model=DraftQuote)
+def get_draft_quote(token: str):
+    draft = store.draft_for_token(token)
+    if not draft:
+        raise HTTPException(status_code=404, detail="No catalog match for this request.")
+    return draft
+
+
+@app.post("/api/rfq-by-token/{token}/quoting", status_code=204)
+def mark_quoting(token: str):
+    if token not in store.token_to_rfq_id:
+        raise HTTPException(status_code=404, detail="This link isn't valid or has expired.")
+    store.touch_token(token, "quoting")
+    return None
+
+
+@app.get("/api/rfqs/{rfq_id}/activity", response_model=Activity)
+def rfq_activity(rfq_id: str):
+    if not store.get_rfq(rfq_id):
+        raise HTTPException(status_code=404, detail="RFQ not found.")
+    return store.activity(rfq_id)
 
 
 @app.get("/api/rfq-by-token/{token}/quotes/mine")

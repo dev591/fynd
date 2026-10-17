@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Building2, Clock, History, RotateCcw, MessageSquare,
@@ -10,11 +10,11 @@ import { NegotiationTargetCard } from "./components/NegotiationTargetCard";
 import { SupplierChat } from "./components/SupplierChat";
 import { Money } from "./components/Money";
 import { VerifiedBadge } from "./components/VerifiedBadge";
-import { useApiPoll } from "../lib/useApi";
+import { useApiPoll, useApiOnce } from "../lib/useApi";
 import {
   getRFQByToken, getMyQuotes, submitQuoteByToken,
   getChatByToken, postChatByToken,
-  getSupplierProducts,
+  getSupplierProducts, getDraftQuote, markQuoting,
   type SupplierRFQView, type QuoteVersionDTO, type NegotiationTargetDTO,
   type ChatMessageDTO, type SupplierProductDTO,
 } from "../api/client";
@@ -53,6 +53,18 @@ export function SupplierQuotePage() {
     5000, [rfq?.supplier_id],
   );
   const sellerName = rfq?.supplier_name || "Supplier";
+
+  // Catalog draft: every number copied from the seller's own row, editable before sending
+  const { data: draft } = useApiOnce(
+    () => token ? getDraftQuote(token) : Promise.resolve(null),
+    [token],
+  );
+  const quotingSent = useRef(false);
+  const handleFirstEdit = () => {
+    if (quotingSent.current || !token) return;
+    quotingSent.current = true;
+    markQuoting(token).catch(() => { quotingSent.current = false; });
+  };
 
   const [activeTab, setActiveTab] = useState<"quote" | "chat">("quote");
   const [isRevising, setIsRevising] = useState(false);
@@ -94,8 +106,18 @@ export function SupplierQuotePage() {
         notes: latestQuote.notes,
       };
     }
+    if (draft) {
+      return {
+        packPrice: draft.pack_price,
+        packSize: draft.pack_size,
+        freight: draft.freight,
+        leadDays: draft.lead_days,
+        moq: draft.moq,
+        maxQty: draft.max_qty ?? undefined,
+      };
+    }
     return undefined;
-  }, [latestQuote, target]);
+  }, [latestQuote, target, draft]);
 
   const handleQuoteSubmit = async (data: {
     packPrice: number; packSize: number; freight: number; leadDays: number;
@@ -405,6 +427,14 @@ export function SupplierQuotePage() {
                   )}
                 </div>
 
+                {draft && !latestQuote && (
+                  <div className="mb-4 rounded-lg border border-line bg-raised/40 p-3 text-[12px] text-muted">
+                    Prefilled from your catalog item <strong className="text-bone">{draft.product_name}</strong>
+                    {draft.price_break_applied ? ` (price break at ${draft.price_break_applied}+ units applied)` : ""}.
+                    Check each number, edit if needed, then send. Stock is a snapshot, not reserved.
+                  </div>
+                )}
+
                 {submitError && (
                   <div className="mb-4 rounded-lg border border-error/40 bg-error/10 p-3 text-[12px] text-error">
                     {submitError}
@@ -416,7 +446,9 @@ export function SupplierQuotePage() {
                     item: rfq.item, qty: rfq.qty, needInDays: rfq.need_in_days,
                   }}
                   products={products || []}
+                  key={`${draft?.product_id ?? "none"}-${quotes.length}-${target?.id ?? ""}`}
                   initialValues={formInitialValues}
+                  onEdit={handleFirstEdit}
                   onSubmit={handleQuoteSubmit}
                   isSubmitting={submitting}
                   versionNumber={quotes.length + 1}

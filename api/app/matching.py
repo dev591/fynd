@@ -2,7 +2,7 @@
 import re
 from typing import Iterable, List
 
-from .models import RFQ, SupplierProduct, Verdict
+from .models import DraftQuote, RFQ, SupplierProduct, Verdict
 
 
 def normalise_item(name: str) -> str:
@@ -45,3 +45,18 @@ def verdict_for(rfq: RFQ, product: SupplierProduct) -> Verdict:
     if not reasons:
         reasons.append("Stock, lead time and minimum order all fit.")
     return Verdict(can_fulfil=level, reasons=reasons)
+
+
+def draft_quote(rfq: RFQ, product: SupplierProduct) -> DraftQuote:
+    """Prefill a quote from the catalog row. The highest price break the quantity reaches wins."""
+    price, applied = product.pack_price, None
+    for b in sorted(product.price_breaks, key=lambda b: b.min_qty):
+        if rfq.qty >= b.min_qty:
+            price, applied = b.pack_price, b.min_qty
+    return DraftQuote(
+        product_id=product.id, product_name=product.name,
+        pack_price=price, pack_size=product.pack_size, freight=product.freight,
+        lead_days=product.usual_lead_days, moq=product.moq,
+        max_qty=product.stock if product.stock is not None else product.capacity_cap,
+        price_break_applied=applied, verdict=verdict_for(rfq, product),
+    )

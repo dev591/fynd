@@ -41,6 +41,8 @@ interface QuoteFormProps {
   }) => void;
   isSubmitting?: boolean;
   versionNumber?: number;
+  /** Fires on every edit; the page uses the first one to tell the buyer the seller is quoting. */
+  onEdit?: () => void;
 }
 
 export function QuoteForm({
@@ -50,6 +52,7 @@ export function QuoteForm({
   onSubmit,
   isSubmitting = false,
   versionNumber = 1,
+  onEdit,
 }: QuoteFormProps) {
   // Required fields
   const [packPrice, setPackPrice] = useState<number | "">(initialValues?.packPrice ?? 10);
@@ -150,7 +153,7 @@ export function QuoteForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} onChange={onEdit} className="space-y-5">
       {/* Quick Catalog Autofill */}
       {products.length > 0 && (
         <div className="rounded-xl border border-line bg-raised/40 p-3.5">

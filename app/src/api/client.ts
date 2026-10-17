@@ -149,6 +149,7 @@ export interface QuoteVersionDTO {
   moq?: number;
   max_qty?: number;
   notes?: string;
+  origin?: "manual" | "ai_draft_edited" | "ai_draft_sent";
   landed_cost: number;
   units: number;
   packs: number;
@@ -191,6 +192,14 @@ export interface RFQDetailsDTO {
   quotes: Record<string, QuoteVersionDTO[]>;
   targets: Record<string, NegotiationTargetDTO>;
   evaluation: CompareResult | null;
+  activity?: ActivityDTO;
+}
+
+export interface ActivityDTO {
+  notified: number;
+  viewed: number;
+  quoting: number;
+  quoted: number;
 }
 
 export interface RFQCreateResponse {
@@ -263,6 +272,7 @@ export interface QuoteSubmitPayload {
   moq?: number;
   max_qty?: number;
   notes?: string;
+  origin?: "manual" | "ai_draft_edited" | "ai_draft_sent";
 }
 
 export async function getRFQByToken(token: string): Promise<SupplierRFQView> {
@@ -271,6 +281,32 @@ export async function getRFQByToken(token: string): Promise<SupplierRFQView> {
 
 export async function submitQuoteByToken(token: string, payload: QuoteSubmitPayload): Promise<QuoteVersionDTO> {
   return apiFetch(`/api/rfq-by-token/${token}/quotes`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export interface DraftQuoteDTO {
+  product_id: string;
+  product_name: string;
+  pack_price: number;
+  pack_size: number;
+  freight: number;
+  lead_days: number;
+  moq: number;
+  max_qty?: number | null;
+  price_break_applied?: number | null;
+  verdict: VerdictDTO;
+}
+
+/** Quote prefilled from the seller's own catalog row. Null if the seller has no matching row. */
+export async function getDraftQuote(token: string): Promise<DraftQuoteDTO | null> {
+  try {
+    return await apiFetch(`/api/rfq-by-token/${token}/draft`);
+  } catch {
+    return null;
+  }
+}
+
+export async function markQuoting(token: string): Promise<void> {
+  await fetch(`${BASE_URL}/api/rfq-by-token/${token}/quoting`, { method: "POST" });
 }
 
 export interface MyQuotesResponse {

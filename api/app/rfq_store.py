@@ -16,9 +16,11 @@ from .models import (
     Notification,
     NotificationOut,
     Verdict,
+    DraftQuote,
+    Activity,
 )
 from .engine import order
-from .matching import matching_product, verdict_for
+from .matching import draft_quote, matching_product, verdict_for
 
 # Default supplier labels for demo invites
 _DEFAULT_SUPPLIERS = [
@@ -235,6 +237,32 @@ class RFQStore:
                 return self._notification_out(n)
         return None
 
+    def _notification_for_token(self, token: str) -> Optional[Notification]:
+        sid = self.token_to_supplier_id.get(token)
+        return next((n for n in self.notifications.get(sid, []) if n.token == token), None) if sid else None
+
+    def touch_token(self, token: str, state: str) -> None:
+        """Record that a seller opened ('viewed') or started editing ('quoting'). Never moves backwards."""
+        n = self._notification_for_token(token)
+        if n and n.status == "new" or (n and state == "quoting" and n.status == "viewed"):
+            n.status = state
+
+    def draft_for_token(self, token: str) -> Optional[DraftQuote]:
+        n = self._notification_for_token(token)
+        rfq = self.rfqs.get(self.token_to_rfq_id.get(token, ""))
+        if not n or not rfq:
+            return None
+        prod = next((p for p in self.supplier_products.get(n.supplier_id, []) if p.id == n.product_id), None)
+        return draft_quote(rfq, prod) if prod else None
+
+    def activity(self, rfq_id: str) -> Activity:
+        notes = [n for ns in self.notifications.values() for n in ns if n.rfq_id == rfq_id]
+        quoted = set(self.quotes.get(rfq_id, {}))
+        quoted_n = sum(1 for n in notes if n.supplier_id in quoted)
+        quoting_n = sum(1 for n in notes if n.status == "quoting" or n.supplier_id in quoted)
+        viewed_n = sum(1 for n in notes if n.status != "new" or n.supplier_id in quoted)
+        return Activity(notified=len(notes), viewed=viewed_n, quoting=quoting_n, quoted=quoted_n)
+
     def list_suppliers(self) -> List[dict]:
         return [
             {"supplier_id": sid, "business_name": p.business_name, "location_city": p.location_city,
@@ -284,6 +312,7 @@ class RFQStore:
         rfq = self.rfqs.get(rfq_id)
         if not rfq:
             return None
+        self.touch_token(token, "viewed")
         return {
             "id": rfq.id,
             "item": rfq.item,
@@ -310,6 +339,7 @@ class RFQStore:
         moq: Optional[int] = None,
         notes: Optional[str] = None,
         max_qty: Optional[int] = None,
+        origin: str = "manual",
     ) -> QuoteVersion:
         rfq_id = self.token_to_rfq_id.get(token)
         if not rfq_id or rfq_id not in self.rfqs:
@@ -340,7 +370,7 @@ class RFQStore:
         qv = QuoteVersion(
             version=next_ver, supplier_id=supplier_id, supplier_name=supplier_name,
             pack_price=pack_price, pack_size=pack_size, freight=freight,
-            lead_days=lead_days, moq=moq, max_qty=max_qty, notes=notes,
+            lead_days=lead_days, moq=moq, max_qty=max_qty, notes=notes, origin=origin,
             landed_cost=landed, units=units, packs=packs,
             submitted_at=datetime.now().strftime("%I:%M %p"),
         )

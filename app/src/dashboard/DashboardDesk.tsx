@@ -234,6 +234,24 @@ export function DashboardDesk() {
           </div>
         </div>
 
+        {/* Live seller activity */}
+        {details?.activity && details.activity.notified > 0 && (
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-2xl border border-line bg-surface/70 px-5 py-3 text-[13px]">
+            <span className="label text-muted">Seller activity</span>
+            {([
+              ["notified", details.activity.notified],
+              ["viewed", details.activity.viewed],
+              ["quoting", details.activity.quoting],
+              ["quoted", details.activity.quoted],
+            ] as const).map(([label, n]) => (
+              <span key={label} className="text-muted">
+                <strong className="num text-bone">{n}</strong> {label}
+              </span>
+            ))}
+            <span className="text-[11px] text-muted/80">synthetic demo sellers</span>
+          </div>
+        )}
+
         {/* 2-Column Layout */}
         <div className="grid gap-6 lg:grid-cols-[1.25fr_1fr]">
           {/* Left: Supplier Quotes */}
