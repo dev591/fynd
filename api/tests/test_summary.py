@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -121,3 +123,31 @@ def test_explainer_is_cached_for_the_same_inputs(monkeypatch):
     for _ in range(3):
         client.get(f"/api/rfqs/{rid}/summary")
     assert len(calls) == 1
+
+
+def test_pack_rounding_is_visible_in_rupees_and_per_usable_unit():
+    """Need 100, packs of 12 at 120, freight 0: 9 packs, 108 units, 8 extra, 80 rupees tied up in the extras."""
+    rid = client.post("/api/rfqs", json={"item": "M10 bolt", "qty": 100, "need_in_days": 5,
+                                         "buyer_company": "Co", "buyer_name": "B"}).json()["id"]
+    client.post(f"/api/rfq-by-token/{tokens_of(rid)['A']}/quotes", json={
+        "supplier_name": "x", "pack_price": 120, "pack_size": 12, "freight": 0, "lead_days": 3})
+    row = client.get(f"/api/rfqs/{rid}/summary").json()["rows"][0]
+    assert (row["packs"], row["units"], row["overbuy"], row["landed"]) == (9, 108, 8, 1080)
+    assert row["cash_tied_up"] == 80 and row["pack_price"] == 120 and row["pack_size"] == 12
+    assert row["cost_per_usable_unit"] == 10.8                                   # 1080 over the 100 units actually needed
+
+
+def test_evidence_facts_are_tagged_observed_assumed_or_derived():
+    rid = _decided_request()
+    _decide(rid)
+    ev = client.get(f"/api/rfqs/{rid}/summary").json()["evidence"]
+    tags = {f["label"]: f["tag"] for f in ev}
+    assert tags["Pack price"] == "observed" and tags["Freight"] == "observed" and tags["Lead time"] == "observed"
+    assert tags["Quantity needed"] == "observed" and tags["Need-by"] == "observed"
+    assert tags["Landed cost"] == "derived" and tags["Packs ordered"] == "derived" and tags["Cash tied up in extra units"] == "derived"
+    assert tags["Tax basis"] == "assumed" and tags["Balanced-mode tolerance"] == "assumed"
+    assert all(f["tag"] in ("observed", "assumed", "derived") and f["source"] for f in ev)
+    landed = next(f for f in ev if f["label"] == "Landed cost")
+    assert landed["value"] == "₹1,150" and "packs" in landed["source"].lower()
+    # nothing in the evidence names a seller
+    assert "Bolt Express" not in json.dumps(ev) and "Seller" not in json.dumps([f["value"] for f in ev])

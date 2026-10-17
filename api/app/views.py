@@ -114,7 +114,8 @@ def plan_info(store, buyer_id: str) -> dict[str, Any]:
 
 def buyer_details(store, rfq, buyer_id: str) -> dict[str, Any]:
     quotes = store.get_latest_quotes_as_engine_input(rfq.id)
-    evaluation = evaluate(quotes, Need(item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days), mode=rfq.priority_mode) if quotes else None
+    evaluation = evaluate(quotes, Need(item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days),
+                          exceptions=store.exceptions_by_alias(rfq.id), mode=rfq.priority_mode) if quotes else None
     return {
         "rfq": public_rfq(store, rfq),
         "quotes": buyer_quotes(store, rfq),
@@ -122,6 +123,7 @@ def buyer_details(store, rfq, buyer_id: str) -> dict[str, Any]:
         "evaluation": evaluation,
         "activity": store.activity(rfq.id),
         "revealed": buyer_revealed(store, rfq),
+        "exceptions": {a: r.model_dump() for a, r in store.exceptions_by_alias(rfq.id).items()},
         "badges": buyer_badges(store, rfq),
         "plan": plan_info(store, buyer_id),
     }

@@ -397,3 +397,17 @@ class AutopilotSettings(BaseModel):
 
 class RoleIn(BaseModel):
     role: Literal["buyer", "seller"]
+
+
+class ExceptionIn(BaseModel):
+    """A person's written reason for breaking a gate (late or short supplier), and who approved it."""
+    alias: str
+    reason: str
+    approver: str
+
+    @field_validator("reason", "approver")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("a reason and a named approver are both required")
+        return v.strip()

@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from .ai import structured_call
 from .assistant import makes_promise, numbers_supported
-from .engine import evaluate, fingerprint, naive_pick, order
+from .engine import balanced_threshold, evaluate, fingerprint, naive_pick, order
 from . import views
 from .masking import scrub
 from .models import EvaluatedRow, Need, RFQ
@@ -32,12 +32,44 @@ def inr(n: float) -> str:
     return f"₹{n:,.0f}"
 
 
-def _row(r: EvaluatedRow) -> dict[str, Any]:
+def _row(r: EvaluatedRow, qty: Optional[int] = None) -> dict[str, Any]:
+    """One quote as the engine saw it. cash_tied_up and cost_per_usable_unit are derived here from engine numbers."""
+    unit = (r.pack_price / r.pack_size) if r.pack_size else None
+    used = min(qty, r.units) if qty and r.units else qty
     return {
         "quote_id": r.quote_id, "supplier": r.supplier, "status": r.status, "reason": r.reason,
         "approved": r.approved, "landed": r.landed, "lead_days": r.lead_days, "packs": r.packs,
         "units": r.units, "overbuy": r.overbuy, "freight": r.freight, "fill_qty": r.fill_qty,
+        "pack_price": r.pack_price, "pack_size": r.pack_size,
+        "cash_tied_up": round(r.overbuy * unit, 2) if unit is not None and r.overbuy else 0 if unit is not None else None,
+        "cost_per_usable_unit": round(r.landed / used, 2) if r.landed is not None and used else None,
     }
+
+
+def evidence_facts(rfq, pick: Optional[dict], savings: Optional[dict], mode: str) -> list[dict[str, str]]:
+    """Every number on the one-pager, tagged: observed (a seller or the buyer said it), derived (the engine computed it)
+    or assumed (our policy or setting, not a measurement). Values copied from the engine row, never typed."""
+    facts: list[dict[str, str]] = []
+    add = lambda label, value, tag, source: facts.append({"label": label, "value": value, "tag": tag, "source": source})
+    add("Quantity needed", f"{rfq.qty} units", "observed", "Your request")
+    add("Need-by", f"within {rfq.need_in_days} days", "observed", "Your request")
+    if pick:
+        add("Pack price", inr(pick["pack_price"]), "observed", "The seller's quote")
+        add("Units per pack", str(pick["pack_size"]), "observed", "The seller's quote")
+        add("Freight", inr(pick["freight"]), "observed", "The seller's quote")
+        add("Lead time", f"{pick['lead_days']} days", "observed", "The seller's quote")
+        add("Packs ordered", str(pick["packs"]), "derived", "Whole packs needed for the quantity, at least the minimum order")
+        add("Units received", str(pick["units"]), "derived", "Packs times units per pack")
+        add("Landed cost", inr(pick["landed"]), "derived", "Packs times pack price, plus freight")
+        if pick.get("cost_per_usable_unit") is not None:
+            add("Cost per usable unit", inr(pick["cost_per_usable_unit"]), "derived", "Landed cost over the units you need")
+        add("Cash tied up in extra units", inr(pick["cash_tied_up"] or 0), "derived", f"{pick['overbuy']} extra units at the unit price")
+    if savings:
+        add("Saving vs spreadsheet pick", inr(savings["difference"]), "derived", "Spreadsheet pick's landed cost minus this pick's, on demo data")
+    add("Tax basis", "compared as quoted", "assumed", "Quotes carry no GST basis yet; treated as the same basis. Confirm before ordering")
+    add("Balanced-mode tolerance", f"{round(balanced_threshold() * 100, 1):g}%", "assumed", "Our setting, not a measurement")
+    add("Priority mode", mode, "observed", "Chosen on your request")
+    return facts
 
 
 def reasons_list(rows: list[EvaluatedRow], winner: Optional[EvaluatedRow], mode: str) -> list[str]:
@@ -88,7 +120,7 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
         return None
     quotes = store.get_latest_quotes_as_engine_input(rfq_id)
     need = Need(item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days)
-    ev = evaluate(quotes, need, mode=rfq.priority_mode)
+    ev = evaluate(quotes, need, exceptions=store.exceptions_by_alias(rfq_id), mode=rfq.priority_mode)
     decision = rfq.decision
     by_id = {r.quote_id: r for r in ev.rows}
 
@@ -138,14 +170,16 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
                 "created_at": rfq.created_at},
         "decided": decision is not None,
         "decision": _decision_for(decision, audience),
-        "pick": _row(shown) if shown else None,
-        "engine_winner": _row(ev.winner) if ev.winner else None,
+        "pick": _row(shown, rfq.qty) if shown else None,
+        "evidence": evidence_facts(rfq, _row(shown, rfq.qty) if shown else None, savings, rfq.priority_mode),
+        "engine_winner": _row(ev.winner, rfq.qty) if ev.winner else None,
         "overrode_engine": bool(decided_row and ev.winner and decided_row.quote_id != ev.winner.quote_id),
-        "winners_by_mode": {m: (_row(w) if w else None) for m, w in ev.winners.items()},
+        "winners_by_mode": {m: (_row(w, rfq.qty) if w else None) for m, w in ev.winners.items()},
         "tradeoffs": ev.tradeoffs,
-        "rows": [_row(r) for r in ev.rows],
-        "cheaper_excluded": [_row(r) for r in ev.cheaper_excluded],
+        "rows": [_row(r, rfq.qty) for r in ev.rows],
+        "cheaper_excluded": [_row(r, rfq.qty) for r in ev.cheaper_excluded],
         "reasons": reasons,
+        "exceptions": {a: r.model_dump() for a, r in store.exceptions_by_alias(rfq_id).items()},
         "explainer": explainer,
         "savings": savings,
         "fingerprint": fingerprint({"need": need.model_dump(), "mode": rfq.priority_mode,

@@ -41,6 +41,7 @@ from .models import (
     ConfirmIn,
     AutopilotSettings,
     RoleIn,
+    ExceptionIn,
 )
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
@@ -435,6 +436,26 @@ def reveal_seller(rfq_id: str, alias: str, user: AuthUser = Depends(buyer_only))
             "code": "reveals_exhausted", "message": "You have used your free reveals.",
             **views.plan_info(store, user.id)})
     return {"alias": alias, "kind": kind, "seller": views.identity_of(store, sid), "plan": views.plan_info(store, user.id)}
+
+
+@app.post("/api/rfqs/{rfq_id}/exceptions")
+def record_exception(rfq_id: str, payload: ExceptionIn, user: AuthUser = Depends(buyer_only)):
+    """Break a gate on purpose (a late or short seller) with a written reason and a named approver."""
+    rfq = _rfq_for(user, rfq_id)
+    sid = _seller_by_alias(rfq_id, payload.alias)
+    if rfq.status != "Open":
+        raise HTTPException(status_code=409, detail="This request is already decided.")
+    store.set_exception(rfq_id, sid, payload.reason, payload.approver)
+    return {"exceptions": {a: r.model_dump() for a, r in store.exceptions_by_alias(rfq_id).items()}}
+
+
+@app.delete("/api/rfqs/{rfq_id}/exceptions/{alias}")
+def withdraw_exception(rfq_id: str, alias: str, user: AuthUser = Depends(buyer_only)):
+    rfq = _rfq_for(user, rfq_id)
+    if rfq.status != "Open":
+        raise HTTPException(status_code=409, detail="This request is already decided.")
+    store.clear_exception(rfq_id, _seller_by_alias(rfq_id, alias))
+    return {"exceptions": {a: r.model_dump() for a, r in store.exceptions_by_alias(rfq_id).items()}}
 
 
 @app.get("/api/me/plan")

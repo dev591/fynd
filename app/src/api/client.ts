@@ -240,6 +240,8 @@ export interface RFQDetailsDTO {
   evaluation: CompareResult | null;
   activity?: ActivityDTO;
   revealed: Record<string, SellerIdentity>;
+  /** Gates a person broke on purpose: alias -> written reason and named approver. */
+  exceptions: Record<string, { reason: string; approver: string }>;
   badges: Record<string, SellerBadge>;
   plan: PlanInfo;
 }
@@ -355,6 +357,19 @@ export interface SummaryRowDTO {
   overbuy: number;
   freight: number;
   fill_qty: number | null;
+  pack_price: number;
+  pack_size: number | null;
+  /** Derived: extra units bought because of pack rounding or the minimum order, at their unit price. */
+  cash_tied_up: number | null;
+  /** Derived: landed cost over the units you actually need. */
+  cost_per_usable_unit: number | null;
+}
+
+export interface EvidenceFact {
+  label: string;
+  value: string;
+  tag: "observed" | "assumed" | "derived";
+  source: string;
 }
 
 export interface SummaryDTO {
@@ -371,6 +386,9 @@ export interface SummaryDTO {
   rows: SummaryRowDTO[];
   cheaper_excluded: SummaryRowDTO[];
   reasons: string[];
+  evidence: EvidenceFact[];
+  tradeoffs: Record<string, { extra_cost: number | null; days_saved: number | null; line: string | null }>;
+  exceptions: Record<string, { reason: string; approver: string }>;
   explainer: { text: string; source: "ai" | "engine"; discarded_reason: string | null } | null;
   savings: {
     spreadsheet_pick: string; spreadsheet_landed: number; crossover_pick: string;
@@ -705,6 +723,16 @@ export async function revealSeller(rfqId: string, alias: string): Promise<Reveal
   if (res.status === 401) await signOut();
   if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
   return res.json();
+}
+
+export async function recordException(rfqId: string, alias: string, reason: string, approver: string) {
+  return apiFetch<{ exceptions: Record<string, { reason: string; approver: string }> }>(
+    `/api/rfqs/${rfqId}/exceptions`, { method: "POST", body: JSON.stringify({ alias, reason, approver }) });
+}
+
+export async function withdrawException(rfqId: string, alias: string) {
+  return apiFetch<{ exceptions: Record<string, { reason: string; approver: string }> }>(
+    `/api/rfqs/${rfqId}/exceptions/${encodeURIComponent(alias)}`, { method: "DELETE" });
 }
 
 export async function getPlan(): Promise<PlanInfo> {

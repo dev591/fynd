@@ -19,6 +19,7 @@ from .models import (
     Verdict,
     DraftQuote,
     Need,
+    ExceptionRecord,
     Activity,
     AutopilotSettings,
 )
@@ -58,6 +59,7 @@ class RFQStore:
         self.revealed: Dict[str, Dict[str, dict]] = {}    # rfq_id -> {supplier_id: {buyer_id, at, kind}}
         self.reveal_log: List[dict] = []                  # every first-time reveal: buyer, seller, request, free/paid/repeat
         self.history: List[dict] = []                     # synthetic past orders, labelled as such
+        self.exceptions: Dict[str, Dict[str, ExceptionRecord]] = {}   # rfq -> supplier -> written exception
         self.plans: Dict[str, str] = {}                   # buyer_id -> "free" | "pro" (mock billing)
         self.supplier_owner: Dict[str, str] = {}  # supplier_id -> owning user id; demo sellers have none
         self.autopilot: Dict[str, AutopilotSettings] = {}  # supplier_id -> settings; absent means off
@@ -242,6 +244,16 @@ class RFQStore:
         return {"landed": w.landed, "lead_days": w.lead_days, "sellers_checked": len(quotes)} if w else None
 
     # ─── Aliases, reveal, quota ────────────────────────────────────────
+
+    def exceptions_by_alias(self, rfq_id: str) -> Dict[str, ExceptionRecord]:
+        return {self.alias_for(rfq_id, sid): rec for sid, rec in self.exceptions.get(rfq_id, {}).items()
+                if self.alias_for(rfq_id, sid)}
+
+    def set_exception(self, rfq_id: str, supplier_id: str, reason: str, approver: str) -> None:
+        self.exceptions.setdefault(rfq_id, {})[supplier_id] = ExceptionRecord(reason=reason, approver=approver)
+
+    def clear_exception(self, rfq_id: str, supplier_id: str) -> bool:
+        return self.exceptions.get(rfq_id, {}).pop(supplier_id, None) is not None
 
     def alias_for(self, rfq_id: str, supplier_id: str, create: bool = False) -> Optional[str]:
         table = self.aliases.setdefault(rfq_id, {}) if create else self.aliases.get(rfq_id, {})
@@ -660,6 +672,8 @@ class RFQStore:
             "mode": rfq.priority_mode,
             "source": rfq.source,
             "payment_note": "Cash on delivery. Crossover never holds money.",
+            # Every gate a person chose to break on this request, with their written reason.
+            "exceptions": {a: r.model_dump() for a, r in self.exceptions_by_alias(rfq_id).items()},
         }
         rfq.decision = decision
         self.decisions[rfq_id] = decision

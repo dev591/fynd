@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import TypeAdapter
 
 from .models import (
-    AutopilotSettings, ChatMessage, NegotiationTarget, Notification, Profile, QuoteVersion, RFQ,
+    AutopilotSettings, ChatMessage, ExceptionRecord, NegotiationTarget, Notification, Profile, QuoteVersion, RFQ,
     SupplierProduct, SupplierProfileOut,
 )
 
@@ -35,6 +35,7 @@ FIELDS: Dict[str, Any] = {
     "notifications": Dict[str, List[Notification]],
     "aliases": Dict[str, Dict[str, str]],
     "revealed": Dict[str, Dict[str, dict]],
+    "exceptions": Dict[str, Dict[str, ExceptionRecord]],
     "reveal_log": List[dict],
     "plans": Dict[str, str],
     "history": List[dict],

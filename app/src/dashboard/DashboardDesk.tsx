@@ -5,7 +5,8 @@ import {
   TrendingDown, Target, MessageSquare, Check,
   Save, Lock, X, Unlock, ShieldCheck,
 } from "lucide-react";
-import { evaluate, giveUp, inr, MODES, negotiation, type Mode, type Quote } from "../landing/engine";
+import { FactTag } from "../components/FactTag";
+import { evaluate, giveUp, inr, MODES, naivePick, negotiation, type Mode, type Quote } from "../landing/engine";
 import { CostChart } from "../landing/CostChart";
 import { QtyControl } from "../landing/QtyControl";
 import { SupplierChat } from "../supplier/components/SupplierChat";
@@ -14,7 +15,7 @@ import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
 import {
   getRFQDetails, sendTarget, lockDecision,
   getChatMessages, postChatMessage,
-  getSupplierProfileForBuyer, getSummary, revealSeller, mockUpgrade, RevealsExhausted,
+  getSupplierProfileForBuyer, getSummary, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException,
   type RFQDetailsDTO, type ChatMessageDTO, type SellerPanelDTO, type SellerIdentity, type PlanInfo, type SummaryDTO,
 } from "../api/client";
 
@@ -39,6 +40,7 @@ export function DashboardDesk() {
   const [decisionSaved, setDecisionSaved] = useState(false);
   const [profileSupplierId, setProfileSupplierId] = useState<string | null>(null);
   const [paywall, setPaywall] = useState(false);
+  const [exceptionFor, setExceptionFor] = useState<string | null>(null);
   const [revealingAlias, setRevealingAlias] = useState<string | null>(null);
   const [revealError, setRevealError] = useState<string | null>(null);
 
@@ -65,10 +67,20 @@ export function DashboardDesk() {
   // Run the local engine at the slider quantity for instant feedback
   const evaluation = useMemo(() => {
     if (engineQuotes.length === 0 || !rfq) return null;
-    return evaluate(engineQuotes, { ...needFromRFQ(rfq), qty }, {}, mode);
-  }, [engineQuotes, rfq, qty, mode]);
+    return evaluate(engineQuotes, { ...needFromRFQ(rfq), qty }, details?.exceptions ?? {}, mode);
+  }, [engineQuotes, rfq, qty, mode, details?.exceptions]);
 
   const winner = evaluation?.winner ?? null;
+
+  // Spreadsheet mode: what a sheet sorted by sticker price per unit would pick, ignoring freight, pack
+  // rounding and the lead-time gate. Shown next to the engine's pick so the difference is visible.
+  const sheetPick = useMemo(() => {
+    if (!rfq || engineQuotes.length === 0) return null;
+    const q = naivePick(engineQuotes, { ...needFromRFQ(rfq), qty });
+    const row = q ? evaluation?.rows.find(r => r.quote.id === q.id) ?? null : null;
+    return q && row ? { quote: q, landed: row.landed, unit: q.packPrice / (q.packSize ?? 1) } : null;
+  }, [engineQuotes, rfq, qty, evaluation]);
+  const unitPrice = (q: Quote) => q.packPrice / (q.packSize ?? 1);
 
   // Chat polling
   const { data: chatMessages } = useApiPoll<ChatMessageDTO[]>(
@@ -306,6 +318,24 @@ export function DashboardDesk() {
                 </button>
               </div>
 
+              {sheetMode && (
+                <div className="rounded-xl border border-error/40 bg-error/10 p-3 text-[13px] space-y-1" aria-live="polite">
+                  <p className="label text-error">Spreadsheet view: sorted by price per unit</p>
+                  {sheetPick ? (
+                    <p className="text-bone">
+                      A sheet picks <strong>{sheetPick.quote.supplier}</strong> at <span className="num">{inr(sheetPick.unit)}</span> a unit.
+                      {" "}It ignores freight, pack rounding and the delivery date.
+                      {winner && sheetPick.landed !== null && winner.landed !== null && (
+                        winner.quote.id === sheetPick.quote.id
+                          ? <> Here Crossover agrees: {winner.quote.supplier} is also cheapest landed.</>
+                          : <> Crossover picks <strong>{winner.quote.supplier}</strong> at <span className="num">{inr(winner.landed)}</span> landed,
+                              {" "}<strong className="num text-signal">{inr(sheetPick.landed - winner.landed)}</strong> less than the sheet's pick ({inr(sheetPick.landed)}).</>
+                      )}
+                    </p>
+                  ) : <p className="text-muted">No quote passes the delivery date, so a sheet would have nothing to pick.</p>}
+                </div>
+              )}
+
               {/* Priority mode switch: winner under every mode, numbers from the engine */}
               <div className="rounded-xl border border-line bg-raised/30 p-3 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -335,7 +365,7 @@ export function DashboardDesk() {
               </div>
 
               <div className="space-y-3">
-                {evaluation.rows.map((row) => {
+                {(sheetMode ? [...evaluation.rows].sort((a, b) => unitPrice(a.quote) - unitPrice(b.quote)) : evaluation.rows).map((row) => {
                   const isWin = winner?.quote.id === row.quote.id;
                   const isBlocked = row.status === "blocked";
                   const isLate = row.status === "exception";
@@ -370,6 +400,14 @@ export function DashboardDesk() {
                                   : versions[latestVer - 1].origin === "ai_draft_sent" ? "assistant draft" : "assistant draft, edited"}
                               </span>
                             )}
+                            {sheetMode && sheetPick?.quote.id === row.quote.id && (
+                              <span className="rounded-full bg-error px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink">
+                                Sheet pick
+                              </span>
+                            )}
+                            {sheetMode && (
+                              <span className="num text-[11px] text-muted">{inr(unitPrice(row.quote))}/unit</span>
+                            )}
                             {isWin && (
                               <span className="rounded-full bg-signal px-2 py-0.5 text-[10px] font-bold text-ink uppercase tracking-wide">
                                 Winner · {mode === "cheapest" ? "Lowest Landed" : mode === "fastest" ? "Fastest" : "Balanced"}
@@ -387,6 +425,23 @@ export function DashboardDesk() {
                             )}
                           </div>
                           <p className="mt-1 font-mono text-[13px] text-muted">"{row.quote.raw}"</p>
+                          {isLate && details?.exceptions?.[row.quote.id] && (
+                            <p className="mt-1 text-[12px] text-bone" onClick={e => e.stopPropagation()}>
+                              <strong>Exception recorded:</strong> “{details.exceptions[row.quote.id].reason}” — approved by {details.exceptions[row.quote.id].approver}{" "}
+                              {!isDecided && (
+                                <button type="button" className="text-muted underline hover:text-bone"
+                                  onClick={() => withdrawException(rfqId ?? "", row.quote.id).then(() => refetch())}>withdraw</button>
+                              )}
+                            </p>
+                          )}
+                          {isLate && !details?.exceptions?.[row.quote.id] && !isDecided && (
+                            <p className="mt-1 text-[12px] text-warn" onClick={e => e.stopPropagation()}>
+                              Not recommended: {row.reason}.{" "}
+                              <button type="button" className="font-medium underline hover:text-bone" onClick={() => setExceptionFor(row.quote.id)}>
+                                Approve an exception
+                              </button>
+                            </p>
+                          )}
                           {badge && (
                             <p className="mt-1 flex items-center gap-1 text-[11px] text-muted">
                               <ShieldCheck size={11} className="shrink-0" />
@@ -417,8 +472,13 @@ export function DashboardDesk() {
                             <span>Order: <strong className="text-bone">{row.packs} packs</strong> ({row.units} units)</span>
                             <span>·</span>
                             <span>Freight: {inr(row.quote.freight)}</span>
+                            {row.landed !== null && qty > 0 && (
+                              <span title="Landed cost over the units you need" className="num">{inr(row.landed / qty)} per usable unit</span>
+                            )}
                             {row.overbuy > 0 && (
-                              <span className="text-warn">+{row.overbuy} extra inventory</span>
+                              <span className="text-warn" title="Extra units bought because of pack size or minimum order">
+                                +{row.overbuy} extra units ({inr(row.overbuy * unitPrice(row.quote))} tied up)
+                              </span>
                             )}
                           </div>
                           <div className="flex items-center gap-2">
@@ -491,6 +551,11 @@ export function DashboardDesk() {
                 <CostChart qty={qty} winnerId={winner?.quote.id} quotes={engineQuotes} late={evaluation.rows.filter(r => r.status === "exception").map(r => r.quote.id)} />
               </div>
             </div>
+
+            {/* Why this supplier: gates as pass/fail, facts tagged by where they came from */}
+            {winner && winner.landed !== null && (
+              <WhyCard row={winner} qty={qty} needInDays={rfq.need_in_days} mode={mode} />
+            )}
 
             {/* Why This Supplier (gates + cheaper excluded) */}
             {evaluation.cheaperExcluded.length > 0 && (
@@ -741,6 +806,25 @@ export function DashboardDesk() {
         />
       )}
 
+      {exceptionFor && (
+        <ExceptionModal
+          supplier={exceptionFor}
+          reason={evaluation.rows.find(r => r.quote.id === exceptionFor)?.reason ?? ""}
+          giveUp={(() => {
+            const row = evaluation.rows.find(r => r.quote.id === exceptionFor);
+            const best = evaluation.pool[0];
+            return row?.landed != null && best?.landed != null && row.landed < best.landed ? best.landed - row.landed : null;
+          })()}
+          defaultApprover={rfq.buyer_name}
+          onClose={() => setExceptionFor(null)}
+          onSave={async (reason, approver) => {
+            await recordException(rfqId ?? "", exceptionFor, reason, approver);
+            setExceptionFor(null);
+            refetch();
+          }}
+        />
+      )}
+
       {paywall && (
         <PaywallModal
           plan={details?.plan}
@@ -910,6 +994,123 @@ function PaywallModal({ plan, onClose, onUpgraded }: { plan?: PlanInfo; onClose:
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ─── Exception dialog ──────────────────────────────────────────────────────
+
+/** Case check 2 in the app: a late or short seller is only recommended with a written reason and a named approver. */
+function ExceptionModal({ supplier, reason: why, giveUp, defaultApprover, onClose, onSave }: {
+  supplier: string; reason: string; giveUp: number | null; defaultApprover: string;
+  onClose: () => void; onSave: (reason: string, approver: string) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
+  const [approver, setApprover] = useState(defaultApprover);
+  const [touched, setTouched] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const blank = !reason.trim() || !approver.trim();
+  const save = async () => {
+    setTouched(true);
+    if (blank) return;                                  // a blank reason or approver never unlocks the gate
+    setBusy(true); setError(null);
+    try { await onSave(reason.trim(), approver.trim()); }
+    catch (e) { setError(e instanceof Error ? e.message : "Could not save the exception."); setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 backdrop-blur-md p-4">
+      <div className="w-full max-w-md space-y-4 rounded-2xl border border-line bg-surface p-6 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="display text-xl text-bone">Approve an exception</h3>
+          <button onClick={onClose} className="text-muted hover:text-bone"><X size={18} /></button>
+        </div>
+        <p className="text-[13px] text-muted">
+          <strong className="text-bone">{supplier}</strong> is not recommended: {why}.
+          {giveUp !== null && <> Ordering from them would save <span className="num text-bone">{inr(giveUp)}</span>.</>}
+          {" "}A written reason and a named approver are required, and both go on the saved record.
+        </p>
+        <div>
+          <label className="label mb-1.5 block text-bone">Reason</label>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+            placeholder="e.g. Saves the difference and our stock covers the two extra days"
+            className={`w-full rounded-lg border bg-raised px-3 py-2 text-[13px] text-bone ${touched && !reason.trim() ? "border-error" : "border-line"}`} />
+          {touched && !reason.trim() && <p className="mt-1 text-[12px] text-error">A blank reason cannot unlock this seller.</p>}
+        </div>
+        <div>
+          <label className="label mb-1.5 block text-bone">Approved by</label>
+          <input value={approver} onChange={e => setApprover(e.target.value)}
+            className={`w-full rounded-lg border bg-raised px-3 py-2 text-[14px] text-bone ${touched && !approver.trim() ? "border-error" : "border-line"}`} />
+          {touched && !approver.trim() && <p className="mt-1 text-[12px] text-error">Name the person who approves it.</p>}
+        </div>
+        {error && <p className="text-[12px] text-error">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-full border border-line px-4 py-1.5 text-[13px] text-muted hover:text-bone">Cancel</button>
+          <button onClick={save} disabled={busy}
+            className="rounded-full bg-signal px-5 py-1.5 text-[13px] font-semibold text-ink disabled:opacity-40">
+            {busy ? "Saving…" : "Record exception"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── Why this supplier ─────────────────────────────────────────────────────
+
+type EngineRow = NonNullable<ReturnType<typeof evaluate>["winner"]>;
+
+/** Gates as pass/fail rows, then each number tagged observed, derived or assumed. Slider-aware. */
+function WhyCard({ row, qty, needInDays, mode }: { row: EngineRow; qty: number; needInDays: number; mode: Mode }) {
+  const q = row.quote;
+  const unit = q.packPrice / (q.packSize ?? 1);
+  const gates: Array<{ label: string; pass: boolean; note?: string }> = [
+    { label: "Same item as the request", pass: true },
+    { label: "Pack size known", pass: q.packSize !== null },
+    row.approved
+      ? { label: "Arrives by the date", pass: true, note: `${q.leadDays} days, needed in ${needInDays}: passed with a written exception` }
+      : { label: "Arrives by the date", pass: q.leadDays <= needInDays, note: `${q.leadDays} days, needed in ${needInDays}` },
+    row.fillQty !== undefined
+      ? { label: "Can supply the full quantity", pass: row.approved, note: `stock covers ${row.fillQty} of ${qty}` }
+      : { label: "Can supply the full quantity", pass: true },
+  ];
+  const facts: Array<{ label: string; value: string; tag: "observed" | "derived" | "assumed" }> = [
+    { label: "Pack price", value: inr(q.packPrice), tag: "observed" },
+    { label: "Freight", value: inr(q.freight), tag: "observed" },
+    { label: "Lead time", value: `${q.leadDays} days`, tag: "observed" },
+    { label: "Packs ordered", value: String(row.packs), tag: "derived" },
+    { label: "Landed cost", value: inr(row.landed ?? 0), tag: "derived" },
+    { label: "Cost per usable unit", value: inr((row.landed ?? 0) / Math.max(qty, 1)), tag: "derived" },
+    { label: "Cash tied up in extra units", value: inr(row.overbuy * unit), tag: "derived" },
+    { label: "Tax basis", value: "compared as quoted", tag: "assumed" },
+    ...(mode === "balanced" ? [{ label: "Balanced tolerance", value: "5%", tag: "assumed" as const }] : []),
+  ];
+  return (
+    <div className="space-y-3 rounded-2xl border border-line bg-surface/80 p-5 shadow-sm">
+      <h3 className="display text-base font-semibold text-bone">Why {q.supplier}</h3>
+      <ul className="space-y-1.5">
+        {gates.map(g => (
+          <li key={g.label} className="flex items-start gap-2 text-[13px]">
+            <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${g.pass ? "bg-success/20 text-success" : "bg-error/20 text-error"}`}>
+              {g.pass ? "✓" : "✕"}
+            </span>
+            <span className="text-bone">{g.label}{g.note && <span className="text-muted"> · {g.note}</span>}</span>
+          </li>
+        ))}
+      </ul>
+      <table className="w-full text-left text-[12px]">
+        <tbody>
+          {facts.map(f => (
+            <tr key={f.label} className="border-t border-line/60">
+              <td className="py-1 text-muted">{f.label}</td>
+              <td className="num py-1 text-bone">{f.value}</td>
+              <td className="py-1 text-right"><FactTag tag={f.tag} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

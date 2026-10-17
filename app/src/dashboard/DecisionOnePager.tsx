@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, Check, Copy, Printer, Share2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, Copy, Download, Printer, Share2 } from "lucide-react";
 import { useApiOnce } from "../lib/useApi";
 import { createShareLink, getSharedSummary, getSummary, type SummaryDTO } from "../api/client";
 import { inr } from "../landing/engine";
+import { FactTag } from "../components/FactTag";
 
 /** Printable summary of one decision. Buyer view at /app/decision/:rfqId, read-only share view at /share/:token. */
 export function DecisionOnePager({ shared = false }: { shared?: boolean }) {
@@ -15,6 +16,16 @@ export function DecisionOnePager({ shared = false }: { shared?: boolean }) {
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+
+  const downloadJson = () => {
+    if (!s) return;
+    const blob = new Blob([JSON.stringify(s, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `crossover-decision-${s.rfq.id}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
 
   const share = async () => {
     setShareError(null);
@@ -50,6 +61,10 @@ export function DecisionOnePager({ shared = false }: { shared?: boolean }) {
             </Link>
           )}
           <div className="flex items-center gap-2">
+            <button type="button" onClick={downloadJson}
+              className="flex items-center gap-1.5 rounded-full border border-line bg-raised px-3 py-1.5 text-[12px] font-medium text-bone">
+              <Download size={13} /><span>JSON</span>
+            </button>
             <button type="button" onClick={() => window.print()}
               className="flex items-center gap-1.5 rounded-full border border-line bg-raised px-3 py-1.5 text-[12px] font-medium text-bone">
               <Printer size={13} /><span>Print</span>
@@ -124,6 +139,23 @@ export function DecisionOnePager({ shared = false }: { shared?: boolean }) {
         )}
 
         <section className="space-y-2">
+          <h2 className="display text-xl">Evidence</h2>
+          <p className="text-[12px] text-muted">Every number, and where it came from. Only what the engine computed or someone told us is stated as fact.</p>
+          <table className="w-full text-left text-[13px]">
+            <tbody>
+              {s.evidence.map(f => (
+                <tr key={f.label} className="border-t border-line align-top">
+                  <td className="py-1.5 pr-3 font-medium">{f.label}</td>
+                  <td className="num pr-3">{f.value}</td>
+                  <td className="pr-3"><FactTag tag={f.tag} /></td>
+                  <td className="text-[12px] text-muted">{f.source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="space-y-2">
           <h2 className="display text-xl">Why</h2>
           {s.explainer && (
             <p>
@@ -156,6 +188,13 @@ export function DecisionOnePager({ shared = false }: { shared?: boolean }) {
 
         <section className="space-y-2">
           <h2 className="display text-xl">Gates and exceptions</h2>
+          {Object.keys(s.exceptions ?? {}).length > 0 && (
+            <ul className="space-y-1 rounded-xl border border-warn/40 bg-warn/10 p-3 text-[13px]">
+              {Object.entries(s.exceptions).map(([who, e]) => (
+                <li key={who}><strong>{who}</strong>: gate broken on purpose. Reason: “{e.reason}”. Approved by {e.approver}.</li>
+              ))}
+            </ul>
+          )}
           <table className="w-full text-left text-[13px]">
             <thead className="text-muted"><tr><th className="py-1">Supplier</th><th>Status</th><th className="text-right">Landed</th><th className="text-right">Lead</th></tr></thead>
             <tbody>
