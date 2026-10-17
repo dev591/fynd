@@ -104,12 +104,14 @@ def init_db():
     ''')
     
     # Messages (RFQ + supplier thread)
+    # Drop and recreate to handle schema change
+    cursor.execute('DROP TABLE IF EXISTS messages')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
             rfq_id TEXT NOT NULL,
             supplier_id TEXT NOT NULL,
-            sender_id TEXT NOT NULL,
+            sender_type TEXT NOT NULL,
             content TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             FOREIGN KEY (rfq_id) REFERENCES rfqs(id),

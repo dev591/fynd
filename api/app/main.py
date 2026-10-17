@@ -4,7 +4,7 @@ import os
 import json
 import uuid
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Query
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,7 +16,7 @@ from .models import (
     ProductCreate, ProductRead,
     RFQCreate, RFQRead, RFQInviteRead, RFQByTokenRead,
     TargetCreate, TargetRead,
-    MessageCreate, MessageRead
+    MessageCreate, MessageRead, RFQSupplierView
 )
 
 # Initialize database
@@ -464,6 +464,271 @@ async def post_product_photo(
             category=updated['category'],
             photo_path=updated['photo_path'],
             created_at=updated['created_at']
+        )
+
+# ============ Visibility & Messaging Endpoints ============
+
+@app.get('/api/rfqs/{rfq_id}/suppliers/{supplier_id}', response_model=RFQSupplierView)
+def get_rfq_supplier_view(
+    rfq_id: str,
+    supplier_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    GET /api/rfqs/{rfq_id}/suppliers/{supplier_id}
+    Buyer views a specific supplier for an RFQ.
+    Requires JWT auth and RFQ.buyer_id == current_user['user_id'].
+    Verify supplier_id appears in rfq_invites for this rfq (not revoked).
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Verify RFQ exists and buyer owns it
+        cursor.execute('SELECT buyer_id FROM rfqs WHERE id=?', (rfq_id,))
+        rfq = cursor.fetchone()
+        
+        if not rfq:
+            raise HTTPException(status_code=404, detail='RFQ not found')
+        
+        if rfq['buyer_id'] != current_user['user_id']:
+            raise HTTPException(status_code=403, detail='Not authorized to view this RFQ')
+        
+        # Verify supplier was invited to this RFQ and invite not revoked
+        cursor.execute(
+            'SELECT revoked FROM rfq_invites WHERE rfq_id=? AND supplier_id=?',
+            (rfq_id, supplier_id)
+        )
+        invite = cursor.fetchone()
+        
+        if not invite or invite['revoked']:
+            raise HTTPException(status_code=403, detail='Supplier not invited or invite revoked')
+        
+        # Fetch supplier profile
+        cursor.execute('SELECT * FROM supplier_profiles WHERE id=?', (supplier_id,))
+        profile_row = cursor.fetchone()
+        
+        supplier_profile = None
+        if profile_row:
+            supplier_profile = SupplierProfileRead(
+                id=profile_row['id'],
+                email=profile_row['email'],
+                company=profile_row['company'],
+                state=profile_row['state'],
+                business_type=profile_row['business_type'],
+                categories=json.loads(profile_row['categories']),
+                regions=json.loads(profile_row['regions']),
+                default_lead_days=profile_row['default_lead_days'],
+                gst_inclusive_default=bool(profile_row['gst_inclusive_default']),
+                verification_json=profile_row['verification_json'],
+                created_at=profile_row['created_at']
+            )
+        
+        # Fetch latest quote
+        cursor.execute(
+            'SELECT * FROM quotes WHERE rfq_id=? AND supplier_id=? ORDER BY version DESC LIMIT 1',
+            (rfq_id, supplier_id)
+        )
+        quote_row = cursor.fetchone()
+        
+        latest_quote = None
+        if quote_row:
+            latest_quote = QuoteRead(
+                id=quote_row['id'],
+                rfq_id=quote_row['rfq_id'],
+                supplier_id=quote_row['supplier_id'],
+                version=quote_row['version'],
+                price=quote_row['price'],
+                lead_days=quote_row['lead_days'],
+                packing_json=quote_row['packing_json'],
+                notes=quote_row['notes'],
+                submitted_at=quote_row['submitted_at'],
+                rejected=bool(quote_row['rejected'])
+            )
+        
+        return RFQSupplierView(
+            supplier=supplier_profile,
+            latest_quote=latest_quote
+        )
+
+@app.get('/api/messages', response_model=list[MessageRead])
+def get_messages(
+    rfq_id: str = Query(...),
+    supplier_id: str = Query(None),
+    token: str = Query(None),
+    request: Request = None
+):
+    """
+    GET /api/messages?rfq_id=...&supplier_id=...&token=...
+    Get messages for an RFQ/supplier thread.
+    - If JWT present (no supplier_id/token): buyer sees full thread for this rfq
+    - If token present: supplier sees their messages for this rfq
+    - If JWT + supplier_id: buyer sees messages for specific supplier on this rfq
+    """
+    # Try to get current user from JWT (optional)
+    current_user = None
+    if request:
+        try:
+            current_user = get_current_user(request)
+        except HTTPException:
+            pass
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        if token:
+            # Token-based access: supplier viewing their own messages
+            cursor.execute(
+                'SELECT rfq_id, supplier_id FROM rfq_invites WHERE token=? AND revoked=0',
+                (token,)
+            )
+            invite = cursor.fetchone()
+            
+            if not invite:
+                raise HTTPException(status_code=404, detail='Invalid or revoked token')
+            
+            invite_rfq_id, invite_supplier_id = invite['rfq_id'], invite['supplier_id']
+            
+            if invite_rfq_id != rfq_id:
+                raise HTTPException(status_code=400, detail='Token does not match rfq_id')
+            
+            # Fetch messages for this supplier on this RFQ
+            cursor.execute(
+                'SELECT * FROM messages WHERE rfq_id=? AND supplier_id=? ORDER BY created_at ASC',
+                (rfq_id, invite_supplier_id)
+            )
+        elif supplier_id:
+            # JWT + supplier_id: buyer viewing messages for specific supplier
+            if not current_user:
+                raise HTTPException(status_code=401, detail='JWT required')
+            
+            cursor.execute('SELECT buyer_id FROM rfqs WHERE id=?', (rfq_id,))
+            rfq = cursor.fetchone()
+            
+            if not rfq:
+                raise HTTPException(status_code=404, detail='RFQ not found')
+            
+            if rfq['buyer_id'] != current_user['user_id']:
+                raise HTTPException(status_code=403, detail='Not authorized to view this RFQ')
+            
+            cursor.execute(
+                'SELECT * FROM messages WHERE rfq_id=? AND supplier_id=? ORDER BY created_at ASC',
+                (rfq_id, supplier_id)
+            )
+        else:
+            # JWT only: buyer sees all messages for this RFQ
+            if not current_user:
+                raise HTTPException(status_code=401, detail='JWT required')
+            
+            cursor.execute('SELECT buyer_id FROM rfqs WHERE id=?', (rfq_id,))
+            rfq = cursor.fetchone()
+            
+            if not rfq:
+                raise HTTPException(status_code=404, detail='RFQ not found')
+            
+            if rfq['buyer_id'] != current_user['user_id']:
+                raise HTTPException(status_code=403, detail='Not authorized to view this RFQ')
+            
+            cursor.execute(
+                'SELECT * FROM messages WHERE rfq_id=? ORDER BY created_at ASC',
+                (rfq_id,)
+            )
+        
+        messages = cursor.fetchall()
+        
+        return [
+            MessageRead(
+                id=m['id'],
+                rfq_id=m['rfq_id'],
+                supplier_id=m['supplier_id'],
+                sender_type=m['sender_type'],
+                content=m['content'],
+                created_at=m['created_at']
+            )
+            for m in messages
+        ]
+
+@app.post('/api/messages', response_model=MessageRead)
+def post_message(
+    message_data: MessageCreate,
+    request: Request
+):
+    """
+    POST /api/messages
+    Create a new message.
+    - If sender_type='buyer': require JWT auth and user must own the RFQ
+    - If sender_type='supplier': require token and validate via rfq_invites
+    """
+    # Try to get current user from JWT (optional)
+    current_user = None
+    try:
+        current_user = get_current_user(request)
+    except HTTPException:
+        pass
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        if message_data.sender_type == 'buyer':
+            # Buyer posting: require JWT, verify RFQ ownership
+            if not current_user:
+                raise HTTPException(status_code=401, detail='JWT required for buyer messages')
+            
+            cursor.execute('SELECT buyer_id FROM rfqs WHERE id=?', (message_data.rfq_id,))
+            rfq = cursor.fetchone()
+            
+            if not rfq:
+                raise HTTPException(status_code=404, detail='RFQ not found')
+            
+            if rfq['buyer_id'] != current_user['user_id']:
+                raise HTTPException(status_code=403, detail='Not authorized to post to this RFQ')
+            
+            # Buyer posting should not specify supplier_id or token
+            # Use the RFQ's buyer_id as a placeholder for supplier_id in the message
+            supplier_id = message_data.supplier_id or current_user['user_id']
+        
+        elif message_data.sender_type == 'supplier':
+            # Supplier posting: require token
+            if not message_data.token:
+                raise HTTPException(status_code=401, detail='Token required for supplier messages')
+            
+            cursor.execute(
+                'SELECT rfq_id, supplier_id FROM rfq_invites WHERE token=? AND revoked=0',
+                (message_data.token,)
+            )
+            invite = cursor.fetchone()
+            
+            if not invite:
+                raise HTTPException(status_code=404, detail='Invalid or revoked token')
+            
+            if invite['rfq_id'] != message_data.rfq_id:
+                raise HTTPException(status_code=400, detail='Token does not match rfq_id')
+            
+            supplier_id = invite['supplier_id']
+        
+        else:
+            raise HTTPException(status_code=400, detail='Invalid sender_type')
+        
+        # Create message
+        message_id = str(uuid.uuid4())
+        cursor.execute(
+            '''INSERT INTO messages (id, rfq_id, supplier_id, sender_type, content, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)''',
+            (message_id, message_data.rfq_id, supplier_id, message_data.sender_type,
+             message_data.content, now_unix())
+        )
+        conn.commit()
+        
+        # Fetch and return
+        cursor.execute('SELECT * FROM messages WHERE id=?', (message_id,))
+        msg = cursor.fetchone()
+        
+        return MessageRead(
+            id=msg['id'],
+            rfq_id=msg['rfq_id'],
+            supplier_id=msg['supplier_id'],
+            sender_type=msg['sender_type'],
+            content=msg['content'],
+            created_at=msg['created_at']
         )
 
 # Serve product photos as static files

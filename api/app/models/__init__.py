@@ -109,12 +109,22 @@ class TargetRead(BaseModel):
 # ============ Message Models ============
 
 class MessageCreate(BaseModel):
+    rfq_id: str
     content: str = Field(..., min_length=1)
+    sender_type: str = Field(..., pattern='^(buyer|supplier)$')
+    supplier_id: Optional[str] = None
+    token: Optional[str] = None
 
 class MessageRead(BaseModel):
     id: str
     rfq_id: str
-    supplier_id: str
-    sender_id: str
+    supplier_id: Optional[str]
+    sender_type: str
     content: str
     created_at: int
+
+# ============ RFQ Supplier View Models ============
+
+class RFQSupplierView(BaseModel):
+    supplier: Optional[SupplierProfileRead]
+    latest_quote: Optional[QuoteRead]
