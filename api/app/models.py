@@ -49,6 +49,8 @@ class Profile(BaseModel):
     verification: Verification = Field(default_factory=Verification)
     buyer: BuyerSetup | None = None
     supplier: SupplierSetup | None = None
+    # One account can hold both roles. Normalised by the server; the wizard's single `role` still seeds it.
+    roles: list[Literal["buyer", "seller"]] = Field(default_factory=list)
 
 
 # Crossover Engine Models
@@ -384,3 +386,7 @@ class ConfirmIn(BaseModel):
 class AutopilotSettings(BaseModel):
     """Seller autopilot. Off by default. It only ever opens a quote; it never answers a buyer's target."""
     enabled: bool = False
+
+
+class RoleIn(BaseModel):
+    role: Literal["buyer", "seller"]

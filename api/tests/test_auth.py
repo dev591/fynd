@@ -131,6 +131,12 @@ def test_bad_hs256_signature_never_falls_through_to_the_network(monkeypatch):
 
 # ─── nobody sees anybody else's data ────────────────────────────────────────
 
+def _become_seller(tok, company="Other Co"):
+    client.post("/api/profile", headers=hdr(tok), json={
+        "id": "x", "role": "supplier", "full_name": "S", "email": "e@x.in", "phone": "9820144556",
+        "company": company, "business_type": "trader", "state": "Gujarat", "city": "Surat"})
+
+
 def _new_rfq(tok, item="M10 bolt"):
     return client.post("/api/rfqs", headers=hdr(tok), json={
         "item": item, "qty": 100, "need_in_days": 5, "buyer_company": "Co", "buyer_name": "B"}).json()["id"]
@@ -204,6 +210,7 @@ def test_profile_belongs_to_the_token_not_the_request_body():
 
 def test_a_seller_owns_their_catalog_and_others_cannot_touch_it():
     owner, other = token(sub="seller-own"), token(sub="seller-other")
+    _become_seller(other)                       # a different seller: the role is fine, the ownership is not
     client.post("/api/profile", headers=hdr(owner), json={
         "id": "x", "role": "supplier", "full_name": "S", "email": "e@x.in", "phone": "9820144556",
         "company": "Own Co", "business_type": "trader", "state": "Gujarat", "city": "Surat"})
@@ -217,6 +224,7 @@ def test_a_seller_owns_their_catalog_and_others_cannot_touch_it():
     assert client.post("/api/supplier/products/seller-own", headers=hdr(other),
                        json={"name": "evil", "pack_price": 1, "pack_size": 1}).status_code == 404
     # the new seller is findable by matching, like any other
+    client.post("/api/me/roles", headers=hdr(other), json={"role": "buyer"})
     rid = client.post("/api/rfqs", headers=hdr(other), json={
         "item": "brass nut x", "qty": 5, "need_in_days": 5, "buyer_company": "C", "buyer_name": "B"}).json()
     assert "seller-own" in rid["supplier_tokens"]
@@ -231,7 +239,9 @@ def test_seller_list_shows_own_plus_demo_and_demo_can_be_switched_off(monkeypatc
         "company": "List Co", "business_type": "trader", "state": "Gujarat", "city": "Surat"})
     ids = {s["supplier_id"] for s in client.get("/api/suppliers", headers=hdr(tok)).json()}
     assert "seller-list" in ids and "A" in ids
-    other = {s["supplier_id"] for s in client.get("/api/suppliers", headers=hdr(token(sub="nobody"))).json()}
+    nobody = token(sub="nobody")
+    _become_seller(nobody)
+    other = {s["supplier_id"] for s in client.get("/api/suppliers", headers=hdr(nobody)).json()}
     assert "seller-list" not in other and "A" in other
     monkeypatch.setenv("ALLOW_DEMO_SELLERS", "false")
     assert client.get("/api/supplier/A/notifications", headers=hdr(tok)).status_code == 404

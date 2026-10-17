@@ -40,6 +40,7 @@ from .models import (
     IntakeIn,
     ConfirmIn,
     AutopilotSettings,
+    RoleIn,
 )
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
@@ -48,6 +49,20 @@ from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
 from .auth import AuthUser, get_current_user
+
+
+def require_role(role: str):
+    """Dependency factory. The server decides from the account's stored roles; the browser's toggle is cosmetic."""
+    def dependency(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+        if role not in store.roles_for(user.id):
+            raise HTTPException(status_code=403, detail={"code": "role_required", "role": role,
+                                                         "message": f"This needs the {role} role on your account."})
+        return user
+    return dependency
+
+
+buyer_only = require_role("buyer")
+seller_only = require_role("seller")
 
 
 def _rfq_for(user: AuthUser, rfq_id: str) -> RFQ:
@@ -161,7 +176,7 @@ def save_profile(profile: Profile, user: AuthUser = Depends(get_current_user)):
     if profile.pan_masked is None and profile.gstin:
         profile.pan_masked = mask_pan(profile.gstin[2:12])    # never keep a raw PAN
     store.register_profile(user.id, profile)
-    return profile
+    return store.profiles[user.id]
 
 
 @app.get("/api/me")
@@ -169,8 +184,18 @@ def me(user: AuthUser = Depends(get_current_user)):
     return {
         "user": user,
         "profile": store.profiles.get(user.id),
+        "roles": store.roles_for(user.id),
         "supplier_id": store.supplier_id_for_user(user.id),
     }
+
+
+@app.post("/api/me/roles")
+def add_my_role(payload: RoleIn, user: AuthUser = Depends(get_current_user)):
+    """Add the buyer or seller role to this account. Needs a saved profile (a seller record is built from it)."""
+    roles = store.add_role(user.id, payload.role)
+    if roles is None:
+        raise HTTPException(status_code=409, detail="Finish your profile first, then add a role.")
+    return {"roles": roles, "supplier_id": store.supplier_id_for_user(user.id)}
 
 
 # --- Buyer intake (draft only: nothing here saves a request) ---
@@ -183,7 +208,7 @@ def intake_status():
 
 
 @app.post("/api/intake/draft")
-def intake_draft(payload: IntakeIn, user: AuthUser = Depends(get_current_user)):
+def intake_draft(payload: IntakeIn, user: AuthUser = Depends(buyer_only)):
     key = payload.text.strip().lower()
     if key in _intake_cache:
         result = dict(_intake_cache[key])
@@ -197,7 +222,7 @@ def intake_draft(payload: IntakeIn, user: AuthUser = Depends(get_current_user)):
 
 
 @app.post("/api/intake/transcribe")
-async def intake_transcribe(request: Request, user: AuthUser = Depends(get_current_user)):
+async def intake_transcribe(request: Request, user: AuthUser = Depends(buyer_only)):
     """Raw audio bytes in the body (no multipart dependency). Returns the transcript, or fallback=true."""
     audio = await request.body()
     text = ai.transcribe(audio, request.headers.get("content-type", "audio/webm"))
@@ -233,12 +258,12 @@ def get_case_checks():
 
 # --- 4. RFQ Lifecycle (Buyer Side) ---
 @app.post("/api/rfqs")
-def create_rfq(payload: RFQCreate, user: AuthUser = Depends(get_current_user)):
+def create_rfq(payload: RFQCreate, user: AuthUser = Depends(buyer_only)):
     return _rfq_response(store.create_rfq(payload, owner_id=user.id))
 
 
 @app.post("/api/rfqs/confirm")
-def confirm_rfq(payload: ConfirmIn, user: AuthUser = Depends(get_current_user)):
+def confirm_rfq(payload: ConfirmIn, user: AuthUser = Depends(buyer_only)):
     """Creates the request from the confirm card. The only way an intake draft becomes a request."""
     rfq = store.create_rfq(RFQCreate(
         item=payload.item.strip(), qty=payload.qty, need_in_days=payload.need_in_days,
@@ -252,7 +277,7 @@ def confirm_rfq(payload: ConfirmIn, user: AuthUser = Depends(get_current_user)):
 
 
 @app.get("/api/rfqs/{rfq_id}/summary")
-def rfq_summary(rfq_id: str, user: AuthUser = Depends(get_current_user)):
+def rfq_summary(rfq_id: str, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
     s = build_summary(store, rfq_id)
     if not s:
@@ -261,7 +286,7 @@ def rfq_summary(rfq_id: str, user: AuthUser = Depends(get_current_user)):
 
 
 @app.post("/api/rfqs/{rfq_id}/share")
-def share_rfq(rfq_id: str, user: AuthUser = Depends(get_current_user)):
+def share_rfq(rfq_id: str, user: AuthUser = Depends(buyer_only)):
     """Explicit click only. The link is read-only, unguessable, and shows every quote price."""
     rfq = _rfq_for(user, rfq_id)
     if not rfq.decision:
@@ -280,12 +305,12 @@ def shared_summary(token: str):
 
 
 @app.get("/api/savings")
-def savings(user: AuthUser = Depends(get_current_user)):
+def savings(user: AuthUser = Depends(buyer_only)):
     return savings_total(store, owner_id=user.id)
 
 
 @app.get("/api/rfqs/{rfq_id}/ai-log")
-def rfq_ai_log(rfq_id: str, user: AuthUser = Depends(get_current_user)):
+def rfq_ai_log(rfq_id: str, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
     return store.ai_log_for(rfq_id)
 
@@ -306,7 +331,7 @@ def _rfq_response(rfq: RFQ) -> dict:
 
 
 @app.get("/api/suppliers")
-def list_suppliers(user: AuthUser = Depends(get_current_user)):
+def list_suppliers(user: AuthUser = Depends(seller_only)):
     """The sellers this user may act as: their own, plus the synthetic demo sellers while those are allowed."""
     return [x for x in store.list_suppliers()
             if x["supplier_id"] == store.supplier_id_for_user(user.id)
@@ -314,25 +339,25 @@ def list_suppliers(user: AuthUser = Depends(get_current_user)):
 
 
 @app.get("/api/supplier/{supplier_id}/notifications", response_model=List[NotificationOut])
-def list_notifications(supplier_id: str, user: AuthUser = Depends(get_current_user)):
+def list_notifications(supplier_id: str, user: AuthUser = Depends(seller_only)):
     _seller_for(user, supplier_id)
     return store.list_notifications(supplier_id)
 
 
 @app.get("/api/supplier/{supplier_id}/autopilot", response_model=AutopilotSettings)
-def get_autopilot(supplier_id: str, user: AuthUser = Depends(get_current_user)):
+def get_autopilot(supplier_id: str, user: AuthUser = Depends(seller_only)):
     _seller_for(user, supplier_id)
     return store.get_autopilot(supplier_id)
 
 
 @app.put("/api/supplier/{supplier_id}/autopilot", response_model=AutopilotSettings)
-def put_autopilot(supplier_id: str, payload: AutopilotSettings, user: AuthUser = Depends(get_current_user)):
+def put_autopilot(supplier_id: str, payload: AutopilotSettings, user: AuthUser = Depends(seller_only)):
     _seller_for(user, supplier_id)
     return store.set_autopilot(supplier_id, payload.enabled)
 
 
 @app.post("/api/supplier/{supplier_id}/notifications/{notification_id}/read", response_model=NotificationOut)
-def read_notification(supplier_id: str, notification_id: str, user: AuthUser = Depends(get_current_user)):
+def read_notification(supplier_id: str, notification_id: str, user: AuthUser = Depends(seller_only)):
     _seller_for(user, supplier_id)
     n = store.mark_notification_viewed(supplier_id, notification_id)
     if not n:
@@ -341,13 +366,13 @@ def read_notification(supplier_id: str, notification_id: str, user: AuthUser = D
 
 
 @app.get("/api/rfqs", response_model=List[RFQ])
-def list_rfqs(user: AuthUser = Depends(get_current_user)):
+def list_rfqs(user: AuthUser = Depends(buyer_only)):
     """Only this buyer's requests, plus the shared demo request."""
     return [r for r in store.rfqs.values() if r.owner_id in (None, user.id)]
 
 
 @app.get("/api/rfqs/{rfq_id}")
-def get_rfq_details(rfq_id: str, user: AuthUser = Depends(get_current_user)):
+def get_rfq_details(rfq_id: str, user: AuthUser = Depends(buyer_only)):
     rfq = _rfq_for(user, rfq_id)
 
     quotes_by_supplier = store.quotes.get(rfq_id, {})
@@ -370,7 +395,7 @@ def get_rfq_details(rfq_id: str, user: AuthUser = Depends(get_current_user)):
 
 
 @app.post("/api/rfqs/{rfq_id}/targets", response_model=NegotiationTarget)
-def send_target_to_supplier(rfq_id: str, payload: NegotiationTargetIn, user: AuthUser = Depends(get_current_user)):
+def send_target_to_supplier(rfq_id: str, payload: NegotiationTargetIn, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
     try:
         return store.send_target(
@@ -388,7 +413,7 @@ def send_target_to_supplier(rfq_id: str, payload: NegotiationTargetIn, user: Aut
 
 
 @app.post("/api/rfqs/{rfq_id}/decision")
-def record_decision(rfq_id: str, payload: DecisionIn, user: AuthUser = Depends(get_current_user)):
+def record_decision(rfq_id: str, payload: DecisionIn, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
     try:
         return store.save_decision(
@@ -402,7 +427,7 @@ def record_decision(rfq_id: str, payload: DecisionIn, user: AuthUser = Depends(g
 
 
 @app.get("/api/recommendations")
-def list_recommendations(user: AuthUser = Depends(get_current_user)):
+def list_recommendations(user: AuthUser = Depends(buyer_only)):
     return {rid: d for rid, d in store.decisions.items() if store.rfqs[rid].owner_id in (None, user.id)}
 
 
@@ -484,7 +509,7 @@ def mark_quoting(token: str):
 
 
 @app.get("/api/rfqs/{rfq_id}/activity", response_model=Activity)
-def rfq_activity(rfq_id: str, user: AuthUser = Depends(get_current_user)):
+def rfq_activity(rfq_id: str, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
     return store.activity(rfq_id)
 
@@ -496,7 +521,7 @@ def get_my_quotes(token: str):
 
 # --- 6. Supplier Profile & Products ---
 @app.get("/api/supplier/profile/{supplier_id}", response_model=SupplierProfileOut)
-def get_supplier_profile(supplier_id: str, user: AuthUser = Depends(get_current_user)):
+def get_supplier_profile(supplier_id: str, user: AuthUser = Depends(seller_only)):
     _seller_for(user, supplier_id)
     p = store.get_supplier_profile(supplier_id)
     if not p:
@@ -505,25 +530,25 @@ def get_supplier_profile(supplier_id: str, user: AuthUser = Depends(get_current_
 
 
 @app.put("/api/supplier/profile/{supplier_id}", response_model=SupplierProfileOut)
-def update_supplier_profile(supplier_id: str, payload: SupplierProfileIn, user: AuthUser = Depends(get_current_user)):
+def update_supplier_profile(supplier_id: str, payload: SupplierProfileIn, user: AuthUser = Depends(seller_only)):
     _seller_for(user, supplier_id)
     return store.upsert_supplier_profile(supplier_id, payload)
 
 
 @app.get("/api/supplier/products/{supplier_id}", response_model=List[SupplierProduct])
-def list_supplier_products(supplier_id: str, user: AuthUser = Depends(get_current_user)):
+def list_supplier_products(supplier_id: str, user: AuthUser = Depends(seller_only)):
     _seller_for(user, supplier_id)
     return store.get_supplier_products(supplier_id)
 
 
 @app.post("/api/supplier/products/{supplier_id}", response_model=SupplierProduct, status_code=201)
-def add_supplier_product(supplier_id: str, payload: SupplierProductIn, user: AuthUser = Depends(get_current_user)):
+def add_supplier_product(supplier_id: str, payload: SupplierProductIn, user: AuthUser = Depends(seller_only)):
     _seller_for(user, supplier_id)
     return store.add_supplier_product(supplier_id, payload)
 
 
 @app.put("/api/supplier/products/{supplier_id}/{product_id}", response_model=SupplierProduct)
-def update_supplier_product(supplier_id: str, product_id: str, payload: SupplierProductIn, user: AuthUser = Depends(get_current_user)):
+def update_supplier_product(supplier_id: str, product_id: str, payload: SupplierProductIn, user: AuthUser = Depends(seller_only)):
     _seller_for(user, supplier_id)
     p = store.update_supplier_product(supplier_id, product_id, payload)
     if not p:
@@ -532,7 +557,7 @@ def update_supplier_product(supplier_id: str, product_id: str, payload: Supplier
 
 
 @app.delete("/api/supplier/products/{supplier_id}/{product_id}", status_code=204)
-def delete_supplier_product(supplier_id: str, product_id: str, user: AuthUser = Depends(get_current_user)):
+def delete_supplier_product(supplier_id: str, product_id: str, user: AuthUser = Depends(seller_only)):
     _seller_for(user, supplier_id)
     ok = store.delete_supplier_product(supplier_id, product_id)
     if not ok:
@@ -542,7 +567,7 @@ def delete_supplier_product(supplier_id: str, product_id: str, user: AuthUser = 
 
 # --- 7. Buyer-side supplier profile (click-through) ---
 @app.get("/api/rfqs/{rfq_id}/suppliers/{supplier_id}")
-def get_supplier_profile_for_buyer(rfq_id: str, supplier_id: str, user: AuthUser = Depends(get_current_user)):
+def get_supplier_profile_for_buyer(rfq_id: str, supplier_id: str, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
     data = store.get_supplier_profile_for_buyer(rfq_id, supplier_id)
     if data is None:
@@ -552,13 +577,13 @@ def get_supplier_profile_for_buyer(rfq_id: str, supplier_id: str, user: AuthUser
 
 # --- 8. Chat (buyer + supplier token routes) ---
 @app.get("/api/rfqs/{rfq_id}/threads/{supplier_id}/messages", response_model=List[ChatMessage])
-def get_chat_messages(rfq_id: str, supplier_id: str, user: AuthUser = Depends(get_current_user)):
+def get_chat_messages(rfq_id: str, supplier_id: str, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
     return store.get_chat_messages(rfq_id, supplier_id)
 
 
 @app.post("/api/rfqs/{rfq_id}/threads/{supplier_id}/messages", response_model=ChatMessage, status_code=201)
-def post_chat_message(rfq_id: str, supplier_id: str, payload: ChatMessageIn, user: AuthUser = Depends(get_current_user)):
+def post_chat_message(rfq_id: str, supplier_id: str, payload: ChatMessageIn, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
     # The signed-in buyer is always the buyer here; the request body cannot pick the sender.
     return store.add_chat_message(rfq_id, supplier_id, "buyer", payload.sender_name, payload.text)

@@ -242,10 +242,33 @@ class RFQStore:
             ))
             self.maybe_autopilot_quote(rfq, sid)
 
+    def roles_for(self, user_id: str) -> list[str]:
+        """The roles this account holds. No profile yet means a plain buyer. Order is stable: buyer, seller."""
+        p = self.profiles.get(user_id)
+        held = set(p.roles) if p else set()
+        if p and not held:
+            held.add("seller" if p.role.value == "supplier" else "buyer")
+        if self.supplier_owner.get(user_id) == user_id:
+            held.add("seller")
+        if not held:
+            held.add("buyer")
+        return [r for r in ("buyer", "seller") if r in held]
+
+    def add_role(self, user_id: str, role: str) -> Optional[list[str]]:
+        """Give an existing account a second role. None if there is no profile to build the seller record from."""
+        p = self.profiles.get(user_id)
+        if not p:
+            return None
+        roles = set(self.roles_for(user_id)) | {role}
+        self.register_profile(user_id, p.model_copy(update={"roles": [r for r in ("buyer", "seller") if r in roles]}))
+        return self.roles_for(user_id)
+
     def register_profile(self, user_id: str, profile: Profile) -> None:
-        """Remember a signed-in user's profile. A supplier gets their own seller record, owned by them."""
+        """Remember a signed-in user's profile. A seller gets their own seller record, owned by them."""
+        held = set(profile.roles) or {"seller" if profile.role.value == "supplier" else "buyer"}
+        profile = profile.model_copy(update={"roles": [r for r in ("buyer", "seller") if r in held]})
         self.profiles[user_id] = profile
-        if profile.role.value != "supplier":
+        if "seller" not in held:
             return
         self.supplier_owner[user_id] = user_id
         tier = "registry" if profile.verification.registry != "none" else \

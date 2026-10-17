@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import { signIn, authConfigured } from "../lib/auth";
 import { getMe } from "../api/client";
+import { getActiveRole, homeFor } from "../lib/activeRole";
 import { useSession } from "../lib/useSession";
 
 export function SignIn() {
@@ -26,7 +27,7 @@ export function SignIn() {
       let dest = from;
       if (!dest) {
         const me = await getMe().catch(() => null);
-        dest = me?.profile?.role === "supplier" ? "/supplier" : "/app";
+        dest = homeFor(getActiveRole(me?.roles ?? ["buyer"]));
       }
       navigate(dest, { replace: true });
     } catch (err) {

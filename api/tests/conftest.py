@@ -1,7 +1,8 @@
 import pytest
 
 from app.auth import AuthUser, get_current_user
-from app.main import app
+from app.main import app, store
+from app.models import Profile
 
 TEST_USER = AuthUser(id="u_test", email="buyer@test.dev")
 
@@ -21,5 +22,9 @@ def _no_real_provider_keys(monkeypatch):
 def _signed_in_as_test_user():
     """Every test acts as one signed-in user, so nothing here calls Supabase. test_auth.py removes this on purpose."""
     app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    store.profiles.setdefault(TEST_USER.id, Profile(
+        id=TEST_USER.id, role="buyer", full_name="Test User", email=TEST_USER.email, phone="9820144556",
+        company="Test Co", business_type="manufacturer", state="Telangana", city="Hyderabad",
+        roles=["buyer", "seller"]))
     yield
     app.dependency_overrides.pop(get_current_user, None)

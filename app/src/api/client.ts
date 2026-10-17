@@ -60,8 +60,16 @@ export interface ApiProfile {
 export interface MeResponse {
   user: { id: string; email: string | null };
   profile: ApiProfile | null;
-  /** The seller record this user owns, if they signed up as a supplier. */
+  /** Roles on this account. The server checks these on every call; the header toggle is only a shortcut. */
+  roles: Array<"buyer" | "seller">;
+  /** The seller record this user owns, if they hold the seller role. */
   supplier_id: string | null;
+}
+
+export type AppRole = "buyer" | "seller";
+
+export async function addRole(role: AppRole): Promise<{ roles: AppRole[]; supplier_id: string | null }> {
+  return apiFetch("/api/me/roles", { method: "POST", body: JSON.stringify({ role }) });
 }
 
 export async function getMe(): Promise<MeResponse> {

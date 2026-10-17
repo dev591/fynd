@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { saveProfile } from "../../api/client";
+import { setActiveRole } from "../../lib/activeRole";
 import {
   ArrowRight,
   ShieldCheck,
@@ -30,6 +31,7 @@ export function SummaryStep({ profile }: SummaryStepProps) {
     setSaving(true); setSaveError(null);
     try {
       await saveProfile(profile);                       // stored against the signed-in user, server side
+      setActiveRole(profile.role === "supplier" ? "seller" : "buyer");
       navigate(profile.role === "supplier" ? "/supplier" : "/app");
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Could not save your profile.");
