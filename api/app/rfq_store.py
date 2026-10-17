@@ -280,6 +280,12 @@ class RFQStore:
         prod = next((p for p in self.supplier_products.get(n.supplier_id, []) if p.id == n.product_id), None)
         return draft_quote(rfq, prod) if prod else None
 
+    def has_pending_target(self, token: str) -> bool:
+        """True while a buyer's target awaits a human answer. Autopilot must not quote while this holds."""
+        rfq_id, sid = self.token_to_rfq_id.get(token), self.token_to_supplier_id.get(token)
+        t = self.targets.get(rfq_id, {}).get(sid) if rfq_id and sid else None
+        return bool(t and t.status == "pending")
+
     def product_for_token(self, token: str) -> Optional[SupplierProduct]:
         n = self._notification_for_token(token)
         return next((p for p in self.supplier_products.get(n.supplier_id, []) if p.id == n.product_id), None) if n else None
@@ -439,6 +445,7 @@ class RFQStore:
         target_per_unit: Optional[float] = None,
         concession_type: str = "freight",
         message: Optional[str] = None,
+        sent_by: str = "",
     ) -> NegotiationTarget:
         if rfq_id not in self.rfqs:
             raise ValueError(f"RFQ {rfq_id} not found.")
@@ -454,7 +461,7 @@ class RFQStore:
             supplier_id=supplier_id, message=msg, cut_needed=cut_needed,
             target_freight=target_freight, target_per_unit=target_per_unit,
             concession_type=concession_type,
-            sent_at=datetime.now().strftime("%I:%M %p"), status="pending",
+            sent_at=datetime.now().strftime("%I:%M %p"), sent_by=sent_by, status="pending",
         )
         self.targets.setdefault(rfq_id, {})[supplier_id] = target
 
@@ -477,6 +484,11 @@ class RFQStore:
             "rfq_id": rfq_id, "winner_id": winner_id,
             "reason": reason, "approver": approver,
             "decided_at": datetime.now().isoformat(),
+            # Every AI call that touched this request, so the record shows what a model did and did not do.
+            "ai_calls": [{"request_id": e["request_id"], "kind": e["kind"], "at": e["at"]}
+                         for e in self.ai_log_for(rfq_id)],
+            "mode": rfq.priority_mode,
+            "source": rfq.source,
         }
         rfq.decision = decision
         self.decisions[rfq_id] = decision

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Send, User, Bot, Zap } from "lucide-react";
+import { Send, User, MessageSquare, Zap } from "lucide-react";
 import type { ChatMessageDTO } from "../../api/client";
 import { NegotiationTargetCard } from "./NegotiationTargetCard";
 
@@ -64,11 +64,11 @@ export function SupplierChat({ messages, currentRole, currentUserName, onSendMes
         )}
       </div>
 
-      {/* AI Drafts (buyer only) */}
+      {/* Suggested replies (buyer only): fixed text, not AI. A person picks, edits and sends. */}
       {currentRole === "buyer" && (
         <div className="border-t border-line/60 bg-raised/30 px-3 py-2 flex items-center gap-2 overflow-x-auto text-[11px]">
           <span className="text-muted flex items-center gap-1 shrink-0">
-            <Bot size={12} className="text-signal" /> AI Drafts:
+            <MessageSquare size={12} className="text-signal" /> Suggested replies:
           </span>
           <button type="button" onClick={() => setText("Can you waive or discount freight to ₹50? We can issue the PO today.")}
             className="shrink-0 rounded-full border border-line bg-surface px-2.5 py-0.5 text-muted hover:text-bone hover:border-signal/50">

@@ -75,6 +75,7 @@ def test_rfq_lifecycle_and_sealed_bids():
         "target_freight": 149.0,
         "concession_type": "freight",
         "message": "Cut freight to ₹149 to win this order.",
+        "sent_by": "Ramesh Sharma",
     }
     target_res = client.post(f"/api/rfqs/{rfq_id}/targets", json=target_payload)
     assert target_res.status_code == 200
@@ -271,6 +272,7 @@ def test_send_target_creates_chat_message():
         "target_freight": 149.0,
         "concession_type": "freight",
         "message": "Cut freight to ₹149 to win.",
+        "sent_by": "Ramesh Sharma",
     })
     assert res.status_code == 200
 
@@ -332,3 +334,43 @@ def test_compare_endpoint_returns_winner_per_mode():
     res = client.post("/api/compare", json=body).json()
     assert res["winner"]["quote_id"] == "C"
     assert res["winners"]["cheapest"]["quote_id"] == "A"
+
+
+def test_target_must_name_the_person_who_sent_it():
+    body = {"supplier_id": "A", "cut_needed": 51.0, "target_freight": 149.0, "concession_type": "freight"}
+    assert client.post("/api/rfqs/rfq_c27_01/targets", json=body).status_code == 422
+    assert client.post("/api/rfqs/rfq_c27_01/targets", json={**body, "sent_by": "  "}).status_code == 422
+    ok = client.post("/api/rfqs/rfq_c27_01/targets", json={**body, "sent_by": "Ramesh Sharma",
+                                                           "message": "Edited by a person."})
+    assert ok.status_code == 200
+    assert ok.json()["sent_by"] == "Ramesh Sharma" and ok.json()["message"] == "Edited by a person."
+
+
+def test_pending_target_blocks_automation_until_a_human_revises():
+    from app.main import store
+    res = client.post("/api/rfqs", json={"item": "M10 bolt", "qty": 100, "need_in_days": 5,
+                                         "buyer_company": "Co", "buyer_name": "B"}).json()
+    tok = res["supplier_tokens"]["A"]
+    assert store.has_pending_target(tok) is False
+    client.post(f"/api/rfqs/{res['id']}/targets", json={
+        "supplier_id": "A", "cut_needed": 10, "target_freight": 150, "concession_type": "freight",
+        "sent_by": "Ramesh Sharma"})
+    assert store.has_pending_target(tok) is True            # autopilot (task 9) must stay silent here
+    client.post(f"/api/rfq-by-token/{tok}/quotes", json={
+        "pack_price": 10, "pack_size": 1, "freight": 150, "lead_days": 3})
+    assert store.has_pending_target(tok) is False           # the seller's own revision cleared it
+
+
+def test_decision_record_lists_ai_calls_and_needs_a_named_approver():
+    from app.main import store
+    res = client.post("/api/rfqs/confirm", json={
+        "item": "M10 bolt", "qty": 100, "need_in_days": 5, "source": "chat",
+        "buyer_company": "Co", "buyer_name": "B", "priority_mode": "fastest"}).json()
+    rid = res["id"]
+    store.log_ai("intake_draft", "intk_test", {"text": "x"}, {"draft": {}})
+    store.link_ai_log("intk_test", rid)
+    d = client.post(f"/api/rfqs/{rid}/decision", json={"winner_id": "A", "reason": "Fastest", "approver": "Ramesh Sharma"})
+    assert d.status_code == 200
+    body = d.json()
+    assert body["approver"] == "Ramesh Sharma" and body["mode"] == "fastest" and body["source"] == "chat"
+    assert [c["kind"] for c in body["ai_calls"]] == ["intake_draft"]

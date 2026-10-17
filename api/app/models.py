@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Role(str, Enum):
@@ -187,6 +187,14 @@ class NegotiationTargetIn(BaseModel):
     target_per_unit: float | None = None
     concession_type: Literal["freight", "unit_price"] = "freight"
     message: str | None = None
+    sent_by: str = Field(min_length=1)  # a named person sends every target; the system never does
+
+    @field_validator("sent_by")
+    @classmethod
+    def _named(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("sent_by must name the person sending the target")
+        return v.strip()
 
 
 class NegotiationTarget(BaseModel):
@@ -198,6 +206,7 @@ class NegotiationTarget(BaseModel):
     target_per_unit: float | None = None
     concession_type: str
     sent_at: str
+    sent_by: str = ""
     status: Literal["pending", "accepted", "declined"] = "pending"
 
 

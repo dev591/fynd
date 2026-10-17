@@ -300,6 +300,7 @@ def send_target_to_supplier(rfq_id: str, payload: NegotiationTargetIn):
             target_per_unit=payload.target_per_unit,
             concession_type=payload.concession_type,
             message=payload.message,
+            sent_by=payload.sent_by,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

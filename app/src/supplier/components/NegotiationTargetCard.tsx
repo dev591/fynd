@@ -30,7 +30,7 @@ export function NegotiationTargetCard({ target, onRevise, className = "" }: Nego
             </h4>
           </div>
         </div>
-        <span className="num text-[11px] text-muted">{target.sent_at}</span>
+        <span className="num text-[11px] text-muted">{target.sent_by ? `${target.sent_by} · ` : ""}{target.sent_at}</span>
       </div>
 
       <div className="mt-3 rounded-lg border border-line/60 bg-surface/80 p-3">

@@ -165,6 +165,7 @@ export interface NegotiationTargetDTO {
   target_per_unit?: number;
   concession_type: string;
   sent_at: string;
+  sent_by?: string;
   status: "pending" | "accepted" | "declined";
 }
 
@@ -304,6 +305,8 @@ export interface TargetPayload {
   target_per_unit?: number;
   concession_type: "freight" | "unit_price";
   message?: string;
+  /** The person sending it. Targets are never sent by the system. */
+  sent_by: string;
 }
 
 export async function sendTarget(rfqId: string, target: TargetPayload): Promise<NegotiationTargetDTO> {

@@ -32,6 +32,8 @@ export function DashboardDesk() {
   const [qty, setQty] = useState<number>(100);
   const [sheetMode, setSheetMode] = useState(false);
   const [mode, setMode] = useState<Mode>("cheapest");
+  // Target being reviewed before a person sends it: nothing goes out without this step
+  const [reviewTarget, setReviewTarget] = useState<{ id: string; message: string } | null>(null);
   const [chatSupplierId, setChatSupplierId] = useState<string | null>(null);
   const [targetSuccessId, setTargetSuccessId] = useState<string | null>(null);
   const [showDecisionModal, setShowDecisionModal] = useState(false);
@@ -80,7 +82,7 @@ export function DashboardDesk() {
   );
 
   // Send target concession to runner-up supplier
-  const handleSendTarget = useCallback(async (loserId: string, cutNeeded: number, targetFreight?: number, targetPerUnit?: number) => {
+  const handleSendTarget = useCallback(async (loserId: string, cutNeeded: number, message: string, targetFreight?: number, targetPerUnit?: number) => {
     try {
       await sendTarget(rfqId || "rfq_c27_01", {
         supplier_id: loserId,
@@ -88,17 +90,17 @@ export function DashboardDesk() {
         target_freight: targetFreight,
         target_per_unit: targetPerUnit,
         concession_type: targetFreight !== undefined ? "freight" : "unit_price",
-        message: targetFreight !== undefined
-          ? `Cut freight to ₹${targetFreight} or below and you win this order.`
-          : `Cut unit price by ₹${targetPerUnit} to win this order.`,
+        message,
+        sent_by: rfq?.buyer_name || "Buyer",
       });
+      setReviewTarget(null);
       setTargetSuccessId(loserId);
       setTimeout(() => setTargetSuccessId(null), 3000);
       refetch();
     } catch (e) {
       console.error("Failed to send target:", e);
     }
-  }, [rfqId, refetch]);
+  }, [rfqId, refetch, rfq]);
 
   const handleSaveDecision = async (winnerId: string, reason: string, approver: string) => {
     try {
@@ -460,7 +462,8 @@ export function DashboardDesk() {
                 </div>
 
                 <p className="text-[13px] text-muted leading-relaxed">
-                  Send exact concession targets to runners-up. If the supplier accepts, the winner updates live.
+                  The engine works out the exact concession. You review the message and send it yourself;
+                  nothing is sent automatically. When the seller revises, the winner updates live.
                 </p>
 
                 <div className="space-y-3">
@@ -489,15 +492,48 @@ export function DashboardDesk() {
                             )}
                           </p>
 
+                          {reviewTarget?.id === loser.quote.id && !sent && (
+                            <div className="space-y-2 rounded-lg border border-signal/40 bg-signal/5 p-3">
+                              <label className="label block text-muted">Message to {loser.quote.supplier} (edit freely)</label>
+                              <textarea
+                                value={reviewTarget.message}
+                                onChange={e => setReviewTarget({ id: loser.quote.id, message: e.target.value })}
+                                rows={2}
+                                className="w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-bone"
+                              />
+                              <p className="text-[11px] text-muted">
+                                Target numbers come from the engine: gap {inr(neg.cut)}
+                                {neg.freight !== null ? `, freight to ${inr(loser.quote.freight - neg.freight)}` : `, ${inr(neg.perUnit)} off per unit`}.
+                              </p>
+                              <div className="flex justify-end gap-2">
+                                <button type="button" onClick={() => setReviewTarget(null)}
+                                  className="rounded-full border border-line px-3 py-1 text-[12px] text-muted hover:text-bone">Cancel</button>
+                                <button
+                                  type="button"
+                                  disabled={!reviewTarget.message.trim()}
+                                  onClick={() => handleSendTarget(
+                                    loser.quote.id, neg.cut, reviewTarget.message.trim(),
+                                    neg.freight !== null ? loser.quote.freight - neg.freight : undefined,
+                                    neg.perUnit,
+                                  )}
+                                  className="rounded-full bg-signal px-3.5 py-1 text-[12px] font-semibold text-ink disabled:opacity-40"
+                                >
+                                  Send as {rfq.buyer_name}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           <div className="flex items-center justify-between pt-1">
                             <button
                               type="button"
-                              disabled={sent}
-                              onClick={() => handleSendTarget(
-                                loser.quote.id, neg.cut,
-                                neg.freight !== null ? loser.quote.freight - neg.freight : undefined,
-                                neg.perUnit,
-                              )}
+                              disabled={sent || reviewTarget?.id === loser.quote.id}
+                              onClick={() => setReviewTarget({
+                                id: loser.quote.id,
+                                message: neg.freight !== null
+                                  ? `Cut freight to ₹${loser.quote.freight - neg.freight} or below and you win this order.`
+                                  : `Cut unit price by ₹${neg.perUnit} to win this order.`,
+                              })}
                               className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-all ${
                                 sent ? "border border-live/40 bg-live/20 text-live"
                                 : "bg-signal text-ink hover:opacity-90 active:scale-95"
@@ -506,7 +542,7 @@ export function DashboardDesk() {
                               {sent ? (
                                 <><Check size={12} strokeWidth={2.5} /><span>Target Sent</span></>
                               ) : (
-                                <><Target size={12} /><span>Send Target</span></>
+                                <><Target size={12} /><span>Review target</span></>
                               )}
                             </button>
 
