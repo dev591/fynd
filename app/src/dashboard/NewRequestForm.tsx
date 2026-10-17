@@ -378,7 +378,7 @@ export function NewRequestForm() {
             className="flex w-full items-center justify-center gap-2 rounded-full bg-signal py-3 px-6 font-medium text-ink shadow-md transition-all hover:opacity-95 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Send size={16} />
-            <span>{submitting ? "Creating…" : "Create Request & Get QR"}</span>
+            <span>{submitting ? "Creating…" : extras.length ? `Create ${extras.length + 1} requests` : "Create Request & Get QR"}</span>
           </button>
         </form>
       </main>
