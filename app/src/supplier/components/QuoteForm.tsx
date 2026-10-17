@@ -67,8 +67,11 @@ export function QuoteForm({
   const [showOptional, setShowOptional] = useState(!!initialValues?.notes);
   const [moq, setMoq] = useState<number | "">(initialValues?.moq ?? 1);
   const [maxQty, setMaxQty] = useState<number | "">(initialValues?.maxQty ?? "");
+  // GST basis: never assumed for the seller. "Not stated" is sent as nothing, and the buyer sees it flagged.
+  type Basis = "unstated" | "excl" | "incl";
+  const [basis, setBasis] = useState<Basis>(
+    initialValues?.priceIncludesTax === undefined ? "unstated" : initialValues.priceIncludesTax ? "incl" : "excl");
   const [taxRate, setTaxRate] = useState<number | "">(initialValues?.taxRate ?? 18);
-  const [priceIncludesTax, setPriceIncludesTax] = useState(initialValues?.priceIncludesTax ?? false);
   const [notes, setNotes] = useState(initialValues?.notes ?? "");
 
   // Catalog item picker & item match check
@@ -142,8 +145,8 @@ export function QuoteForm({
       leadDays: Number(leadDays),
       moq: typeof moq === "number" ? moq : undefined,
       maxQty: typeof maxQty === "number" ? maxQty : undefined,
-      taxRate: typeof taxRate === "number" ? taxRate : undefined,
-      priceIncludesTax,
+      taxRate: basis !== "unstated" && typeof taxRate === "number" ? taxRate : undefined,
+      priceIncludesTax: basis === "unstated" || typeof taxRate !== "number" ? undefined : basis === "incl",
       notes: notes.trim() || undefined,
     });
   };
@@ -321,33 +324,30 @@ export function QuoteForm({
               </div>
             </div>
 
-            {/* GST Details */}
-            <div className="flex items-center justify-between border-t border-line/40 pt-3">
+            {/* GST basis */}
+            <div className="border-t border-line/40 pt-3 space-y-2">
               <div>
-                <span className="text-[13px] text-bone font-medium">GST Rate (%) & Inclusive</span>
-                <p className="text-[11px] text-muted">Applicable tax rate and pricing basis</p>
+                <span className="text-[13px] text-bone font-medium">GST on your price</span>
+                <p className="text-[11px] text-muted">
+                  Say whether the pack price includes GST so buyers compare like with like. If you leave it unstated,
+                  the buyer sees it flagged and it is treated as excluding GST.
+                </p>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min="0"
-                    max="28"
-                    value={taxRate}
-                    onChange={(e) => setTaxRate(e.target.value === "" ? "" : Number(e.target.value))}
-                    className="num w-14 rounded border border-line bg-surface px-2 py-1 text-[12px] text-bone text-center"
-                  />
-                  <span className="text-[12px] text-muted">%</span>
-                </div>
-                <label className="flex items-center gap-1.5 text-[12px] text-muted cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={priceIncludesTax}
-                    onChange={(e) => setPriceIncludesTax(e.target.checked)}
-                    className="h-4 w-4 rounded accent-signal"
-                  />
-                  <span>Inclusive</span>
-                </label>
+              <div className="flex flex-wrap items-center gap-3">
+                <select value={basis} onChange={(e) => setBasis(e.target.value as Basis)}
+                  className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[12px] text-bone">
+                  <option value="unstated">Not stated</option>
+                  <option value="excl">Price excludes GST</option>
+                  <option value="incl">Price includes GST</option>
+                </select>
+                {basis !== "unstated" && (
+                  <div className="flex items-center gap-1">
+                    <input type="number" min="0" max="28" value={taxRate}
+                      onChange={(e) => setTaxRate(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="num w-16 rounded border border-line bg-surface px-2 py-1 text-[12px] text-bone text-center" />
+                    <span className="text-[12px] text-muted">% GST</span>
+                  </div>
+                )}
               </div>
             </div>
 

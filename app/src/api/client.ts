@@ -146,6 +146,8 @@ export interface RFQCreatePayload {
   note?: string;
   priority_mode?: PriorityMode;
   source?: "form" | "chat" | "voice";
+  /** Compare ex-GST when true, GST-inclusive when false. Blank = your saved policy. */
+  gst_claimable?: boolean;
 }
 
 export type PriorityMode = "cheapest" | "fastest" | "balanced";
@@ -162,6 +164,11 @@ export interface QuoteVersionDTO {
   max_qty?: number;
   notes?: string;
   origin?: "manual" | "ai_draft_edited" | "ai_draft_sent" | "auto";
+  tax_rate?: number | null;
+  price_includes_tax?: boolean | null;
+  /** The pack price actually compared, on the buyer's GST basis. */
+  compare_price?: number | null;
+  tax_basis?: "stated" | "assumed_exclusive";
   landed_cost: number;
   units: number;
   packs: number;
@@ -199,6 +206,7 @@ export interface RFQDTO {
   /** How many sellers stock this item and were notified. Who they are stays hidden. */
   matched_count: number;
   quote_count: number;
+  gst_claimable?: boolean;
 }
 
 /** What a revealed seller looks like. Present only for sellers this buyer has unlocked. */
@@ -481,6 +489,8 @@ export interface QuoteSubmitPayload {
   max_qty?: number;
   notes?: string;
   origin?: "manual" | "ai_draft_edited" | "ai_draft_sent" | "auto";
+  tax_rate?: number;
+  price_includes_tax?: boolean;
 }
 
 export async function getRFQByToken(token: string): Promise<SupplierRFQView> {

@@ -26,6 +26,7 @@ from .models import (
 from .engine import order
 from .intake import item_key
 from .engine import evaluate
+from .tax import normalise_price
 from .assistant import template_message
 from . import views
 from .masking import scrub
@@ -540,6 +541,7 @@ class RFQStore:
             note=payload.note, created_at=datetime.now().isoformat(),
             status="Open", supplier_tokens=tokens,
             priority_mode=payload.priority_mode, source=payload.source, owner_id=owner_id,
+            gst_claimable=True if payload.gst_claimable is None else payload.gst_claimable,
         )
         self.rfqs[rfq_id] = rfq
         self.quotes[rfq_id] = {}
@@ -563,6 +565,8 @@ class RFQStore:
         notes: Optional[str] = None,
         max_qty: Optional[int] = None,
         origin: str = "manual",
+        tax_rate: Optional[float] = None,
+        price_includes_tax: Optional[bool] = None,
     ) -> QuoteVersion:
         rfq_id = self.token_to_rfq_id.get(token)
         if not rfq_id or rfq_id not in self.rfqs:
@@ -581,13 +585,14 @@ class RFQStore:
         self.alias_for(rfq_id, supplier_id, create=True)     # "Seller N", in order of first quote, stable afterwards
 
         next_ver = len(supplier_history) + 1
+        compare_price, tax_basis = normalise_price(pack_price, tax_rate, price_includes_tax, rfq.gst_claimable)
         q_obj = Quote(
             id=supplier_id, supplier=supplier_name, item=rfq.item,
-            pack_price=pack_price, pack_size=pack_size, freight=freight,
+            pack_price=compare_price, pack_size=pack_size, freight=freight,
             lead_days=lead_days, moq=moq, max_qty=max_qty,
         )
         calc = order(q_obj, min(rfq.qty, max_qty) if max_qty else rfq.qty)
-        landed = calc.landed if calc else pack_price * pack_size + freight
+        landed = calc.landed if calc else compare_price * pack_size + freight
         units = calc.units if calc else rfq.qty
         packs = calc.packs if calc else 1
 
@@ -595,6 +600,7 @@ class RFQStore:
             version=next_ver, supplier_id=supplier_id, supplier_name=supplier_name,
             pack_price=pack_price, pack_size=pack_size, freight=freight,
             lead_days=lead_days, moq=moq, max_qty=max_qty, notes=notes, origin=origin,
+            tax_rate=tax_rate, price_includes_tax=price_includes_tax, compare_price=compare_price, tax_basis=tax_basis,
             landed_cost=landed, units=units, packs=packs,
             submitted_at=datetime.now().strftime("%I:%M %p"),
         )
@@ -701,7 +707,8 @@ class RFQStore:
             alias = self.alias_for(rfq_id, s_id, create=True)   # the engine only ever sees the alias
             res.append(Quote(
                 id=alias, supplier=alias, item=rfq.item,
-                pack_price=latest.pack_price, pack_size=latest.pack_size,
+                pack_price=latest.compare_price if latest.compare_price is not None else latest.pack_price,
+                pack_size=latest.pack_size,
                 freight=latest.freight, lead_days=latest.lead_days,
                 moq=latest.moq, max_qty=latest.max_qty, raw=f"v{latest.version}: ₹{latest.pack_price} + ₹{latest.freight}",
             ))

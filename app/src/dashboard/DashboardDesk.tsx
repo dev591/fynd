@@ -443,6 +443,19 @@ export function DashboardDesk() {
                               </button>
                             </p>
                           )}
+                          {versions[latestVer - 1] && (
+                            versions[latestVer - 1].tax_basis === "assumed_exclusive" ? (
+                              <p className="mt-1 text-[11px] text-warn" title="The seller did not say whether their price includes GST. We compare it as excluding GST. Confirm before ordering.">
+                                GST basis not stated: compared as excluding GST
+                              </p>
+                            ) : versions[latestVer - 1].compare_price != null && Math.abs((versions[latestVer - 1].compare_price as number) - versions[latestVer - 1].pack_price) > 0.005 ? (
+                              <p className="mt-1 text-[11px] text-muted">
+                                Quoted {inr(versions[latestVer - 1].pack_price)} {versions[latestVer - 1].price_includes_tax ? "incl." : "excl."} {versions[latestVer - 1].tax_rate}% GST
+                                {" "}→ compared as <span className="num text-bone">{inr(versions[latestVer - 1].compare_price as number)}</span>{" "}
+                                {rfq.gst_claimable === false ? "incl. GST" : "ex-GST"}
+                              </p>
+                            ) : null
+                          )}
                           {badge && (
                             <p className="mt-1 flex items-center gap-1 text-[11px] text-muted">
                               <ShieldCheck size={11} className="shrink-0" />

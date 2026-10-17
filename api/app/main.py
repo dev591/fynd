@@ -85,6 +85,14 @@ def _buyer_location(user: AuthUser, city: str, state: str) -> tuple[str, str]:
     return (city or (prof.city if prof else ""), state or (prof.state if prof else ""))
 
 
+def _gst_policy(user: AuthUser, chosen: Optional[bool]) -> bool:
+    """An explicit choice on the request wins; otherwise the buyer's saved policy; otherwise claimable."""
+    if chosen is not None:
+        return chosen
+    prof = store.profiles.get(user.id)
+    return prof.buyer.gst_claimable if prof and prof.buyer else True
+
+
 def _demo_sellers_allowed() -> bool:
     return os.environ.get("ALLOW_DEMO_SELLERS", "true").lower() != "false"
 
@@ -292,6 +300,7 @@ def get_case_checks():
 @app.post("/api/rfqs")
 def create_rfq(payload: RFQCreate, user: AuthUser = Depends(buyer_only)):
     payload.buyer_city, payload.buyer_state = _buyer_location(user, payload.buyer_city, payload.buyer_state)
+    payload.gst_claimable = _gst_policy(user, payload.gst_claimable)
     return _rfq_response(store.create_rfq(payload, owner_id=user.id))
 
 
@@ -304,6 +313,7 @@ def confirm_rfq(payload: ConfirmIn, user: AuthUser = Depends(buyer_only)):
         buyer_company=payload.buyer_company, buyer_name=payload.buyer_name,
         buyer_city=city, buyer_state=state,
         note=payload.note, priority_mode=payload.priority_mode, source=payload.source,
+        gst_claimable=_gst_policy(user, payload.gst_claimable),
     ), owner_id=user.id)
     if payload.intake_id:
         store.link_ai_log(payload.intake_id, rfq.id)
@@ -532,6 +542,7 @@ def submit_supplier_quote(token: str, payload: QuoteSubmitIn):
             moq=payload.moq,
             notes=payload.notes,
             max_qty=payload.max_qty,
+            tax_rate=payload.tax_rate, price_includes_tax=payload.price_includes_tax,
         )   # origin is decided by the server, never taken from the client
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

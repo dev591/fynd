@@ -27,6 +27,7 @@ export function NewRequestForm() {
   const [lastOrder, setLastOrder] = useState<LastOrderDTO | null>(null);
   const [note, setNote] = useState("");
   const [priority, setPriority] = useState<PriorityMode>("cheapest");
+  const [gstClaimable, setGstClaimable] = useState<boolean | null>(null);   // null = follow the saved profile
   // Who is asking comes from the signed-in profile, not from a hardcoded buyer.
   const session = useSession();
   const { data: me } = useApiOnce(() => getMe(), []);
@@ -73,6 +74,7 @@ export function NewRequestForm() {
         buyer_state: buyerState,
         note: note.trim() || undefined,
         priority_mode: priority,
+        gst_claimable: gstClaimable ?? me?.profile?.buyer?.gst_claimable ?? true,
         source: "form",
       });
       setCreated(res);
@@ -261,6 +263,17 @@ export function NewRequestForm() {
               ))}
             </div>
           </div>
+
+          {/* GST policy: quotes are compared on one basis */}
+          <label className="flex items-start gap-2.5 text-[13px] cursor-pointer">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-signal"
+              checked={gstClaimable ?? me?.profile?.buyer?.gst_claimable ?? true}
+              onChange={e => setGstClaimable(e.target.checked)} />
+            <span>
+              <span className="text-bone">We can claim GST back</span>
+              <span className="block text-[11px] text-muted">Quotes are compared without GST. Untick it and they are compared with GST included.</span>
+            </span>
+          </label>
 
           {/* Buyer Info (collapsible) */}
           <div className="grid grid-cols-2 gap-4">

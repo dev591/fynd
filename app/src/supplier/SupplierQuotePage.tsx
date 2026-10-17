@@ -138,6 +138,8 @@ export function SupplierQuotePage() {
         moq: data.moq,
         max_qty: data.maxQty,
         notes: data.notes,
+        tax_rate: data.taxRate,
+        price_includes_tax: data.priceIncludesTax,
       });
       setIsRevising(false);
       refetchMine();

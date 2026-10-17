@@ -61,7 +61,7 @@ def public_rfq(store, rfq) -> dict[str, Any]:
         "id": rfq.id, "item": rfq.item, "qty": rfq.qty, "need_in_days": rfq.need_in_days,
         "buyer_company": rfq.buyer_company, "buyer_name": rfq.buyer_name,
         "buyer_city": rfq.buyer_city, "buyer_state": rfq.buyer_state, "note": rfq.note,
-        "created_at": rfq.created_at, "status": rfq.status, "decision": rfq.decision,
+        "created_at": rfq.created_at, "status": rfq.status, "decision": rfq.decision, "gst_claimable": rfq.gst_claimable,
         "priority_mode": rfq.priority_mode, "source": rfq.source,
         "matched_count": len(rfq.supplier_tokens), "quote_count": len(store.aliases.get(rfq.id, {})),
     }

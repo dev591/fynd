@@ -46,7 +46,7 @@ def _row(r: EvaluatedRow, qty: Optional[int] = None) -> dict[str, Any]:
     }
 
 
-def evidence_facts(rfq, pick: Optional[dict], savings: Optional[dict], mode: str) -> list[dict[str, str]]:
+def evidence_facts(rfq, pick: Optional[dict], savings: Optional[dict], mode: str, unstated: int = 0, total: int = 0) -> list[dict[str, str]]:
     """Every number on the one-pager, tagged: observed (a seller or the buyer said it), derived (the engine computed it)
     or assumed (our policy or setting, not a measurement). Values copied from the engine row, never typed."""
     facts: list[dict[str, str]] = []
@@ -66,7 +66,10 @@ def evidence_facts(rfq, pick: Optional[dict], savings: Optional[dict], mode: str
         add("Cash tied up in extra units", inr(pick["cash_tied_up"] or 0), "derived", f"{pick['overbuy']} extra units at the unit price")
     if savings:
         add("Saving vs spreadsheet pick", inr(savings["difference"]), "derived", "Spreadsheet pick's landed cost minus this pick's, on demo data")
-    add("Tax basis", "compared as quoted", "assumed", "Quotes carry no GST basis yet; treated as the same basis. Confirm before ordering")
+    basis = "ex-GST (you can claim GST back)" if rfq.gst_claimable else "GST-inclusive (you cannot claim GST back)"
+    note = (f"Your request setting. {unstated} of {total} quotes did not state a GST basis and are treated as exclusive; "
+            "confirm before ordering") if unstated else "Your request setting. Every quote stated its GST basis"
+    add("Tax basis", basis, "assumed", note)
     add("Balanced-mode tolerance", f"{round(balanced_threshold() * 100, 1):g}%", "assumed", "Our setting, not a measurement")
     add("Priority mode", mode, "observed", "Chosen on your request")
     return facts
@@ -171,7 +174,10 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
         "decided": decision is not None,
         "decision": _decision_for(decision, audience),
         "pick": _row(shown, rfq.qty) if shown else None,
-        "evidence": evidence_facts(rfq, _row(shown, rfq.qty) if shown else None, savings, rfq.priority_mode),
+        "evidence": evidence_facts(
+            rfq, _row(shown, rfq.qty) if shown else None, savings, rfq.priority_mode,
+            unstated=sum(1 for v in store.quotes.get(rfq_id, {}).values() if v and v[-1].tax_basis == "assumed_exclusive"),
+            total=sum(1 for v in store.quotes.get(rfq_id, {}).values() if v)),
         "engine_winner": _row(ev.winner, rfq.qty) if ev.winner else None,
         "overrode_engine": bool(decided_row and ev.winner and decided_row.quote_id != ev.winner.quote_id),
         "winners_by_mode": {m: (_row(w, rfq.qty) if w else None) for m, w in ev.winners.items()},

@@ -133,6 +133,7 @@ class RFQCreate(BaseModel):
     note: str | None = None
     priority_mode: PriorityMode = "cheapest"
     source: RequestSource = "form"
+    gst_claimable: bool | None = None         # None = use the buyer's profile policy, else claimable
 
 
 class RFQ(BaseModel):
@@ -151,7 +152,8 @@ class RFQ(BaseModel):
     decision: dict | None = None
     priority_mode: PriorityMode = "cheapest"
     source: RequestSource = "form"
-    owner_id: str | None = None   # the signed-in buyer who created it; None only for the shared demo request
+    owner_id: str | None = None   # the signed-in buyer who created it
+    gst_claimable: bool = True    # compare ex-GST when true, GST-inclusive when false
     supplier_tokens: dict[str, str] = Field(default_factory=dict)  # supplier_id -> token
 
 
@@ -165,6 +167,8 @@ class QuoteSubmitIn(BaseModel):
     max_qty: int | None = None
     notes: str | None = None
     origin: QuoteOrigin = "manual"
+    tax_rate: float | None = Field(default=None, ge=0, le=100)     # GST rate in percent, only if the seller states it
+    price_includes_tax: bool | None = None                          # whether the pack price already includes GST
 
 
 class QuoteVersion(BaseModel):
@@ -179,6 +183,10 @@ class QuoteVersion(BaseModel):
     max_qty: int | None = None
     notes: str | None = None
     origin: QuoteOrigin = "manual"
+    tax_rate: float | None = None
+    price_includes_tax: bool | None = None
+    compare_price: float | None = None        # the pack price the engine compared, on the buyer's GST basis
+    tax_basis: Literal["stated", "assumed_exclusive"] = "assumed_exclusive"
     landed_cost: float
     units: int
     packs: int
@@ -389,6 +397,7 @@ class ConfirmIn(BaseModel):
     buyer_state: str = ""
     note: str | None = None
     intake_id: str | None = None
+    gst_claimable: bool | None = None
 
 
 class AutopilotSettings(BaseModel):
