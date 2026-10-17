@@ -464,8 +464,16 @@ class RFQStore:
     def touch_token(self, token: str, state: str) -> None:
         """Record that a seller opened ('viewed') or started editing ('quoting'). Never moves backwards."""
         n = self._notification_for_token(token)
-        if n and n.status == "new" or (n and state == "quoting" and n.status == "viewed"):
+        if n and n.status == "new" or (n and state == "quoting" and n.status in ("viewed", "declined")):
             n.status = state
+
+    def decline(self, token: str) -> bool:
+        """'Can't supply' counts as a response. The seller may still change their mind and quote."""
+        n = self._notification_for_token(token)
+        if not n:
+            return False
+        n.status = "declined"
+        return True
 
     def draft_for_token(self, token: str) -> Optional[DraftQuote]:
         n = self._notification_for_token(token)
@@ -499,7 +507,8 @@ class RFQStore:
         quoted_n = sum(1 for n in notes if n.supplier_id in quoted)
         quoting_n = sum(1 for n in notes if n.status == "quoting" or n.supplier_id in quoted)
         viewed_n = sum(1 for n in notes if n.status != "new" or n.supplier_id in quoted)
-        return Activity(notified=len(notes), viewed=viewed_n, quoting=quoting_n, quoted=quoted_n)
+        declined_n = sum(1 for n in notes if n.status == "declined" and n.supplier_id not in quoted)
+        return Activity(notified=len(notes), viewed=viewed_n, quoting=quoting_n, quoted=quoted_n, declined=declined_n)
 
     def list_suppliers(self) -> List[dict]:
         return [

@@ -11,7 +11,7 @@ export type {
 } from "../api/client";
 
 // Derived types
-export type SupplierQuoteStatus = "received" | "under_review" | "target_sent" | "won" | "not_selected";
+export type SupplierQuoteStatus = "received" | "under_review" | "target_sent" | "won" | "not_selected" | "declined";
 
 /** Compute supplier status from quotes + target. */
 export function computeStatus(
@@ -19,7 +19,9 @@ export function computeStatus(
   targetStatus: string | null,
   rfqStatus: string,
   isWinner: boolean,
+  declined = false,
 ): SupplierQuoteStatus {
+  if (declined && !hasQuotes && rfqStatus === "Open") return "declined";
   if (rfqStatus === "Decided" || rfqStatus === "Closed") {
     return isWinner ? "won" : "not_selected";
   }

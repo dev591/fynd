@@ -321,7 +321,7 @@ class Notification(BaseModel):
     product_id: str
     token: str
     created_at: str
-    status: Literal["new", "viewed", "quoting"] = "new"
+    status: Literal["new", "viewed", "quoting", "declined"] = "new"
     unlocked_at: str | None = None    # set when the buyer reveals this seller
 
 
@@ -329,7 +329,7 @@ class NotificationOut(BaseModel):
     id: str
     rfq_id: str
     supplier_id: str
-    status: Literal["new", "viewed", "quoting"]
+    status: Literal["new", "viewed", "quoting", "declined"]
     created_at: str
     item: str
     qty: int
@@ -367,6 +367,7 @@ class Activity(BaseModel):
     viewed: int = 0
     quoting: int = 0
     quoted: int = 0
+    declined: int = 0
 
 
 # ─── Buyer intake ──────────────────────────────────────────────────────────
@@ -411,3 +412,7 @@ class ExceptionIn(BaseModel):
         if not v.strip():
             raise ValueError("a reason and a named approver are both required")
         return v.strip()
+
+
+class DeclineIn(BaseModel):
+    reason: str | None = Field(default=None, max_length=300)    # stays with the seller; never shown to the buyer

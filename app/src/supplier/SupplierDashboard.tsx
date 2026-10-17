@@ -248,7 +248,7 @@ export function SupplierDashboard() {
               </div>
             ) : (
               inbox.map(n => {
-                const st = computeStatus(n.has_quoted, null, n.rfq_status, false);
+                const st = computeStatus(n.has_quoted, null, n.rfq_status, false, n.status === "declined");
                 const tone = n.verdict.can_fulfil === "yes" ? "border-success/40 bg-success/15 text-success"
                   : n.verdict.can_fulfil === "partly" ? "border-warn/40 bg-warn/15 text-warn"
                   : "border-error/40 bg-error/15 text-error";

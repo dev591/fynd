@@ -251,6 +251,7 @@ export interface ActivityDTO {
   viewed: number;
   quoting: number;
   quoted: number;
+  declined: number;
 }
 
 export interface RFQCreateResponse {
@@ -545,6 +546,11 @@ export async function checkItemMatch(token: string, productId: string): Promise<
   }
 }
 
+/** "Can't supply" is an answer: the buyer's activity strip counts it. The reason stays with you. */
+export async function declineRequest(token: string, reason?: string): Promise<void> {
+  await apiFetch(`/api/rfq-by-token/${token}/decline`, { method: "POST", body: JSON.stringify({ reason: reason || null }) });
+}
+
 export async function markQuoting(token: string): Promise<void> {
   await fetch(`${BASE_URL}/api/rfq-by-token/${token}/quoting`, { method: "POST" });
 }
@@ -637,7 +643,7 @@ export interface NotificationDTO {
   id: string;
   rfq_id: string;
   supplier_id: string;
-  status: "new" | "viewed";
+  status: "new" | "viewed" | "quoting" | "declined";
   created_at: string;
   item: string;
   qty: number;

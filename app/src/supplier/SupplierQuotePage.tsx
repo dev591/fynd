@@ -13,7 +13,7 @@ import { useApiPoll, useApiOnce } from "../lib/useApi";
 import {
   getRFQByToken, getMyQuotes, submitQuoteByToken,
   getChatByToken, postChatByToken,
-  getSupplierProducts, getAssist, checkItemMatch, markQuoting,
+  getSupplierProducts, getAssist, checkItemMatch, markQuoting, declineRequest,
   type SupplierRFQView, type QuoteVersionDTO, type NegotiationTargetDTO,
   type ChatMessageDTO, type SupplierProductDTO,
 } from "../api/client";
@@ -71,6 +71,8 @@ export function SupplierQuotePage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [declined, setDeclined] = useState(false);
+  const [declineBusy, setDeclineBusy] = useState(false);
 
   const quotes = myData?.quotes || [];
   const target = myData?.target || null;
@@ -144,6 +146,13 @@ export function SupplierQuotePage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleDecline = async () => {
+    setDeclineBusy(true);
+    try { await declineRequest(token); setDeclined(true); }
+    catch (e) { setSubmitError(e instanceof Error ? e.message : "Could not send your answer."); }
+    finally { setDeclineBusy(false); }
   };
 
   const handleCopyLink = () => {
@@ -316,6 +325,22 @@ export function SupplierQuotePage() {
             )}
           </button>
         </div>
+
+        {!isClosed && !latestQuote && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-surface/60 px-4 py-2.5 text-[13px]">
+            {declined ? (
+              <span className="text-muted">You told the buyer you can't supply this. You can still send a quote below if that changes.</span>
+            ) : (
+              <>
+                <span className="text-muted">Not something you can supply right now?</span>
+                <button type="button" onClick={handleDecline} disabled={declineBusy}
+                  className="rounded-full border border-line bg-raised px-3 py-1 text-[12px] font-medium text-bone hover:border-signal/50 disabled:opacity-40">
+                  {declineBusy ? "Sending…" : "I can't supply this"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Tab 1: Quote */}
         {activeTab === "quote" && (

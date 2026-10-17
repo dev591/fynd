@@ -48,6 +48,16 @@ export function StatusChip({ status, className = "" }: StatusChipProps) {
         </span>
       );
 
+    case "declined":
+      return (
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-0.5 text-[11px] text-muted ${className}`}
+        >
+          <XCircle size={12} />
+          <span>You declined</span>
+        </span>
+      );
+
     case "not_selected":
       return (
         <span

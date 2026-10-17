@@ -119,12 +119,12 @@ def test_activity_funnel_and_live_quote_appears_in_compare():
     rid, toks = res["id"], res["supplier_tokens"]
     act = lambda: client.get(f"/api/rfqs/{rid}/activity").json()
     n = len(toks)
-    assert act() == {"notified": n, "viewed": 0, "quoting": 0, "quoted": 0}
+    assert act() == {"notified": n, "viewed": 0, "quoting": 0, "quoted": 0, "declined": 0}
 
     client.get(f"/api/rfq-by-token/{toks['A']}")                  # A opens the link
     client.get(f"/api/rfq-by-token/{toks['B']}")                  # B opens it
     client.post(f"/api/rfq-by-token/{toks['B']}/quoting")         # B starts typing
-    assert act() == {"notified": n, "viewed": 2, "quoting": 1, "quoted": 0}
+    assert act() == {"notified": n, "viewed": 2, "quoting": 1, "quoted": 0, "declined": 0}
 
     d = client.get(f"/api/rfq-by-token/{toks['A']}/draft").json()
     sent = client.post(f"/api/rfq-by-token/{toks['A']}/quotes", json={
@@ -132,7 +132,7 @@ def test_activity_funnel_and_live_quote_appears_in_compare():
         "lead_days": d["lead_days"], "moq": d["moq"], "max_qty": d["max_qty"], "origin": "manual",
     })
     assert sent.status_code == 200 and sent.json()["origin"] == "manual"
-    assert act() == {"notified": n, "viewed": 2, "quoting": 2, "quoted": 1}
+    assert act() == {"notified": n, "viewed": 2, "quoting": 2, "quoted": 1, "declined": 0}
 
     # the buyer's next poll already sees it
     details = client.get(f"/api/rfqs/{rid}").json()

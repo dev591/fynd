@@ -42,6 +42,7 @@ from .models import (
     AutopilotSettings,
     RoleIn,
     ExceptionIn,
+    DeclineIn,
 )
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
@@ -576,6 +577,18 @@ def seller_item_match(token: str, payload: ItemMatchIn):
     store.log_ai("item_match", rid, {"request": rfq.item, "catalog": prod.name}, out)
     store.link_ai_log(rid, rfq.id)
     return out
+
+
+@app.post("/api/rfq-by-token/{token}/decline", status_code=204)
+def decline_request(token: str, payload: DeclineIn):
+    """The seller can't supply. That is an answer, so the buyer's activity strip counts it."""
+    rfq = store.get_rfq(store.token_to_rfq_id.get(token, ""))
+    if not rfq:
+        raise HTTPException(status_code=404, detail="This link isn't valid or has expired.")
+    if rfq.status != "Open":
+        raise HTTPException(status_code=409, detail="This request is already decided.")
+    store.decline(token)
+    return None
 
 
 @app.post("/api/rfq-by-token/{token}/quoting", status_code=204)

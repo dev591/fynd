@@ -283,6 +283,7 @@ export function DashboardDesk() {
               ["viewed", details.activity.viewed],
               ["quoting", details.activity.quoting],
               ["quoted", details.activity.quoted],
+              ["declined", details.activity.declined],
             ] as const).map(([label, n]) => (
               <span key={label} className="text-muted">
                 <strong className="num text-bone">{n}</strong> {label}
