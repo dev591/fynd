@@ -170,6 +170,17 @@ export function DecisionOnePager({ shared = false }: { shared?: boolean }) {
           </ul>
         </section>
 
+        {s.delivery && (
+          <section className="rounded-2xl border border-line bg-surface p-5 space-y-1">
+            <p className="label text-muted">After delivery</p>
+            <p>
+              Matched the quote: <strong>{s.delivery.matches_quote ? "Yes" : "No"}</strong> · Arrived on time: <strong>{s.delivery.on_time ? "Yes" : "No"}</strong>
+            </p>
+            {s.delivery.note && <p className="text-muted">“{s.delivery.note}”</p>}
+            <p className="text-[12px] text-muted">The buyer's own record. Crossover did not inspect the goods.</p>
+          </section>
+        )}
+
         <section className="space-y-2">
           <h2 className="display text-xl">Winner under each priority</h2>
           <div className="grid grid-cols-3 gap-2 text-[13px]">

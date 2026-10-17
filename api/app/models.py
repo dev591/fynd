@@ -455,3 +455,41 @@ class BuyerNotice(BaseModel):
     message: str
     created_at: str
     read: bool = False
+
+
+ALLOWED_MEDIA = ("image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm")
+MAX_MEDIA_BYTES = 2_000_000
+
+
+class MediaIn(BaseModel):
+    """One photo or short video, as base64. Small on purpose: this is a record, not a file store."""
+    name: str = Field(max_length=120)
+    mime: str
+    data: str = Field(max_length=3_000_000)
+
+    @field_validator("mime")
+    @classmethod
+    def _mime_allowed(cls, v: str) -> str:
+        if v not in ALLOWED_MEDIA:
+            raise ValueError("only photos (jpeg, png, webp) and short videos (mp4, webm) are accepted")
+        return v
+
+    @field_validator("data")
+    @classmethod
+    def _valid_and_small(cls, v: str) -> str:
+        import base64, binascii
+        try:
+            raw = base64.b64decode(v, validate=True)
+        except (binascii.Error, ValueError):
+            raise ValueError("the file is not valid base64")
+        if not raw or len(raw) > MAX_MEDIA_BYTES:
+            raise ValueError(f"the file must be between 1 byte and {MAX_MEDIA_BYTES // 1_000_000} MB")
+        return v
+
+
+class DeliveryIn(BaseModel):
+    """What happened when the goods arrived. Both questions are required."""
+    matches_quote: bool
+    on_time: bool
+    note: str | None = Field(default=None, max_length=500)
+    media: MediaIn | None = None

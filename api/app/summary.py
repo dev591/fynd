@@ -64,6 +64,10 @@ def evidence_facts(rfq, pick: Optional[dict], savings: Optional[dict], mode: str
         if pick.get("cost_per_usable_unit") is not None:
             add("Cost per usable unit", inr(pick["cost_per_usable_unit"]), "derived", "Landed cost over the units you need")
         add("Cash tied up in extra units", inr(pick["cash_tied_up"] or 0), "derived", f"{pick['overbuy']} extra units at the unit price")
+    delivery = (rfq.decision or {}).get("delivery")
+    if delivery:
+        add("Delivery matched the quote", "Yes" if delivery["matches_quote"] else "No", "observed", "Recorded by the buyer after delivery")
+        add("Delivered on time", "Yes" if delivery["on_time"] else "No", "observed", "Recorded by the buyer after delivery")
     if savings:
         add("Saving vs spreadsheet pick", inr(savings["difference"]), "derived", "Spreadsheet pick's landed cost minus this pick's, on demo data")
     basis = "ex-GST (you can claim GST back)" if rfq.gst_claimable else "GST-inclusive (you cannot claim GST back)"
@@ -113,7 +117,17 @@ def _decision_for(decision: Optional[dict], audience: str) -> Optional[dict]:
     """A shared link shows the decision but not who signed it, and no phone or email typed into the reason."""
     if decision is None or audience == "buyer":
         return decision
-    return {**decision, "approver": "Named approver (hidden on shared links)", "reason": scrub(decision.get("reason")) or ""}
+    out = {**decision, "approver": "Named approver (hidden on shared links)", "reason": scrub(decision.get("reason")) or ""}
+    if out.get("delivery"):
+        out["delivery"] = _delivery_for(out["delivery"], "public")
+    return out
+
+
+def _delivery_for(delivery: Optional[dict], audience: str) -> Optional[dict]:
+    """A shared link gets the two outcomes, not the buyer's note or photo."""
+    if not delivery or audience == "buyer":
+        return delivery
+    return {k: delivery[k] for k in ("matches_quote", "on_time", "recorded_at")}
 
 
 def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str = "buyer") -> Optional[dict[str, Any]]:
@@ -185,6 +199,7 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
         "rows": [_row(r, rfq.qty) for r in ev.rows],
         "cheaper_excluded": [_row(r, rfq.qty) for r in ev.cheaper_excluded],
         "reasons": reasons,
+        "delivery": _delivery_for((decision or {}).get("delivery"), audience),
         "exceptions": {a: r.model_dump() for a, r in store.exceptions_by_alias(rfq_id).items()},
         "explainer": explainer,
         "savings": savings,

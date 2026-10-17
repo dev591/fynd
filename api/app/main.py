@@ -45,6 +45,7 @@ from .models import (
     ExceptionIn,
     DeclineIn,
     ImportIn,
+    DeliveryIn,
 )
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
@@ -523,6 +524,24 @@ def import_template():
     rows = importer.parse_csv(importer.TEMPLATE_CSV)
     return {"csv": importer.TEMPLATE_CSV, "json": json.dumps({"quotes": rows}, indent=2),
             "required_columns": list(importer.REQUIRED)}
+
+
+@app.post("/api/rfqs/{rfq_id}/delivery")
+def record_delivery(rfq_id: str, payload: DeliveryIn, user: AuthUser = Depends(buyer_only)):
+    """After the order: did it match the quote, did it arrive on time. Replaces any earlier record."""
+    rfq = _rfq_for(user, rfq_id)
+    if not rfq.decision:
+        raise HTTPException(status_code=409, detail="Place the order before recording its delivery.")
+    return {"delivery": store.record_delivery(rfq_id, payload.matches_quote, payload.on_time, payload.note, payload.media)}
+
+
+@app.get("/api/rfqs/{rfq_id}/delivery/media")
+def delivery_media(rfq_id: str, user: AuthUser = Depends(buyer_only)):
+    _rfq_for(user, rfq_id)
+    m = store.media.get(rfq_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="No file was attached.")
+    return m
 
 
 @app.get("/api/me/notices")

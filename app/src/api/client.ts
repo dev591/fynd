@@ -411,6 +411,7 @@ export interface SummaryDTO {
   rows: SummaryRowDTO[];
   cheaper_excluded: SummaryRowDTO[];
   reasons: string[];
+  delivery: DeliveryDTO | null;
   evidence: EvidenceFact[];
   tradeoffs: Record<string, { extra_cost: number | null; days_saved: number | null; line: string | null }>;
   exceptions: Record<string, { reason: string; approver: string }>;
@@ -807,6 +808,21 @@ export async function readNotice(id: string): Promise<{ unread: number }> {
 
 export async function readAllNotices(): Promise<{ unread: number }> {
   return apiFetch("/api/me/notices/read-all", { method: "POST" });
+}
+
+export interface DeliveryDTO {
+  matches_quote: boolean;
+  on_time: boolean;
+  note?: string | null;
+  recorded_at: string;
+  media?: { name: string; mime: string; bytes: number } | null;
+  disclaimer?: string;
+}
+
+export async function recordDelivery(rfqId: string, d: {
+  matches_quote: boolean; on_time: boolean; note?: string; media?: { name: string; mime: string; data: string };
+}): Promise<{ delivery: DeliveryDTO }> {
+  return apiFetch(`/api/rfqs/${rfqId}/delivery`, { method: "POST", body: JSON.stringify(d) });
 }
 
 export async function getPlan(): Promise<PlanInfo> {

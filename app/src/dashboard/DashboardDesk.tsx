@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { FactTag } from "../components/FactTag";
 import { NoticeBell } from "../components/NoticeBell";
+import { DeliveryCheck } from "./DeliveryCheck";
 import { closesAt, timeLeft, useNow } from "../lib/windowTime";
 import { evaluate, giveUp, inr, MODES, naivePick, negotiation, type Mode, type Quote } from "../landing/engine";
 import { CostChart } from "../landing/CostChart";
@@ -18,7 +19,7 @@ import {
   getRFQDetails, sendTarget, lockDecision,
   getChatMessages, postChatMessage,
   getSupplierProfileForBuyer, getSummary, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, type ImportResult,
-  type RFQDetailsDTO, type ChatMessageDTO, type SellerPanelDTO, type SellerIdentity, type PlanInfo, type SummaryDTO,
+  type DeliveryDTO, type RFQDetailsDTO, type ChatMessageDTO, type SellerPanelDTO, type SellerIdentity, type PlanInfo, type SummaryDTO,
 } from "../api/client";
 
 export function DashboardDesk() {
@@ -738,6 +739,7 @@ export function DashboardDesk() {
                     <span className="text-muted"> ({summary.savings.label})</span>
                   </p>
                 )}
+                <DeliveryCheck rfqId={rfq.id} saved={(rfq.decision as { delivery?: DeliveryDTO }).delivery ?? null} onSaved={() => refetch()} />
                 <Link to={`/app/decision/${rfq.id}`} className="inline-block rounded-full border border-success/40 px-3 py-1 text-[12px] font-medium text-success hover:bg-success/10">
                   Open decision one-pager
                 </Link>

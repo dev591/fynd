@@ -82,6 +82,7 @@ class RFQStore:
         self.revealed: Dict[str, Dict[str, dict]] = {}    # rfq_id -> {supplier_id: {buyer_id, at, kind}}
         self.reveal_log: List[dict] = []                  # every first-time reveal: buyer, seller, request, free/paid/repeat
         self.history: List[dict] = []                     # synthetic past orders, labelled as such
+        self.media: Dict[str, dict] = {}                          # rfq -> delivery photo/video, kept apart from the record
         self.buyer_notices: Dict[str, List[BuyerNotice]] = {}   # buyer_id -> their bell
         self.clock: Callable[[], datetime] = datetime.now       # injectable, so tests never wait
         self.known_suppliers: Dict[str, Dict[str, str]] = {}      # rfq -> {imp_id: the name the buyer gave}
@@ -354,6 +355,25 @@ class RFQStore:
             if ends - start > timedelta(minutes=30) and now >= ends - timedelta(minutes=15):
                 events += self._remind(rfq, "final", "Closing in 15 minutes: you haven't answered yet.")
         return events
+
+    def record_delivery(self, rfq_id: str, matches_quote: bool, on_time: bool, note: Optional[str], media) -> dict:
+        """The buyer's own record of what arrived. Saved on the decision; a photo or video is stored separately."""
+        rfq = self.rfqs[rfq_id]
+        record = {
+            "matches_quote": matches_quote, "on_time": on_time, "note": (note or "").strip() or None,
+            "recorded_at": self.clock().isoformat(), "media": None,
+            "disclaimer": "This is your own record. Crossover did not inspect the goods.",
+        }
+        if media:
+            import base64
+            self.media[rfq_id] = {"name": media.name, "mime": media.mime, "data": media.data}
+            record["media"] = {"name": media.name, "mime": media.mime, "bytes": len(base64.b64decode(media.data))}
+        else:
+            self.media.pop(rfq_id, None)
+        for holder in (rfq.decision, self.decisions.get(rfq_id)):          # same dict until a restart splits them
+            if holder is not None:
+                holder["delivery"] = record
+        return record
 
     def alias_for(self, rfq_id: str, supplier_id: str, create: bool = False) -> Optional[str]:
         table = self.aliases.setdefault(rfq_id, {}) if create else self.aliases.get(rfq_id, {})
