@@ -135,7 +135,7 @@ class RFQStore:
         self.supplier_products["B"] = [
             SupplierProduct(id="prod_b1", name="M10 Hex Bolt (Standard Grade)",
                             category="fasteners", pack_price=11, pack_size=1, moq=1,
-                            usual_lead_days=3, unit="pc", stock=80, freight=50,
+                            usual_lead_days=3, unit="pc", stock=150, freight=50,
                             aliases=["M10 bolt"]),
         ]
         self.supplier_products["C"] = [

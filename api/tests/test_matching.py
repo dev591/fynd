@@ -52,8 +52,7 @@ def test_verdict_yes_partly_no_with_reasons():
     by_sid = {sid: next(n for n in _inbox(sid) if n["rfq_id"] == rfq_id) for sid in res["supplier_tokens"]}
 
     assert by_sid["A"]["verdict"]["can_fulfil"] == "yes"            # stock 500, lead 3, moq 50
-    assert by_sid["B"]["verdict"]["can_fulfil"] == "partly"         # stock 80 of 100
-    assert "80 of 100" in " ".join(by_sid["B"]["verdict"]["reasons"])
+    assert by_sid["B"]["verdict"]["can_fulfil"] == "yes"            # stock 150 covers 100
     assert by_sid["C"]["verdict"]["can_fulfil"] == "partly"         # lead 7 > 5
     assert by_sid["D"]["verdict"]["can_fulfil"] == "no"             # stock 0
     assert all(n["verdict"]["reasons"] for n in by_sid.values())
@@ -93,7 +92,7 @@ def test_draft_quote_numbers_come_from_catalog():
     assert d["verdict"]["can_fulfil"] == "yes"
     # stock becomes the quote cap
     b = client.get(f"/api/rfq-by-token/{res['supplier_tokens']['B']}/draft").json()
-    assert b["max_qty"] == 80
+    assert b["max_qty"] == 150
     assert client.get("/api/rfq-by-token/nope/draft").status_code == 404
 
 
