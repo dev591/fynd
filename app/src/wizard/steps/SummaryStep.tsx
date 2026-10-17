@@ -13,8 +13,6 @@ import {
   Tag,
 } from "lucide-react";
 import { Magnetic } from "../../components/Magnetic";
-import { CostChart } from "../../landing/CostChart";
-import { NEED } from "../../landing/fixture";
 import type { Profile } from "../types";
 
 interface SummaryStepProps {
@@ -138,20 +136,6 @@ export function SummaryStep({ profile }: SummaryStepProps) {
               </span>
             ))}
           </div>
-        </div>
-
-        {/* Protagonist Mini Visualization: Crossover Curve Settled */}
-        <div className="rounded-xl border border-line bg-surface p-4">
-          <div className="flex items-center justify-between pb-2">
-            <span className="label text-muted">Initial Desk Simulation</span>
-            <span className="num text-[12px] text-success">Order: 100 M10 bolts</span>
-          </div>
-          <div className="max-h-48 overflow-hidden">
-            <CostChart qty={NEED.qty} winnerId="B" />
-          </div>
-          <p className="mt-2 text-center text-[13px] text-muted">
-            The crossover curve confirms <span className="font-medium text-bone">Supplier B at ₹1,150</span> saves ₹50 over the naive sticker-price pick.
-          </p>
         </div>
 
         {saveError && <p className="text-center text-[12px] text-error">{saveError}</p>}

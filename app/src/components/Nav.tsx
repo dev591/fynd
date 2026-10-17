@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom'
 import { Magnetic } from './Magnetic'
 
-/** Thin bar. The whole story is one pinned stage now, so it stays visible throughout. */
+/** Thin bar that stays on screen. */
 export function Nav() {
   return (
-    <nav className="fixed inset-x-0 top-0 z-40 flex items-center justify-between px-6 py-4">
+    <nav className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-line/60 bg-ink/85 px-6 py-3 backdrop-blur-md">
       <span className="display text-xl">Crossover</span>
       <div className="flex items-center gap-4">
         <Link to="/signin" className="text-sm text-muted transition-colors hover:text-bone">Sign in</Link>
