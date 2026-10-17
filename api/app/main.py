@@ -44,6 +44,163 @@ def health_check():
     """Health check endpoint."""
     return {'ok': True, 'version': '1.0.0'}
 
+# ============ RFQ Endpoints (Buyer) ============
+
+@app.post('/api/rfqs', response_model=RFQRead)
+def post_rfq(
+    rfq_data: RFQCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    POST /api/rfqs
+    Create a new RFQ (JWT auth required).
+    Returns the created RFQ with id and timestamps.
+    """
+    buyer_id = current_user['user_id']
+    rfq_id = str(uuid.uuid4())
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''INSERT INTO rfqs (id, buyer_id, item, quantity_needed, need_by_days, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)''',
+            (rfq_id, buyer_id, rfq_data.item, rfq_data.quantity_needed, 
+             rfq_data.need_by_days, now_unix())
+        )
+        conn.commit()
+        
+        cursor.execute('SELECT * FROM rfqs WHERE id=?', (rfq_id,))
+        rfq = cursor.fetchone()
+        
+        return RFQRead(
+            id=rfq['id'],
+            buyer_id=rfq['buyer_id'],
+            item=rfq['item'],
+            quantity_needed=rfq['quantity_needed'],
+            need_by_days=rfq['need_by_days'],
+            created_at=rfq['created_at'],
+            decided_quote_id=rfq['decided_quote_id']
+        )
+
+@app.get('/api/rfqs', response_model=list[RFQRead])
+def get_rfqs(
+    current_user: dict = Depends(get_current_user),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    """
+    GET /api/rfqs
+    List all RFQs for the current buyer (JWT auth required).
+    Paginated with limit/offset.
+    """
+    buyer_id = current_user['user_id']
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM rfqs WHERE buyer_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?',
+            (buyer_id, limit, offset)
+        )
+        rfqs = cursor.fetchall()
+        
+        return [
+            RFQRead(
+                id=r['id'],
+                buyer_id=r['buyer_id'],
+                item=r['item'],
+                quantity_needed=r['quantity_needed'],
+                need_by_days=r['need_by_days'],
+                created_at=r['created_at'],
+                decided_quote_id=r['decided_quote_id']
+            )
+            for r in rfqs
+        ]
+
+@app.get('/api/rfqs/{rfq_id}', response_model=RFQRead)
+def get_rfq(
+    rfq_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    GET /api/rfqs/{rfq_id}
+    Get a specific RFQ (JWT auth required, buyer must own it).
+    """
+    buyer_id = current_user['user_id']
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM rfqs WHERE id=?',
+            (rfq_id,)
+        )
+        rfq = cursor.fetchone()
+        
+        if not rfq:
+            raise HTTPException(status_code=404, detail='RFQ not found')
+        
+        if rfq['buyer_id'] != buyer_id:
+            raise HTTPException(status_code=403, detail='Not authorized to view this RFQ')
+        
+        return RFQRead(
+            id=rfq['id'],
+            buyer_id=rfq['buyer_id'],
+            item=rfq['item'],
+            quantity_needed=rfq['quantity_needed'],
+            need_by_days=rfq['need_by_days'],
+            created_at=rfq['created_at'],
+            decided_quote_id=rfq['decided_quote_id']
+        )
+
+@app.post('/api/rfqs/{rfq_id}/targets', response_model=TargetRead)
+def post_rfq_target(
+    rfq_id: str,
+    target_data: TargetCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    POST /api/rfqs/{rfq_id}/targets
+    Add negotiation targets to an RFQ (JWT auth required, buyer must own it).
+    target_type can be 'price', 'lead_days', etc.
+    """
+    buyer_id = current_user['user_id']
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Verify buyer owns this RFQ
+        cursor.execute(
+            'SELECT buyer_id FROM rfqs WHERE id=?',
+            (rfq_id,)
+        )
+        rfq = cursor.fetchone()
+        
+        if not rfq:
+            raise HTTPException(status_code=404, detail='RFQ not found')
+        
+        if rfq['buyer_id'] != buyer_id:
+            raise HTTPException(status_code=403, detail='Not authorized to update this RFQ')
+        
+        # Create target
+        target_id = str(uuid.uuid4())
+        cursor.execute(
+            '''INSERT INTO targets (id, rfq_id, target_type, target_value, created_at)
+               VALUES (?, ?, ?, ?, ?)''',
+            (target_id, rfq_id, target_data.target_type, target_data.target_value, now_unix())
+        )
+        conn.commit()
+        
+        # Fetch and return
+        cursor.execute('SELECT * FROM targets WHERE id=?', (target_id,))
+        target = cursor.fetchone()
+        
+        return TargetRead(
+            id=target['id'],
+            rfq_id=target['rfq_id'],
+            target_type=target['target_type'],
+            target_value=target['target_value'],
+            created_at=target['created_at']
+        )
+
 # ============ Quote Endpoints (Token-based) ============
 
 @app.post('/api/rfq-by-token/{token}/quotes', response_model=QuoteRead)
