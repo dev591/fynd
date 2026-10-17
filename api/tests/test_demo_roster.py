@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app import demo_roster
@@ -36,7 +37,17 @@ def test_logins_endpoint_is_off_by_default_and_hands_out_the_list_only_when_enab
     assert client.get("/api/demo/logins").json()["enabled"] is False     # no password set means nothing is handed out
 
 
-def test_seeding_all_ten_through_the_api_notifies_every_seller_for_the_shared_item():
+@pytest.fixture
+def _remove_demo_accounts():
+    """The store is shared across tests: take the demo sellers back out so other tests' matching is unaffected."""
+    from app.main import store
+    yield
+    for d in (store.supplier_products, store.supplier_profiles, store.supplier_owner, store.profiles, store.notifications):
+        for k in [k for k in d if str(k).startswith("demo-")]:
+            d.pop(k, None)
+
+
+def test_seeding_all_ten_through_the_api_notifies_every_seller_for_the_shared_item(_remove_demo_accounts):
     """Mirrors scripts/seed_demo_sellers.py: profile, seller role, catalog, per account. Then a buyer asks for the shared item."""
     from app.auth import AuthUser, get_current_user
 
