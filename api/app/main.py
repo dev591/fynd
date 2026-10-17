@@ -77,6 +77,12 @@ def _rfq_for(user: AuthUser, rfq_id: str) -> RFQ:
     return rfq
 
 
+def _buyer_location(user: AuthUser, city: str, state: str) -> tuple[str, str]:
+    """City and state default to the buyer's saved profile, and to nothing at all if there is none."""
+    prof = store.profiles.get(user.id)
+    return (city or (prof.city if prof else ""), state or (prof.state if prof else ""))
+
+
 def _demo_sellers_allowed() -> bool:
     return os.environ.get("ALLOW_DEMO_SELLERS", "true").lower() != "false"
 
@@ -283,16 +289,18 @@ def get_case_checks():
 # --- 4. RFQ Lifecycle (Buyer Side) ---
 @app.post("/api/rfqs")
 def create_rfq(payload: RFQCreate, user: AuthUser = Depends(buyer_only)):
+    payload.buyer_city, payload.buyer_state = _buyer_location(user, payload.buyer_city, payload.buyer_state)
     return _rfq_response(store.create_rfq(payload, owner_id=user.id))
 
 
 @app.post("/api/rfqs/confirm")
 def confirm_rfq(payload: ConfirmIn, user: AuthUser = Depends(buyer_only)):
     """Creates the request from the confirm card. The only way an intake draft becomes a request."""
+    city, state = _buyer_location(user, payload.buyer_city, payload.buyer_state)
     rfq = store.create_rfq(RFQCreate(
         item=payload.item.strip(), qty=payload.qty, need_in_days=payload.need_in_days,
         buyer_company=payload.buyer_company, buyer_name=payload.buyer_name,
-        buyer_city=payload.buyer_city, buyer_state=payload.buyer_state,
+        buyer_city=city, buyer_state=state,
         note=payload.note, priority_mode=payload.priority_mode, source=payload.source,
     ), owner_id=user.id)
     if payload.intake_id:
@@ -457,7 +465,7 @@ def sample_request(user: AuthUser = Depends(buyer_only)):
     """A personal sample request with synthetic quotes already in. Used by the empty state."""
     p = store.profiles.get(user.id)
     rfq = store.create_sample_rfq(user.id, p.company if p else "My company", p.full_name if p else "Buyer",
-                                  p.city if p else "Pune", p.state if p else "Maharashtra")
+                                  p.city if p else "", p.state if p else "")
     return _rfq_response(rfq)
 
 

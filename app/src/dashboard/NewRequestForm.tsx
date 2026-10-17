@@ -47,8 +47,8 @@ export function NewRequestForm() {
     const p = me?.profile;
     setBuyerCompany(c => c || p?.company || "My company");
     setBuyerName(n => n || p?.full_name || session?.user.email?.split("@")[0] || "Buyer");
-    setBuyerCity(c => c || p?.city || "Pune");
-    setBuyerState(s => s || p?.state || "Maharashtra");
+    setBuyerCity(c => c || p?.city || "");
+    setBuyerState(s => s || p?.state || "");
   }, [me, session]);
 
   const [submitting, setSubmitting] = useState(false);

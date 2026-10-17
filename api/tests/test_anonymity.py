@@ -304,3 +304,42 @@ def test_seller_gets_buyer_contact_and_a_notification_only_after_being_revealed(
     # the other seller, not revealed, still learns nothing
     for where, payload in seller_views(scene, "B").items():
         assert_no_buyer(payload, f"unrevealed seller / {where}")
+
+
+# ─── found by the live rehearsal ────────────────────────────────────────────────
+
+def test_buyer_location_comes_from_their_profile_not_a_hardcoded_default():
+    act_as("loc-buyer")
+    client.post("/api/profile", json=profile("buyer", state="Telangana", city="Hyderabad"))
+    rid = client.post("/api/rfqs/confirm", json={"item": "M10 bolt", "qty": 10, "need_in_days": 5,
+                      "buyer_company": "c", "buyer_name": "b"}).json()["id"]
+    r = client.get(f"/api/rfqs/{rid}").json()["rfq"]
+    assert (r["buyer_city"], r["buyer_state"]) == ("Hyderabad", "Telangana")          # not Pune / Maharashtra
+    assert "Pune" not in json.dumps(r)
+    tok = store.rfqs[rid].supplier_tokens["A"]
+    assert client.get(f"/api/rfq-by-token/{tok}").json()["buyer_descriptor"] == "Manufacturer, Telangana"
+
+
+def test_a_buyer_with_no_profile_gets_no_invented_location():
+    act_as("loc-noprofile")
+    rid = client.post("/api/rfqs", json={"item": "M10 bolt", "qty": 10, "need_in_days": 5,
+                      "buyer_company": "c", "buyer_name": "b"}).json()["id"]
+    r = client.get(f"/api/rfqs/{rid}").json()["rfq"]
+    assert (r["buyer_city"], r["buyer_state"]) == ("", "")
+    assert client.get(f"/api/rfq-by-token/{store.rfqs[rid].supplier_tokens['A']}").json()["buyer_descriptor"] == "Buyer"
+
+
+def test_shared_page_hides_the_approvers_name_and_contact_details_in_the_reason(scene):
+    rid = scene["rid"]
+    reveal(scene, "Seller 2")
+    client.post(f"/api/rfqs/{rid}/decision", json={"winner_id": "Seller 2", "approver": BUYER["name"],
+                "reason": f"Lowest landed, call me on {BUYER['phone']} or {BUYER['email']}"})
+    link = client.post(f"/api/rfqs/{rid}/share").json()
+    own = client.get(f"/api/rfqs/{rid}/summary").json()
+    assert own["decision"]["approver"] == BUYER["name"]                              # the buyer still sees their own record
+    app.dependency_overrides.pop(get_current_user, None)
+    shared = client.get(f"/api/share/{link['token']}").json()
+    blob = json.dumps(shared)
+    for v in buyer_values():
+        assert v not in blob, f"shared page leaks the buyer: {v!r}"
+    assert shared["decision"]["reason"].startswith("Lowest landed") and shared["decision"]["approver"]

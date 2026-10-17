@@ -128,8 +128,8 @@ class RFQCreate(BaseModel):
     need_in_days: int
     buyer_company: str
     buyer_name: str
-    buyer_city: str = "Pune"
-    buyer_state: str = "Maharashtra"
+    buyer_city: str = ""      # filled from the buyer's profile when blank; never invented
+    buyer_state: str = ""
     note: str | None = None
     priority_mode: PriorityMode = "cheapest"
     source: RequestSource = "form"
@@ -384,8 +384,8 @@ class ConfirmIn(BaseModel):
     source: RequestSource = "form"
     buyer_company: str
     buyer_name: str
-    buyer_city: str = "Pune"
-    buyer_state: str = "Maharashtra"
+    buyer_city: str = ""      # filled from the buyer's profile when blank; never invented
+    buyer_state: str = ""
     note: str | None = None
     intake_id: str | None = None
 

@@ -11,6 +11,7 @@ from .ai import structured_call
 from .assistant import makes_promise, numbers_supported
 from .engine import evaluate, fingerprint, naive_pick, order
 from . import views
+from .masking import scrub
 from .models import EvaluatedRow, Need, RFQ
 
 EXPLAIN_SYSTEM = (
@@ -73,6 +74,13 @@ def _explainer(facts: dict, allowed: set[float], winner_name: str, fallback: str
     return {"text": text, "source": "ai", "discarded_reason": None}
 
 
+def _decision_for(decision: Optional[dict], audience: str) -> Optional[dict]:
+    """A shared link shows the decision but not who signed it, and no phone or email typed into the reason."""
+    if decision is None or audience == "buyer":
+        return decision
+    return {**decision, "approver": "Named approver (hidden on shared links)", "reason": scrub(decision.get("reason")) or ""}
+
+
 def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str = "buyer") -> Optional[dict[str, Any]]:
     """audience 'buyer' is the owner's own page; 'public' is a shared link and never carries identities."""
     rfq: Optional[RFQ] = store.get_rfq(rfq_id)
@@ -129,7 +137,7 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
                 "priority_mode": rfq.priority_mode, "source": rfq.source, "status": rfq.status,
                 "created_at": rfq.created_at},
         "decided": decision is not None,
-        "decision": decision,
+        "decision": _decision_for(decision, audience),
         "pick": _row(shown) if shown else None,
         "engine_winner": _row(ev.winner) if ev.winner else None,
         "overrode_engine": bool(decided_row and ev.winner and decided_row.quote_id != ev.winner.quote_id),
