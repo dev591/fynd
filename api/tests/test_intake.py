@@ -154,3 +154,50 @@ def test_timeout_or_error_returns_none_not_exception(monkeypatch):
     def boom(*a, **k): raise ai.httpx.TimeoutException("slow")
     monkeypatch.setattr(ai.httpx, "post", boom)
     assert ai.structured_call("s", "u", "n", intake.SCHEMA) is None
+
+
+def test_elevenlabs_transcription_request_shape(monkeypatch):
+    seen = {}
+
+    class FakeResp:
+        def raise_for_status(self): pass
+        def json(self): return {"text": " 100 M10 bolt chahiye ", "language_code": "hin"}
+
+    def fake_post(url, timeout=None, headers=None, data=None, files=None, **kw):
+        seen.update(url=url, headers=headers, data=data, files=files)
+        return FakeResp()
+
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "xi-test")
+    monkeypatch.setenv("ELEVENLABS_STT_MODEL", "scribe_v2")
+    monkeypatch.setattr(ai.httpx, "post", fake_post)
+    assert ai.transcribe(b"\x00\x01", "audio/webm;codecs=opus") == "100 M10 bolt chahiye"
+    assert seen["url"] == "https://api.elevenlabs.io/v1/speech-to-text"
+    assert seen["headers"] == {"xi-api-key": "xi-test"}
+    assert seen["data"] == {"model_id": "scribe_v2"}
+    assert seen["files"]["file"][2] == "audio/webm;codecs=opus"
+
+
+def test_voice_needs_both_keys(monkeypatch):
+    for k in ("OPENAI_API_KEY", "MODEL_INTAKE", "ELEVENLABS_API_KEY", "ELEVENLABS_STT_MODEL"):
+        monkeypatch.delenv(k, raising=False)
+    assert ai.voice_enabled() is False
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "x"); monkeypatch.setenv("ELEVENLABS_STT_MODEL", "scribe_v2")
+    assert ai.voice_enabled() is False                     # transcript could not be read without the text model
+    monkeypatch.setenv("OPENAI_API_KEY", "y"); monkeypatch.setenv("MODEL_INTAKE", "m")
+    assert ai.voice_enabled() is True
+
+
+def test_env_file_loader(tmp_path, monkeypatch):
+    from app.env import load_env
+    f = tmp_path / ".env"
+    f.write_text('# comment\nOPENAI_API_KEY=\nMODEL_INTAKE="from-file"\nELEVENLABS_STT_MODEL=scribe_v2\nKEEP=file\n')
+    for k in ("OPENAI_API_KEY", "MODEL_INTAKE", "ELEVENLABS_STT_MODEL"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("KEEP", "shell")
+    load_env(f)
+    import os
+    assert "OPENAI_API_KEY" not in os.environ                # blank placeholder is ignored
+    assert os.environ["MODEL_INTAKE"] == "from-file"         # quotes stripped
+    assert os.environ["KEEP"] == "shell"                     # real environment wins
+    for k in ("MODEL_INTAKE", "ELEVENLABS_STT_MODEL"):
+        monkeypatch.delenv(k, raising=False)

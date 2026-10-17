@@ -24,8 +24,17 @@ def intake_model() -> str:
     return os.environ.get("MODEL_INTAKE", "")
 
 
-def transcribe_model() -> str:
-    return os.environ.get("MODEL_TRANSCRIBE", "")
+def stt_key() -> str:
+    return os.environ.get("ELEVENLABS_API_KEY", "")
+
+
+def stt_model() -> str:
+    return os.environ.get("ELEVENLABS_STT_MODEL", "")
+
+
+def voice_enabled() -> bool:
+    """Voice intake needs speech-to-text (ElevenLabs) and the text model that reads the transcript (OpenAI)."""
+    return bool(stt_key() and stt_model() and ai_enabled())
 
 
 def ai_enabled() -> bool:
@@ -72,15 +81,15 @@ def parse_structured(payload: dict) -> Optional[dict[str, Any]]:
 
 
 def transcribe(audio: bytes, content_type: str = "audio/webm") -> Optional[str]:
-    model = transcribe_model()
-    if not (_key() and model and audio):
+    """ElevenLabs speech-to-text. Hindi and English can be mixed; the language is detected."""
+    if not (stt_key() and stt_model() and audio):
         return None
     ext = "mp4" if "mp4" in content_type else "ogg" if "ogg" in content_type else "wav" if "wav" in content_type else "webm"
     try:
         r = httpx.post(
-            f"{_base()}/audio/transcriptions", timeout=TIMEOUT_S * 2,
-            headers={"Authorization": f"Bearer {_key()}"},
-            data={"model": model}, files={"file": (f"clip.{ext}", audio, content_type)},
+            os.environ.get("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io").rstrip("/") + "/v1/speech-to-text",
+            timeout=TIMEOUT_S * 2, headers={"xi-api-key": stt_key()},
+            data={"model_id": stt_model()}, files={"file": (f"clip.{ext}", audio, content_type)},
         )
         r.raise_for_status()
         text = r.json().get("text", "")

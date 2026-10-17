@@ -1,4 +1,7 @@
 import asyncio, json, os
+from .env import load_env
+
+load_env()  # reads api/.env before anything reads os.environ
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -149,7 +152,7 @@ _intake_cache: dict[str, dict] = {}
 
 @app.get("/api/intake/status")
 def intake_status():
-    return {"ai_enabled": ai.ai_enabled(), "voice_enabled": bool(ai.ai_enabled() and ai.transcribe_model())}
+    return {"ai_enabled": ai.ai_enabled(), "voice_enabled": ai.voice_enabled()}
 
 
 @app.post("/api/intake/draft")
