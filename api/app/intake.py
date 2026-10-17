@@ -49,6 +49,8 @@ _WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
 _HINDI_DAYS = {"somvar": 0, "mangalvar": 1, "budhvar": 2, "guruvar": 3, "veervar": 3, "shukravar": 4,
                "shanivar": 5, "ravivar": 6}
 _MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+# a month written out or abbreviated, as a whole word ("oct", "october", "sept"), never the start of another word
+_MONTH_WORD = r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
 
 
 def _tokens(text: str) -> list[str]:
@@ -95,13 +97,22 @@ def resolve_need_days(phrase: str, today: Optional[date] = None) -> Optional[int
     """Turn the buyer's own deadline words into days, in code. None if it cannot be done honestly."""
     today = today or date.today()
     p = phrase.lower().strip()
+    m = re.search(r"(\d+)\s*(?:weeks?|hafte|hafta)", p)
+    if m and int(m.group(1)) > 0:
+        return 7 * int(m.group(1))
     m = re.search(r"(\d+)\s*(?:days?|din|dino)", p)
     if m and int(m.group(1)) > 0:
         return int(m.group(1))
+    if re.search(r"day after tomorrow|\bparso\b|\bparson\b", p):
+        return 2
     if re.search(r"\b(tomorrow|kal)\b", p):
         return 1
-    if "next week" in p or "agle hafte" in p:
+    if "next week" in p or "agle hafte" in p or re.search(r"\b(a|one|1)\s+(week|hafta)\b", p):
         return 7
+    if re.search(r"end of (the |this )?month|month end", p):
+        nxt = date(today.year + (today.month == 12), today.month % 12 + 1, 1)
+        left = (nxt - today).days - 1
+        return left if left > 0 else None
     for i, name in enumerate(_WEEKDAYS):
         if name in p or name[:3] + "day" in p:
             return ((i - today.weekday()) % 7) or 7
@@ -112,9 +123,30 @@ def resolve_need_days(phrase: str, today: Optional[date] = None) -> Optional[int
     if m:
         d = (date(int(m.group(1)), int(m.group(2)), int(m.group(3))) - today).days
         return d if d > 0 else None
-    m = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3})", p)
-    if m and m.group(2) in _MONTHS:
-        month, day = _MONTHS.index(m.group(2)) + 1, int(m.group(1))
+    # "25 Oct", "25th October", "October 25", "Oct 25th", "25/10", "25-10", and a bare "by the 30th"
+    m = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?" + _MONTH_WORD + r"\b", p)
+    if m:
+        month, day = _MONTHS.index(m.group(2)[:3]) + 1, int(m.group(1))
+    else:
+        m = re.search(r"\b" + _MONTH_WORD + r"\b\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b", p)
+        if m:
+            month, day = _MONTHS.index(m.group(1)[:3]) + 1, int(m.group(2))
+        else:
+            m = re.search(r"\b(\d{1,2})[/-](\d{1,2})\b", p)
+            b = re.search(r"\b(?:by\s+)?(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b", p)
+            if m and 1 <= int(m.group(2)) <= 12 and 1 <= int(m.group(1)) <= 31:
+                month, day = int(m.group(2)), int(m.group(1))
+            elif b and 1 <= int(b.group(1)) <= 31:
+                day = int(b.group(1))
+                month = today.month if day > today.day else today.month % 12 + 1
+                year = today.year + (1 if today.month == 12 and day <= today.day else 0)
+                try:
+                    return (date(year, month, day) - today).days
+                except ValueError:
+                    return None
+            else:
+                m = None
+    if m:
         try:
             target = date(today.year, month, day)
             if target <= today:
