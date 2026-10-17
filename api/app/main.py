@@ -51,7 +51,7 @@ from .models import (
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
 from .quote_text import draft_from_message
-from . import ai, assistant
+from . import ai, assistant, delhivery
 from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
@@ -824,3 +824,51 @@ def post_chat_by_token(token: str, payload: ChatMessageIn):
     if msg is None:
         raise HTTPException(status_code=404, detail="Invalid or expired link.")
     return msg
+
+
+# ─── Logistics (Delhivery): suggestions for a seller's freight and lead time, never applied automatically ───
+
+class FreightIn(BaseModel):
+    source_pin: str
+    consignee_pin: str
+    weight_kg: float
+    length_cm: float = 10
+    width_cm: float = 10
+    height_cm: float = 10
+    box_count: int = 1
+    inv_amount: float = 0
+
+
+@app.get("/api/logistics/status")
+def logistics_status(user: AuthUser = Depends(get_current_user)):
+    return {"enabled": delhivery.enabled()}
+
+
+@app.get("/api/logistics/pincode/{pin}")
+def logistics_pincode(pin: str, weight_kg: float = 1, user: AuthUser = Depends(get_current_user)):
+    if not delhivery.valid_pin(pin):
+        raise HTTPException(status_code=422, detail="Enter a 6-digit pincode.")
+    raw = delhivery.pincode_service(pin, weight_kg)
+    return {"enabled": delhivery.enabled(), "available": raw is not None, "raw": raw}
+
+
+@app.post("/api/logistics/freight")
+def logistics_freight(payload: FreightIn, user: AuthUser = Depends(get_current_user)):
+    if not (delhivery.valid_pin(payload.source_pin) and delhivery.valid_pin(payload.consignee_pin)):
+        raise HTTPException(status_code=422, detail="Enter two 6-digit pincodes.")
+    if payload.weight_kg <= 0:
+        raise HTTPException(status_code=422, detail="Weight must be above zero.")
+    raw = delhivery.freight_estimate(
+        payload.source_pin, payload.consignee_pin, round(payload.weight_kg * 1000), length_cm=payload.length_cm,
+        width_cm=payload.width_cm, height_cm=payload.height_cm, box_count=payload.box_count, inv_amount=payload.inv_amount)
+    amount = delhivery.find_number(raw, "total_amount", "total_charge", "total", "freight_charge", "freight", "amount") if raw is not None else None
+    return {"enabled": delhivery.enabled(), "suggested_freight": amount, "source": "Delhivery estimate" if amount is not None else None, "raw": raw}
+
+
+@app.get("/api/logistics/tat")
+def logistics_tat(origin_pin: str, destination_pin: str, user: AuthUser = Depends(get_current_user)):
+    if not (delhivery.valid_pin(origin_pin) and delhivery.valid_pin(destination_pin)):
+        raise HTTPException(status_code=422, detail="Enter two 6-digit pincodes.")
+    raw = delhivery.tat_estimate(origin_pin, destination_pin)
+    days = delhivery.find_number(raw, "tat", "tat_days", "days", "estimated_days", "delivery_days") if raw is not None else None
+    return {"enabled": delhivery.enabled(), "suggested_lead_days": days, "source": "Delhivery estimate" if days is not None else None, "raw": raw}
