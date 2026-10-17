@@ -47,6 +47,7 @@ class RFQStore:
         self.supplier_products: Dict[str, List[SupplierProduct]] = {}
         self.chats: Dict[str, Dict[str, List[ChatMessage]]] = {}
         self.notifications: Dict[str, List[Notification]] = {}  # supplier_id -> inbox
+        self.assists: Dict[str, dict] = {}  # token -> the draft and wording issued, to label quote origin
         self.ai_log: List[dict] = []  # every AI input and output, linked to the request once confirmed
 
         self._seed_default_data()
@@ -279,6 +280,10 @@ class RFQStore:
         prod = next((p for p in self.supplier_products.get(n.supplier_id, []) if p.id == n.product_id), None)
         return draft_quote(rfq, prod) if prod else None
 
+    def product_for_token(self, token: str) -> Optional[SupplierProduct]:
+        n = self._notification_for_token(token)
+        return next((p for p in self.supplier_products.get(n.supplier_id, []) if p.id == n.product_id), None) if n else None
+
     def activity(self, rfq_id: str) -> Activity:
         notes = [n for ns in self.notifications.values() for n in ns if n.rfq_id == rfq_id]
         quoted = set(self.quotes.get(rfq_id, {}))
@@ -398,6 +403,14 @@ class RFQStore:
             landed_cost=landed, units=units, packs=packs,
             submitted_at=datetime.now().strftime("%I:%M %p"),
         )
+        issued = self.assists.get(token)
+        if issued and issued["source"] == "ai":
+            d = issued["draft"]
+            same = (pack_price, pack_size, freight, lead_days, moq, max_qty) == (
+                d.pack_price, d.pack_size, d.freight, d.lead_days, d.moq, d.max_qty) and (notes or "") == issued["text"]
+            qv.origin = "ai_draft_sent" if same else "ai_draft_edited"
+        else:
+            qv.origin = "manual"
         supplier_history.append(qv)
 
         # Mark pending target as accepted on revision

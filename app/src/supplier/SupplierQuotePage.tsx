@@ -14,7 +14,7 @@ import { useApiPoll, useApiOnce } from "../lib/useApi";
 import {
   getRFQByToken, getMyQuotes, submitQuoteByToken,
   getChatByToken, postChatByToken,
-  getSupplierProducts, getDraftQuote, markQuoting,
+  getSupplierProducts, getAssist, checkItemMatch, markQuoting,
   type SupplierRFQView, type QuoteVersionDTO, type NegotiationTargetDTO,
   type ChatMessageDTO, type SupplierProductDTO,
 } from "../api/client";
@@ -55,10 +55,11 @@ export function SupplierQuotePage() {
   const sellerName = rfq?.supplier_name || "Supplier";
 
   // Catalog draft: every number copied from the seller's own row, editable before sending
-  const { data: draft } = useApiOnce(
-    () => token ? getDraftQuote(token) : Promise.resolve(null),
+  const { data: assist } = useApiOnce(
+    () => token ? getAssist(token) : Promise.resolve(null),
     [token],
   );
+  const draft = assist?.draft ?? null;
   const quotingSent = useRef(false);
   const handleFirstEdit = () => {
     if (quotingSent.current || !token) return;
@@ -114,10 +115,11 @@ export function SupplierQuotePage() {
         leadDays: draft.lead_days,
         moq: draft.moq,
         maxQty: draft.max_qty ?? undefined,
+        notes: assist?.message.text,
       };
     }
     return undefined;
-  }, [latestQuote, target, draft]);
+  }, [latestQuote, target, draft, assist]);
 
   const handleQuoteSubmit = async (data: {
     packPrice: number; packSize: number; freight: number; leadDays: number;
@@ -432,6 +434,13 @@ export function SupplierQuotePage() {
                     Prefilled from your catalog item <strong className="text-bone">{draft.product_name}</strong>
                     {draft.price_break_applied ? ` (price break at ${draft.price_break_applied}+ units applied)` : ""}.
                     Check each number, edit if needed, then send. Stock is a snapshot, not reserved.
+                    <span className="mt-1 block text-[11px]">
+                      {assist?.message.source === "ai"
+                        ? "Note to buyer drafted by the assistant. Every number in it was checked against your data."
+                        : assist?.message.discarded_reason
+                          ? `Assistant text was discarded (${assist.message.discarded_reason}). Plain template shown.`
+                          : "Note to buyer is a plain template built from your data."}
+                    </span>
                   </div>
                 )}
 
@@ -449,6 +458,7 @@ export function SupplierQuotePage() {
                   key={`${draft?.product_id ?? "none"}-${quotes.length}-${target?.id ?? ""}`}
                   initialValues={formInitialValues}
                   onEdit={handleFirstEdit}
+                  onCheckItem={(pid) => checkItemMatch(token, pid)}
                   onSubmit={handleQuoteSubmit}
                   isSubmitting={submitting}
                   versionNumber={quotes.length + 1}

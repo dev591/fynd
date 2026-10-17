@@ -376,6 +376,39 @@ export async function getDraftQuote(token: string): Promise<DraftQuoteDTO | null
   }
 }
 
+export interface AssistDTO {
+  draft: DraftQuoteDTO;
+  message: {
+    text: string;
+    /** "ai" only if every number in the text matched your data; otherwise the plain template. */
+    source: "ai" | "template";
+    discarded_reason: string | null;
+  };
+}
+
+export async function getAssist(token: string): Promise<AssistDTO | null> {
+  try {
+    return await apiFetch(`/api/rfq-by-token/${token}/assist`);
+  } catch {
+    return null;
+  }
+}
+
+export interface ItemMatchDTO {
+  verdict: "same" | "different" | "unsure";
+  reason: string;
+  source: "rules" | "ai" | "none";
+}
+
+/** Warn only. Any failure means no check is shown. */
+export async function checkItemMatch(token: string, productId: string): Promise<ItemMatchDTO | null> {
+  try {
+    return await apiFetch(`/api/rfq-by-token/${token}/item-match`, { method: "POST", body: JSON.stringify({ product_id: productId }) });
+  } catch {
+    return null;
+  }
+}
+
 export async function markQuoting(token: string): Promise<void> {
   await fetch(`${BASE_URL}/api/rfq-by-token/${token}/quoting`, { method: "POST" });
 }

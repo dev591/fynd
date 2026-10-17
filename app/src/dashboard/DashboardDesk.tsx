@@ -334,6 +334,11 @@ export function DashboardDesk() {
                                 revised v{latestVer}
                               </span>
                             )}
+                            {versions[latestVer - 1]?.origin && versions[latestVer - 1].origin !== "manual" && (
+                              <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] font-medium text-muted" title="Wording drafted by the seller's assistant; numbers are from their catalog">
+                                {versions[latestVer - 1].origin === "ai_draft_sent" ? "assistant draft" : "assistant draft, edited"}
+                              </span>
+                            )}
                             {isWin && (
                               <span className="rounded-full bg-signal px-2 py-0.5 text-[10px] font-bold text-ink uppercase tracking-wide">
                                 Winner · {mode === "cheapest" ? "Lowest Landed" : mode === "fastest" ? "Fastest" : "Balanced"}

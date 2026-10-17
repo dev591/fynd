@@ -39,7 +39,7 @@ from .models import (
 )
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
-from . import ai
+from . import ai, assistant
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
 
@@ -357,6 +357,40 @@ def get_draft_quote(token: str):
     if not draft:
         raise HTTPException(status_code=404, detail="No catalog match for this request.")
     return draft
+
+
+@app.get("/api/rfq-by-token/{token}/assist")
+def seller_assist(token: str):
+    """Catalog draft plus wording. Numbers come from the catalog; AI text is dropped if any number is unsupported."""
+    draft = store.draft_for_token(token)
+    rfq = store.get_rfq(store.token_to_rfq_id.get(token, ""))
+    if not draft or not rfq:
+        raise HTTPException(status_code=404, detail="No catalog match for this request.")
+    message = assistant.reply_for(rfq, draft)
+    store.assists[token] = {"draft": draft, "source": message["source"], "text": message["text"]}
+    rid = "asst_" + os.urandom(4).hex()
+    store.log_ai("seller_assist", rid, {"token_supplier": store.token_to_supplier_id.get(token),
+                                        "facts": assistant.facts_for(rfq, draft)}, message)
+    store.link_ai_log(rid, rfq.id)
+    return {"draft": draft, "message": message}
+
+
+class ItemMatchIn(BaseModel):
+    product_id: str
+
+
+@app.post("/api/rfq-by-token/{token}/item-match")
+def seller_item_match(token: str, payload: ItemMatchIn):
+    rfq = store.get_rfq(store.token_to_rfq_id.get(token, ""))
+    sid = store.token_to_supplier_id.get(token)
+    prod = next((p for p in store.supplier_products.get(sid, []) if p.id == payload.product_id), None) if sid else None
+    if not rfq or not prod:
+        raise HTTPException(status_code=404, detail="Request or catalog item not found.")
+    out = assistant.item_match(rfq.item, prod)
+    rid = "match_" + os.urandom(4).hex()
+    store.log_ai("item_match", rid, {"request": rfq.item, "catalog": prod.name}, out)
+    store.link_ai_log(rid, rfq.id)
+    return out
 
 
 @app.post("/api/rfq-by-token/{token}/quoting", status_code=204)

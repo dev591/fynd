@@ -43,6 +43,8 @@ interface QuoteFormProps {
   versionNumber?: number;
   /** Fires on every edit; the page uses the first one to tell the buyer the seller is quoting. */
   onEdit?: () => void;
+  /** Warn-only item check for a picked catalog product. Resolves null when no check is available. */
+  onCheckItem?: (productId: string) => Promise<{ verdict: string; reason: string } | null>;
 }
 
 export function QuoteForm({
@@ -53,6 +55,7 @@ export function QuoteForm({
   isSubmitting = false,
   versionNumber = 1,
   onEdit,
+  onCheckItem,
 }: QuoteFormProps) {
   // Required fields
   const [packPrice, setPackPrice] = useState<number | "">(initialValues?.packPrice ?? 10);
@@ -61,7 +64,7 @@ export function QuoteForm({
   const [leadDays, setLeadDays] = useState<number | "">(initialValues?.leadDays ?? 3);
 
   // Folded optional fields
-  const [showOptional, setShowOptional] = useState(false);
+  const [showOptional, setShowOptional] = useState(!!initialValues?.notes);
   const [moq, setMoq] = useState<number | "">(initialValues?.moq ?? 1);
   const [maxQty, setMaxQty] = useState<number | "">(initialValues?.maxQty ?? "");
   const [taxRate, setTaxRate] = useState<number | "">(initialValues?.taxRate ?? 18);
@@ -75,6 +78,10 @@ export function QuoteForm({
     setSelectedProductId(prodId);
     const p = products.find((x) => x.id === prodId);
     if (!p) return;
+    setItemWarning(null);
+    onCheckItem?.(prodId).then(r => {
+      if (r && r.verdict === "different") setItemWarning(`Item check: ${r.reason} You can still quote, but make sure it is the same item.`);
+    });
     setPackPrice(p.pack_price);
     setPackSize(p.pack_size);
     setMoq(p.moq);
@@ -84,18 +91,7 @@ export function QuoteForm({
     if (p.stock != null || p.capacity_cap != null) setShowOptional(true);
   };
 
-  // AI Item-match check (warn only, doesn't block)
-  const itemMismatchWarning = useMemo(() => {
-    if (!selectedProductId) return null;
-    const p = products.find((x) => x.id === selectedProductId);
-    if (!p) return null;
-    const rfqLower = rfq.item.toLowerCase();
-    const prodLower = p.name.toLowerCase();
-    if (prodLower.includes("m8") && rfqLower.includes("m10")) {
-      return "Spec Warning: Buyer requested M10 bolt. Your selected catalog product is for M8 bolt. You may still quote, but ensure sizes align.";
-    }
-    return null;
-  }, [selectedProductId, rfq.item, products]);
+  const [itemWarning, setItemWarning] = useState<string | null>(null);
 
   // Live order preview calculation using the same engine
   const preview = useMemo(() => {
@@ -184,11 +180,11 @@ export function QuoteForm({
             ))}
           </div>
 
-          {/* AI Item match warning badge */}
-          {itemMismatchWarning && (
+          {/* Item match warning badge (warn only) */}
+          {itemWarning && (
             <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-warn/40 bg-warn/10 p-2.5 text-[12px] text-warn">
               <AlertTriangle size={15} className="shrink-0 mt-0.5" />
-              <span>{itemMismatchWarning}</span>
+              <span>{itemWarning}</span>
             </div>
           )}
         </div>
