@@ -257,7 +257,9 @@ class SupplierProductIn(BaseModel):
     stock: int | None = None  # snapshot, not reserved; None = not tracked
     freight: float = 0.0
     price_breaks: list[PriceBreak] = Field(default_factory=list)
-    aliases: list[str] = Field(default_factory=list)  # alternative names used for matching
+    aliases: list[str] = Field(default_factory=list)
+    tax_rate: float | None = Field(default=None, ge=0, le=100)     # GST % the seller states for this item
+    price_includes_tax: bool | None = None                          # whether the pack price already includes it  # alternative names used for matching
 
 
 class SupplierProduct(BaseModel):
@@ -274,6 +276,8 @@ class SupplierProduct(BaseModel):
     freight: float = 0.0
     price_breaks: list[PriceBreak] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list)
+    tax_rate: float | None = Field(default=None, ge=0, le=100)     # GST % the seller states for this item
+    price_includes_tax: bool | None = None                          # whether the pack price already includes it
 
 
 class SupplierProfileIn(BaseModel):
@@ -380,6 +384,8 @@ class DraftQuote(BaseModel):
     moq: int
     max_qty: int | None = None
     price_break_applied: int | None = None  # min_qty of the break used, if any
+    tax_rate: float | None = None
+    price_includes_tax: bool | None = None
     verdict: Verdict
 
 

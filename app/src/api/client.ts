@@ -530,6 +530,8 @@ export interface DraftQuoteDTO {
   moq: number;
   max_qty?: number | null;
   price_break_applied?: number | null;
+  tax_rate?: number | null;
+  price_includes_tax?: boolean | null;
   verdict: VerdictDTO;
 }
 

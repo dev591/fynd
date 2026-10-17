@@ -91,7 +91,7 @@ State is saved to **SQLite (WAL)** at `api/data/app.db`. `cd api && python3 -m a
 ## Test it
 
 ```bash
-cd api && python3 -m pytest -q          # 238 tests
+cd api && python3 -m pytest -q          # 240 tests
 cd app && npx tsc -b && npm run lint && npm run build
 cd api && python3 -m tests.golden.run_live   # real-model check of the 15 buyer sentences (needs keys)
 ```
@@ -115,7 +115,7 @@ worked example, import errors, windows with a fake clock, persistence across a r
 ```
 api/app/     engine.py (rules; landed cost + gates untouched), tax.py, views.py (what each audience may see),
              rfq_store.py, persist.py, auth.py, intake.py, quote_text.py, assistant.py, summary.py, importer.py
-api/tests/   238 tests + golden sets (15 buyer sentences, 8 seller cases)
+api/tests/   240 tests + golden sets (15 buyer sentences, 8 seller cases)
 api/supabase/schema.sql   an early Postgres draft with row-level security. NOT used and NOT kept in sync: the live API uses SQLite
 app/src/     landing story, wizard, buyer desk, seller desk, shared components
 AUDIT.md     what exists against the v2 brief, and the decisions made

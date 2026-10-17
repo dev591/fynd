@@ -116,6 +116,8 @@ export function SupplierQuotePage() {
         leadDays: draft.lead_days,
         moq: draft.moq,
         maxQty: draft.max_qty ?? undefined,
+        taxRate: draft.tax_rate ?? undefined,
+        priceIncludesTax: draft.price_includes_tax ?? undefined,
         notes: assist?.message.text,
       };
     }

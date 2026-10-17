@@ -104,7 +104,7 @@ export function SupplierDashboard() {
     <div className="landing grain min-h-screen bg-ink text-bone pb-16">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <Link to="/" className="flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1 text-[12px] text-muted hover:text-bone">
               <ArrowLeft size={13} /><span>Story</span>
@@ -140,15 +140,13 @@ export function SupplierDashboard() {
               )}
             </button>
             {profile && (
-              <div className="hidden sm:flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-[12px]">
+              <div className="hidden 2xl:flex items-center gap-2 whitespace-nowrap rounded-full border border-line bg-surface px-3 py-1 text-[12px]">
                 <Store size={13} className="text-signal" />
                 <span className="font-medium text-bone">{profile.business_name}</span>
                 <span className="text-muted">({profile.location_city})</span>
               </div>
             )}
-            <Link to="/app" className="rounded-full border border-line bg-raised px-3 py-1 text-[12px] font-medium text-bone hover:border-signal/50 hover:text-signal transition-colors">
-              Switch to Buyer View
-            </Link>
+
             <AccountMenu />
           </div>
         </div>
@@ -303,7 +301,7 @@ export function SupplierDashboard() {
                           onClick={() => { markNotificationViewed(supplierId, n.id).then(refetchInbox).catch(() => {}); }}
                           className="flex items-center gap-1.5 rounded-full bg-signal px-4 py-2 text-[13px] font-medium text-ink transition-transform hover:opacity-95 active:scale-95"
                         >
-                          <span>{n.has_quoted ? "View & Revise" : "Quote in < 1 min"}</span>
+                          <span>{n.rfq_status !== "Open" ? "View" : n.has_quoted ? "View & Revise" : "Quote in < 1 min"}</span>
                           <ArrowRight size={14} />
                         </Link>
                       </div>

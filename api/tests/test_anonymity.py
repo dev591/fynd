@@ -343,3 +343,24 @@ def test_shared_page_hides_the_approvers_name_and_contact_details_in_the_reason(
     for v in buyer_values():
         assert v not in blob, f"shared page leaks the buyer: {v!r}"
     assert shared["decision"]["reason"].startswith("Lowest landed") and shared["decision"]["approver"]
+
+
+def test_shared_page_hides_the_approver_and_contacts_in_exceptions_too(scene):
+    """Found in a real browser: the exception dialog defaults the approver to the buyer's own name."""
+    rid = scene["rid"]
+    quote_late = __import__("tests.helpers", fromlist=["quote"]).quote
+    quote_late(client, rid, "E", price=5, freight=0, lead=9)                  # too slow for a 5-day need
+    late = next(a for a, r in ((a, r) for a, r in
+                {x["quote_id"]: x for x in client.get(f"/api/rfqs/{rid}").json()["evaluation"]["rows"]}.items()) if r["status"] == "exception")
+    client.post(f"/api/rfqs/{rid}/exceptions", json={"alias": late, "approver": BUYER["name"],
+                "reason": f"Saves money. Ring {BUYER['phone']} or {BUYER['email']}"})
+    reveal(scene, late)
+    client.post(f"/api/rfqs/{rid}/decision", json={"winner_id": late, "reason": "x", "approver": BUYER["name"]})
+    link = client.post(f"/api/rfqs/{rid}/share").json()
+    own = client.get(f"/api/rfqs/{rid}/summary").json()
+    assert own["exceptions"][late]["approver"] == BUYER["name"]                # the buyer's own page keeps it
+    app.dependency_overrides.pop(get_current_user, None)
+    blob = json.dumps(client.get(f"/api/share/{link['token']}").json())
+    for v in buyer_values():
+        assert v not in blob, f"shared page leaks the buyer through an exception: {v!r}"
+    assert "Saves money" in blob                                               # the reason itself is still shown

@@ -56,3 +56,14 @@ def test_seed_is_synthetic_and_covers_three_categories():
     cats = {c for p in demo for c in p.categories}
     assert {"fasteners", "packaging", "electricals"} <= cats
     assert all(h["synthetic"] for h in store.history)
+
+
+def test_demo_sellers_state_their_gst_so_the_headline_numbers_are_unchanged(monkeypatch):
+    monkeypatch.setenv("DEMO_AUTOPILOT", "on")
+    store = RFQStore()
+    from app.models import RFQCreate
+    rfq = store.create_rfq(RFQCreate(item="M10 bolt", qty=100, need_in_days=5, buyer_company="c", buyer_name="b"), owner_id="u")
+    a, b = store.quotes[rfq.id]["A"][-1], store.quotes[rfq.id]["B"][-1]
+    assert a.tax_basis == b.tax_basis == "stated" and (a.tax_rate, a.price_includes_tax) == (18.0, False)
+    assert (a.landed_cost, b.landed_cost) == (1200, 1150)                       # the brief's case check, untouched by GST
+    assert a.compare_price == a.pack_price                                      # an exclusive price compared ex-GST is itself

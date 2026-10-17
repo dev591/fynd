@@ -119,7 +119,8 @@ class RFQStore:
             if d:
                 self.submit_quote(token=token, supplier_name=self._supplier_name(sid), pack_price=d.pack_price,
                                   pack_size=d.pack_size, freight=d.freight, lead_days=d.lead_days, moq=d.moq,
-                                  max_qty=d.max_qty, notes="Sample quote (synthetic demo data).")
+                                  max_qty=d.max_qty, notes="Sample quote (synthetic demo data).",
+                                  tax_rate=d.tax_rate, price_includes_tax=d.price_includes_tax)
         return rfq
 
     def _seed_supplier_profiles(self):
@@ -210,6 +211,9 @@ class RFQStore:
 
     def _seed_contacts(self):
         """Obviously fake contact details for the synthetic sellers. Released only on reveal."""
+        for prods in self.supplier_products.values():
+            for prod in prods:                    # demo sellers state their GST: 18%, prices exclude it
+                prod.tax_rate, prod.price_includes_tax = 18.0, False
         for sid, prof in self.supplier_profiles.items():
             n = ord(sid[0]) - 64
             prof.contact_name = f"Demo contact {sid} (synthetic)"
@@ -575,6 +579,7 @@ class RFQStore:
             token=token, supplier_name=self._supplier_name(supplier_id), pack_price=draft.pack_price,
             pack_size=draft.pack_size, freight=draft.freight, lead_days=draft.lead_days, moq=draft.moq,
             max_qty=draft.max_qty, notes=template_message(rfq, draft), origin="auto",
+            tax_rate=draft.tax_rate, price_includes_tax=draft.price_includes_tax,
         )
         qv.origin = "auto"
         return qv
@@ -920,7 +925,7 @@ class RFQStore:
             moq=payload.moq, usual_lead_days=payload.usual_lead_days,
             capacity_cap=payload.capacity_cap, unit=payload.unit,
             stock=payload.stock, freight=payload.freight, price_breaks=payload.price_breaks,
-            aliases=payload.aliases,
+            aliases=payload.aliases, tax_rate=payload.tax_rate, price_includes_tax=payload.price_includes_tax,
         )
         self.supplier_products.setdefault(supplier_id, []).append(prod)
         return prod
@@ -941,6 +946,8 @@ class RFQStore:
                 p.freight = payload.freight
                 p.price_breaks = payload.price_breaks
                 p.aliases = payload.aliases
+                p.tax_rate = payload.tax_rate
+                p.price_includes_tax = payload.price_includes_tax
                 return p
         return None
 

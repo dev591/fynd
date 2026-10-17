@@ -502,7 +502,7 @@ export function DashboardDesk() {
                             <span>·</span>
                             <span>Freight: {inr(row.quote.freight)}</span>
                             {row.landed !== null && qty > 0 && (
-                              <span title="Landed cost over the units you need" className="num">{inr(row.landed / qty)} per usable unit</span>
+                              <span title="Landed cost over the units you need" className="num">· {inr(row.landed / qty)} per usable unit</span>
                             )}
                             {row.overbuy > 0 && (
                               <span className="text-warn" title="Extra units bought because of pack size or minimum order">
@@ -722,7 +722,7 @@ export function DashboardDesk() {
                 </div>
                 <div className="text-[13px] text-muted space-y-1">
                   <p>Winner: <strong className="text-bone">{(details?.revealed?.[rfq.decision.winner_id as string]?.business_name) ?? (rfq.decision.winner_id as string)}</strong></p>
-                  {details?.revealed?.[rfq.decision.winner_id as string] && (
+                  {details?.revealed?.[rfq.decision.winner_id as string]?.phone && (
                     <p className="num">Contact: <span className="text-bone">
                       {details.revealed[rfq.decision.winner_id as string].contact_name} · {details.revealed[rfq.decision.winner_id as string].phone} · {details.revealed[rfq.decision.winner_id as string].email}
                     </span></p>

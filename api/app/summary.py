@@ -120,7 +120,17 @@ def _decision_for(decision: Optional[dict], audience: str) -> Optional[dict]:
     out = {**decision, "approver": "Named approver (hidden on shared links)", "reason": scrub(decision.get("reason")) or ""}
     if out.get("delivery"):
         out["delivery"] = _delivery_for(out["delivery"], "public")
+    if out.get("exceptions"):
+        out["exceptions"] = _exceptions_for(out["exceptions"], "public")
     return out
+
+
+def _exceptions_for(exceptions: dict, audience: str) -> dict:
+    """A shared link keeps each exception's reason (minus any contact details) but not the name that approved it."""
+    if audience == "buyer":
+        return exceptions
+    return {a: {"reason": scrub(e.get("reason")) or "", "approver": "Named approver (hidden on shared links)"}
+            for a, e in exceptions.items()}
 
 
 def _delivery_for(delivery: Optional[dict], audience: str) -> Optional[dict]:
@@ -200,7 +210,7 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
         "cheaper_excluded": [_row(r, rfq.qty) for r in ev.cheaper_excluded],
         "reasons": reasons,
         "delivery": _delivery_for((decision or {}).get("delivery"), audience),
-        "exceptions": {a: r.model_dump() for a, r in store.exceptions_by_alias(rfq_id).items()},
+        "exceptions": _exceptions_for({a: r.model_dump() for a, r in store.exceptions_by_alias(rfq_id).items()}, audience),
         "explainer": explainer,
         "savings": savings,
         "fingerprint": fingerprint({"need": need.model_dump(), "mode": rfq.priority_mode,
