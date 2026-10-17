@@ -1,6 +1,7 @@
 import os
 import uuid
 from datetime import datetime, timedelta
+from typing import Callable
 from typing import Dict, List, Optional
 from .models import (
     RFQ,
@@ -19,6 +20,7 @@ from .models import (
     Verdict,
     DraftQuote,
     Need,
+    BuyerNotice,
     ExceptionRecord,
     Activity,
     AutopilotSettings,
@@ -38,6 +40,26 @@ _DEFAULT_SUPPLIERS = [
     ("B", "Supplier B"),
     ("C", "Supplier C"),
 ]
+
+
+DEFAULT_WINDOW = {"fastest": "15m", "balanced": "today", "cheapest": "24h"}
+_WINDOWS = {"15m": ("15 minutes", 15), "24h": ("24 hours", 24 * 60), "3d": ("3 days", 3 * 24 * 60)}
+
+
+def window_end(key: str, now: datetime) -> tuple[datetime, str, bool]:
+    """When a request's window closes. Today means the end of today, but never less than 15 minutes from now.
+    DEMO_WINDOW_MINUTES shortens every window for a demo and the label says so."""
+    try:
+        demo = int(os.environ.get("DEMO_WINDOW_MINUTES", "0"))
+    except ValueError:
+        demo = 0
+    if demo > 0:
+        return now + timedelta(minutes=demo), f"Demo timing: {demo} minute{'s' if demo != 1 else ''}", True
+    if key == "today":
+        end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+        return max(end, now + timedelta(minutes=15)), "Today", False
+    label, minutes = _WINDOWS.get(key, _WINDOWS["24h"])
+    return now + timedelta(minutes=minutes), label, False
 
 
 class RFQStore:
@@ -60,6 +82,8 @@ class RFQStore:
         self.revealed: Dict[str, Dict[str, dict]] = {}    # rfq_id -> {supplier_id: {buyer_id, at, kind}}
         self.reveal_log: List[dict] = []                  # every first-time reveal: buyer, seller, request, free/paid/repeat
         self.history: List[dict] = []                     # synthetic past orders, labelled as such
+        self.buyer_notices: Dict[str, List[BuyerNotice]] = {}   # buyer_id -> their bell
+        self.clock: Callable[[], datetime] = datetime.now       # injectable, so tests never wait
         self.known_suppliers: Dict[str, Dict[str, str]] = {}      # rfq -> {imp_id: the name the buyer gave}
         self.exceptions: Dict[str, Dict[str, ExceptionRecord]] = {}   # rfq -> supplier -> written exception
         self.plans: Dict[str, str] = {}                   # buyer_id -> "free" | "pro" (mock billing)
@@ -262,6 +286,75 @@ class RFQStore:
         """Imported by the buyer from their own file: they named the supplier, so there is nothing to reveal."""
         return supplier_id.startswith("imp_")
 
+    # ─── Quote windows ─────────────────────────────────────────────────
+
+    def _notice(self, rfq: RFQ, kind: str, message: str) -> bool:
+        """Add to the buyer's bell once per request and kind."""
+        if not rfq.owner_id:
+            return False
+        bell = self.buyer_notices.setdefault(rfq.owner_id, [])
+        if any(n.rfq_id == rfq.id and n.kind == kind for n in bell):
+            return False
+        bell.append(BuyerNotice(id="nt_" + uuid.uuid4().hex[:8], rfq_id=rfq.id, kind=kind, message=message,
+                                created_at=self.clock().isoformat()))
+        return True
+
+    def _best_line(self, rfq: RFQ) -> Optional[str]:
+        quotes = self.get_latest_quotes_as_engine_input(rfq.id)
+        res = evaluate(quotes, Need(item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days),
+                       exceptions=self.exceptions_by_alias(rfq.id), mode=rfq.priority_mode) if quotes else None
+        w = res.winner if res else None
+        return f"{w.supplier} at ₹{w.landed:,.0f} landed, {w.lead_days} days" if w and w.landed is not None else None
+
+    def _quote_notices(self, rfq: RFQ) -> int:
+        """First quote, and enough quotes. Aliases only; no seller is ever named here."""
+        n = sum(1 for v in self.quotes.get(rfq.id, {}).values() if v)
+        sent = 0
+        if n >= 1:
+            sent += self._notice(rfq, "first_quote", f"First quote is in for {rfq.item}. " + (self._best_line(rfq) or "It does not pass your gates yet.") + ".")
+        if n >= rfq.min_quotes:
+            best = self._best_line(rfq)
+            sent += self._notice(rfq, "enough_quotes", f"{n} quotes are in for {rfq.item}. " +
+                                 (f"Best so far: {best}." if best else "None passes your delivery date yet."))
+        return sent
+
+    def _remind(self, rfq: RFQ, which: str, text: str) -> int:
+        sent = 0
+        answered = set(self.quotes.get(rfq.id, {}))
+        for notes in self.notifications.values():
+            for n in notes:
+                if n.rfq_id == rfq.id and n.supplier_id not in answered and n.status != "declined" and which not in n.reminded:
+                    n.reminded.append(which)
+                    n.reminder = text
+                    sent += 1
+        return sent
+
+    def tick(self, now: Optional[datetime] = None) -> int:
+        """Run by a background loop every 30 seconds (and by tests with a fake clock). Idempotent: returns how many
+        things happened, 0 when nothing new was due."""
+        now = now or self.clock()
+        events = 0
+        for rfq in list(self.rfqs.values()):
+            if rfq.status != "Open" or not rfq.window_ends_at or rfq.window_closed:
+                continue
+            start, ends = datetime.fromisoformat(rfq.created_at), datetime.fromisoformat(rfq.window_ends_at)
+            events += self._quote_notices(rfq)
+            if now >= ends:
+                rfq.window_closed = True
+                n = sum(1 for v in self.quotes.get(rfq.id, {}).values() if v)
+                best = self._best_line(rfq)
+                events += 1 + self._notice(rfq, "window_closed",
+                    f"The window for {rfq.item} has closed with {n} quote{'s' if n != 1 else ''}. " +
+                    (f"Best option: {best}. Confirm?" if best else "No quote passes your gates, so there is nothing to confirm yet.")
+                    if n else f"The window for {rfq.item} has closed and no quote came in.")
+                continue
+            closes = ends.strftime("%a %d %b, %H:%M")
+            if now >= start + (ends - start) / 2:
+                events += self._remind(rfq, "halfway", f"Halfway: this request closes {closes} and you haven't answered yet.")
+            if ends - start > timedelta(minutes=30) and now >= ends - timedelta(minutes=15):
+                events += self._remind(rfq, "final", "Closing in 15 minutes: you haven't answered yet.")
+        return events
+
     def alias_for(self, rfq_id: str, supplier_id: str, create: bool = False) -> Optional[str]:
         table = self.aliases.setdefault(rfq_id, {}) if create else self.aliases.get(rfq_id, {})
         if supplier_id not in table and create:
@@ -295,6 +388,7 @@ class RFQStore:
             item=row["item"] if different else None, imported=True,
         )
         history.append(qv)
+        self._quote_notices(rfq)
         return qv
 
     def supplier_for_alias(self, rfq_id: str, alias: str) -> Optional[str]:
@@ -477,6 +571,7 @@ class RFQStore:
             buyer_descriptor=views.buyer_descriptor(self, rfq),
             note=rfq.note if unlocked else scrub(rfq.note), priority_mode=rfq.priority_mode, rfq_status=rfq.status,
             unlocked=unlocked, buyer_contact=views.buyer_contact(self, rfq) if unlocked else None,
+            reminder=n.reminder, closes_at=rfq.window_ends_at, window_closed=rfq.window_closed,
             token=n.token, quote_url=f"/supplier/quote?token={n.token}",
             product=prod, verdict=verdict_for(rfq, prod),
             has_quoted=n.supplier_id in self.quotes.get(rfq.id, {}),
@@ -490,6 +585,7 @@ class RFQStore:
         for n in self.notifications.get(supplier_id, []):
             if n.id == notification_id:
                 n.status = "viewed"
+                n.reminder = None
                 return self._notification_out(n)
         return None
 
@@ -500,6 +596,8 @@ class RFQStore:
     def touch_token(self, token: str, state: str) -> None:
         """Record that a seller opened ('viewed') or started editing ('quoting'). Never moves backwards."""
         n = self._notification_for_token(token)
+        if n:
+            n.reminder = None                      # they have seen the request, so the nudge has done its job
         if n and n.status == "new" or (n and state == "quoting" and n.status in ("viewed", "declined")):
             n.status = state
 
@@ -568,12 +666,16 @@ class RFQStore:
             self.token_to_supplier_name[tok] = self._supplier_name(sid)
 
         primary = list(tokens.values())[0] if tokens else "tok_" + uuid.uuid4().hex[:12]
+        now = self.clock()
+        key = payload.window or DEFAULT_WINDOW.get(payload.priority_mode, "24h")
+        ends, label, demo = window_end(key, now)
         rfq = RFQ(
             id=rfq_id, token=primary,
             item=payload.item, qty=payload.qty, need_in_days=payload.need_in_days,
             buyer_company=payload.buyer_company, buyer_name=payload.buyer_name,
             buyer_city=payload.buyer_city, buyer_state=payload.buyer_state,
-            note=payload.note, created_at=datetime.now().isoformat(),
+            note=payload.note, created_at=now.isoformat(),
+            window_key=key, window_label=label, window_ends_at=ends.isoformat(), demo_timing=demo,
             status="Open", supplier_tokens=tokens,
             priority_mode=payload.priority_mode, source=payload.source, owner_id=owner_id,
             gst_claimable=True if payload.gst_claimable is None else payload.gst_claimable,
@@ -615,6 +717,8 @@ class RFQStore:
         if not supplier_id:
             raise ValueError("Invalid or expired quote token.")
 
+        if rfq.window_closed and not self.quotes.get(rfq_id, {}).get(supplier_id):
+            raise ValueError("The quote window for this request has closed.")
         rfq_quotes = self.quotes.setdefault(rfq_id, {})
         supplier_history = rfq_quotes.setdefault(supplier_id, [])
         self.alias_for(rfq_id, supplier_id, create=True)     # "Seller N", in order of first quote, stable afterwards
@@ -650,6 +754,7 @@ class RFQStore:
         else:
             qv.origin = "manual"
         supplier_history.append(qv)
+        self._quote_notices(rfq)
 
         # Mark pending target as accepted on revision
         if rfq_id in self.targets and supplier_id in self.targets[rfq_id]:

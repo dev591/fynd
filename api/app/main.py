@@ -1,4 +1,5 @@
 import asyncio, json, os
+from contextlib import asynccontextmanager
 from .env import load_env
 
 load_env()  # reads api/.env before anything reads os.environ
@@ -121,7 +122,27 @@ pipeline = build()
 
 PERSIST_STATE = persist.init(store)     # 'loaded' | 'seeded' | 'off'
 
-app = FastAPI(title="Crossover Decision Engine & RFQ API", version="2.0.0")
+async def _window_clock():
+    """Every 30 seconds: close windows, remind sellers, tell buyers. store.tick() reads the store's clock, so
+    tests drive it directly instead of waiting."""
+    while True:
+        await asyncio.sleep(30)
+        try:
+            await run_in_threadpool(store.tick)
+            if persist.enabled():
+                await run_in_threadpool(persist.save, store)
+        except Exception:
+            pass                           # a failed tick must never stop the clock
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    task = asyncio.create_task(_window_clock())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="Crossover Decision Engine & RFQ API", version="2.0.0", lifespan=lifespan)
 
 # Browsers may call this API from the dev server, and from a phone on the same private network. Anywhere
 # else must be added on purpose with CORS_ORIGINS=https://one.example,https://two.example
@@ -315,7 +336,7 @@ def confirm_rfq(payload: ConfirmIn, user: AuthUser = Depends(buyer_only)):
         buyer_company=payload.buyer_company, buyer_name=payload.buyer_name,
         buyer_city=city, buyer_state=state,
         note=payload.note, priority_mode=payload.priority_mode, source=payload.source,
-        gst_claimable=_gst_policy(user, payload.gst_claimable),
+        gst_claimable=_gst_policy(user, payload.gst_claimable), window=payload.window,
     ), owner_id=user.id)
     if payload.intake_id:
         store.link_ai_log(payload.intake_id, rfq.id)
@@ -502,6 +523,32 @@ def import_template():
     rows = importer.parse_csv(importer.TEMPLATE_CSV)
     return {"csv": importer.TEMPLATE_CSV, "json": json.dumps({"quotes": rows}, indent=2),
             "required_columns": list(importer.REQUIRED)}
+
+
+@app.get("/api/me/notices")
+def my_notices(user: AuthUser = Depends(buyer_only)):
+    """The buyer's bell, newest first."""
+    # Newest first; the position breaks ties between notices created in the same instant.
+    items = [n for _, n in sorted(enumerate(store.buyer_notices.get(user.id, [])),
+                                  key=lambda p: (p[1].created_at, p[0]), reverse=True)]
+    return {"notices": [n.model_dump() for n in items], "unread": sum(1 for n in items if not n.read)}
+
+
+@app.post("/api/me/notices/read-all")
+def read_all_notices(user: AuthUser = Depends(buyer_only)):
+    for n in store.buyer_notices.get(user.id, []):
+        n.read = True
+    return {"unread": 0}
+
+
+@app.post("/api/me/notices/{notice_id}/read")
+def read_notice(notice_id: str, user: AuthUser = Depends(buyer_only)):
+    bell = store.buyer_notices.get(user.id, [])
+    n = next((x for x in bell if x.id == notice_id), None)
+    if not n:
+        raise HTTPException(status_code=404, detail="Notice not found.")
+    n.read = True
+    return {"unread": sum(1 for x in bell if not x.read)}
 
 
 @app.get("/api/me/plan")

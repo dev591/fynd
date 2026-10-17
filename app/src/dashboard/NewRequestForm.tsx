@@ -7,7 +7,7 @@ import { IntakePanel } from "./IntakePanel";
 import { useApiOnce } from "../lib/useApi";
 import { dateFromDays, daysFromToday, tomorrow } from "../lib/dates";
 import { useSession } from "../lib/useSession";
-import { getLastOrder, getMe, createRFQ, type LastOrderDTO, type PriorityMode, type RFQCreateResponse } from "../api/client";
+import { getLastOrder, getMe, createRFQ, type LastOrderDTO, type PriorityMode, type RFQCreateResponse, type WindowKey } from "../api/client";
 
 const PRIORITY_OPTIONS: { id: PriorityMode; label: string; hint: string }[] = [
   { id: "cheapest", label: "Cheapest", hint: "Lowest landed cost" },
@@ -27,6 +27,7 @@ export function NewRequestForm() {
   const [lastOrder, setLastOrder] = useState<LastOrderDTO | null>(null);
   const [note, setNote] = useState("");
   const [priority, setPriority] = useState<PriorityMode>("cheapest");
+  const [windowKey, setWindowKey] = useState<WindowKey | "auto">("auto");     // auto = from the priority
   const [gstClaimable, setGstClaimable] = useState<boolean | null>(null);   // null = follow the saved profile
   // Who is asking comes from the signed-in profile, not from a hardcoded buyer.
   const session = useSession();
@@ -75,6 +76,7 @@ export function NewRequestForm() {
         note: note.trim() || undefined,
         priority_mode: priority,
         gst_claimable: gstClaimable ?? me?.profile?.buyer?.gst_claimable ?? true,
+        window: windowKey === "auto" ? undefined : windowKey,
         source: "form",
       });
       setCreated(res);
@@ -217,6 +219,22 @@ export function NewRequestForm() {
               />
               {needInDays >= 1 && <p className="mt-1 text-[11px] text-muted">{needInDays} day{needInDays === 1 ? "" : "s"} from today</p>}
             </div>
+          </div>
+
+          <div>
+            <label className="label mb-1.5 block text-bone">Sellers have</label>
+            <select value={windowKey} onChange={e => setWindowKey(e.target.value as WindowKey | "auto")}
+              className="w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-[14px] text-bone focus:border-signal focus:outline-none">
+              <option value="auto">{({ fastest: "15 minutes", balanced: "until end of today", cheapest: "24 hours" } as Record<string, string>)[priority]} (suggested for {priority})</option>
+              <option value="15m">15 minutes</option>
+              <option value="today">Until the end of today</option>
+              <option value="24h">24 hours</option>
+              <option value="3d">3 days</option>
+            </select>
+            <p className="mt-1 text-[11px] text-muted">
+              You're told when the first quote arrives, when enough have, and when the window closes with the best option.
+              Sellers who haven't answered get a reminder.
+            </p>
           </div>
 
           {lastOrder && (lastOrder.last || lastOrder.today) && (

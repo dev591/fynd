@@ -69,6 +69,8 @@ def public_rfq(store, rfq) -> dict[str, Any]:
         "buyer_city": rfq.buyer_city, "buyer_state": rfq.buyer_state, "note": rfq.note,
         "created_at": rfq.created_at, "status": rfq.status, "decision": rfq.decision, "gst_claimable": rfq.gst_claimable,
         "priority_mode": rfq.priority_mode, "source": rfq.source,
+        "window_key": rfq.window_key, "window_label": rfq.window_label, "window_ends_at": rfq.window_ends_at,
+        "window_closed": rfq.window_closed, "demo_timing": rfq.demo_timing, "min_quotes": rfq.min_quotes,
         "matched_count": len(rfq.supplier_tokens), "quote_count": len(store.aliases.get(rfq.id, {})),
     }
 
@@ -218,6 +220,7 @@ def seller_request(store, token: str) -> Optional[dict[str, Any]]:
         "buyer_descriptor": buyer_descriptor(store, rfq), "priority_mode": rfq.priority_mode,
         "note": rfq.note if shown else scrub(rfq.note), "status": rfq.status,
         "supplier_id": sid, "supplier_name": store.get_supplier_name_for_token(token), "unlocked": shown,
+        "closes_at": rfq.window_ends_at, "window_closed": rfq.window_closed,
     }
     if shown:
         out["buyer_contact"] = buyer_contact(store, rfq)

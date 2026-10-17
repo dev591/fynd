@@ -134,6 +134,7 @@ class RFQCreate(BaseModel):
     priority_mode: PriorityMode = "cheapest"
     source: RequestSource = "form"
     gst_claimable: bool | None = None         # None = use the buyer's profile policy, else claimable
+    window: Literal["15m", "today", "24h", "3d"] | None = None    # how long sellers have to quote; None = from priority
 
 
 class RFQ(BaseModel):
@@ -154,6 +155,12 @@ class RFQ(BaseModel):
     source: RequestSource = "form"
     owner_id: str | None = None   # the signed-in buyer who created it
     gst_claimable: bool = True    # compare ex-GST when true, GST-inclusive when false
+    window_key: str = "24h"       # 15m | today | 24h | 3d
+    window_label: str = ""
+    window_ends_at: str | None = None
+    window_closed: bool = False   # new sellers can no longer start a quote; quoted sellers can still revise
+    min_quotes: int = 3           # how many quotes count as "enough"
+    demo_timing: bool = False     # true when DEMO_WINDOW_MINUTES shortened the window for a demo
     supplier_tokens: dict[str, str] = Field(default_factory=dict)  # supplier_id -> token
 
 
@@ -333,6 +340,8 @@ class Notification(BaseModel):
     created_at: str
     status: Literal["new", "viewed", "quoting", "declined"] = "new"
     unlocked_at: str | None = None    # set when the buyer reveals this seller
+    reminder: str | None = None       # a nudge shown until the seller opens the request
+    reminded: list[str] = Field(default_factory=list)    # which nudges were sent: "halfway", "final"
 
 
 class NotificationOut(BaseModel):
@@ -352,6 +361,9 @@ class NotificationOut(BaseModel):
     rfq_status: str
     token: str
     quote_url: str
+    reminder: str | None = None
+    closes_at: str | None = None
+    window_closed: bool = False
     product: SupplierProduct
     verdict: Verdict
     has_quoted: bool = False
@@ -400,6 +412,7 @@ class ConfirmIn(BaseModel):
     note: str | None = None
     intake_id: str | None = None
     gst_claimable: bool | None = None
+    window: Literal["15m", "today", "24h", "3d"] | None = None
 
 
 class AutopilotSettings(BaseModel):
@@ -432,3 +445,13 @@ class DeclineIn(BaseModel):
 class ImportIn(BaseModel):
     format: Literal["csv", "json"]
     data: str = Field(max_length=200_000)
+
+
+class BuyerNotice(BaseModel):
+    """The buyer's bell: the first quote, enough quotes, and the window closing with the best option."""
+    id: str
+    rfq_id: str
+    kind: Literal["first_quote", "enough_quotes", "window_closed"]
+    message: str
+    created_at: str
+    read: bool = False

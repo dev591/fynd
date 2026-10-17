@@ -8,6 +8,7 @@ import { VerifiedBadge } from "./components/VerifiedBadge";
 import { StatusChip } from "./components/StatusChip";
 import { useApiPoll, useApiOnce } from "../lib/useApi";
 import { useSupplierId } from "../lib/useSupplierId";
+import { closesAt } from "../lib/windowTime";
 import { AccountMenu } from "../components/AccountMenu";
 import { computeStatus } from "./types";
 import {
@@ -56,7 +57,7 @@ export function SupplierDashboard() {
       console.error("Failed to change autopilot:", e);
     }
   };
-  const unread = (inbox || []).filter(n => n.status === "new").length;
+  const unread = (inbox || []).filter(n => n.status === "new" || !!n.reminder).length;
 
   // Product form state
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -272,6 +273,16 @@ export function SupplierDashboard() {
                           <span>·</span>
                           <span className="capitalize">Priority: {n.priority_mode}</span>
                         </p>
+                        {n.reminder && (
+                          <div className="rounded-lg border border-warn/40 bg-warn/10 p-2 text-[12px] text-warn" role="status">{n.reminder}</div>
+                        )}
+                        {n.closes_at && (
+                          <p className="text-[11px] text-muted">
+                            {n.window_closed
+                              ? (n.has_quoted ? "Window closed. You can still revise the quote you sent." : "Window closed. New quotes are not being accepted.")
+                              : `Quotes close ${closesAt(n.closes_at)}`}
+                          </p>
+                        )}
                         {n.unlocked && n.buyer_contact && (
                           <div className="rounded-lg border border-live/40 bg-live/10 p-2.5 text-[12px] text-bone">
                             <strong>A buyer unlocked you.</strong> Contact: {n.buyer_contact.name}, {n.buyer_contact.company}

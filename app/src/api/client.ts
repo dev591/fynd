@@ -148,6 +148,8 @@ export interface RFQCreatePayload {
   source?: "form" | "chat" | "voice";
   /** Compare ex-GST when true, GST-inclusive when false. Blank = your saved policy. */
   gst_claimable?: boolean;
+  /** How long sellers have to quote. Blank = from your priority. */
+  window?: WindowKey;
 }
 
 export type PriorityMode = "cheapest" | "fastest" | "balanced";
@@ -210,7 +212,17 @@ export interface RFQDTO {
   matched_count: number;
   quote_count: number;
   gst_claimable?: boolean;
+  window_key?: WindowKey;
+  window_label?: string;
+  /** ISO time the quote window closes. After that, new sellers cannot start a quote; quoted ones can still revise. */
+  window_ends_at?: string | null;
+  window_closed?: boolean;
+  /** True when DEMO_WINDOW_MINUTES shortened the window for a demo. */
+  demo_timing?: boolean;
+  min_quotes?: number;
 }
+
+export type WindowKey = "15m" | "today" | "24h" | "3d";
 
 /** What a revealed seller looks like. Present only for sellers this buyer has unlocked. */
 export interface SellerIdentity {
@@ -342,6 +354,7 @@ export interface ConfirmPayload {
   need_in_days: number;
   priority_mode: PriorityMode;
   source: "form" | "chat" | "voice";
+  window?: WindowKey;
   buyer_company: string;
   buyer_name: string;
   buyer_city: string;
@@ -474,6 +487,8 @@ export interface SupplierRFQView {
   buyer_descriptor: string;
   priority_mode?: PriorityMode;
   unlocked: boolean;
+  closes_at?: string | null;
+  window_closed?: boolean;
   /** Present only after the buyer has unlocked this seller. */
   buyer_contact?: BuyerContact;
   note?: string;
@@ -666,6 +681,9 @@ export interface NotificationDTO {
   buyer_contact?: BuyerContact | null;
   note?: string | null;
   priority_mode: PriorityMode;
+  reminder?: string | null;
+  closes_at?: string | null;
+  window_closed?: boolean;
   rfq_status: string;
   token: string;
   quote_url: string;
@@ -768,6 +786,27 @@ export async function importQuotes(rfqId: string, format: "csv" | "json", data: 
 
 export async function getImportTemplate(): Promise<{ csv: string; json: string; required_columns: string[] }> {
   return apiFetch("/api/import-template");
+}
+
+export interface BuyerNoticeDTO {
+  id: string;
+  rfq_id: string;
+  kind: "first_quote" | "enough_quotes" | "window_closed";
+  message: string;
+  created_at: string;
+  read: boolean;
+}
+
+export async function getNotices(): Promise<{ notices: BuyerNoticeDTO[]; unread: number }> {
+  return apiFetch("/api/me/notices");
+}
+
+export async function readNotice(id: string): Promise<{ unread: number }> {
+  return apiFetch(`/api/me/notices/${id}/read`, { method: "POST" });
+}
+
+export async function readAllNotices(): Promise<{ unread: number }> {
+  return apiFetch("/api/me/notices/read-all", { method: "POST" });
 }
 
 export async function getPlan(): Promise<PlanInfo> {

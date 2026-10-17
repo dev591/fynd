@@ -328,7 +328,12 @@ export function SupplierQuotePage() {
           </button>
         </div>
 
-        {!isClosed && !latestQuote && (
+        {rfq.window_closed && !latestQuote && !isClosed && (
+          <div role="status" className="rounded-xl border border-line bg-raised/40 p-4 text-center text-[13px] text-muted">
+            The quote window for this request has closed, so new quotes are not being accepted.
+          </div>
+        )}
+        {!isClosed && !latestQuote && !rfq.window_closed && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-surface/60 px-4 py-2.5 text-[13px]">
             {declined ? (
               <span className="text-muted">You told the buyer you can't supply this. You can still send a quote below if that changes.</span>
@@ -444,7 +449,7 @@ export function SupplierQuotePage() {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : rfq.window_closed && !latestQuote ? null : (
               <div className="rounded-2xl border border-line bg-surface/90 p-5 sm:p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-line/60">
                   <div>

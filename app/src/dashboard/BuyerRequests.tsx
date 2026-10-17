@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Plus, ArrowRight, Package, AlertTriangle, Building2 } from "lucide-react";
 import { useApiPoll } from "../lib/useApi";
 import { AccountMenu } from "../components/AccountMenu";
+import { NoticeBell } from "../components/NoticeBell";
 import { createSampleRequest, getRFQs, getSavings, type RFQDTO } from "../api/client";
 
 export function BuyerRequests() {
@@ -42,6 +43,7 @@ export function BuyerRequests() {
             <Link to="/supplier" className="rounded-full border border-line bg-raised px-3 py-1.5 text-[12px] font-medium text-bone hover:border-signal/50 hover:text-signal">
               Supplier Portal
             </Link>
+            <NoticeBell />
             <AccountMenu />
           </div>
         </div>

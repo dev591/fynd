@@ -6,6 +6,8 @@ import {
   Save, Lock, X, Unlock, ShieldCheck, Upload, Download,
 } from "lucide-react";
 import { FactTag } from "../components/FactTag";
+import { NoticeBell } from "../components/NoticeBell";
+import { closesAt, timeLeft, useNow } from "../lib/windowTime";
 import { evaluate, giveUp, inr, MODES, naivePick, negotiation, type Mode, type Quote } from "../landing/engine";
 import { CostChart } from "../landing/CostChart";
 import { QtyControl } from "../landing/QtyControl";
@@ -222,6 +224,7 @@ export function DashboardDesk() {
 
           <div className="flex items-center gap-3">
             {details?.plan && <PlanChip plan={details.plan} />}
+            <NoticeBell />
             {liveDot && (
               <span className="flex items-center gap-1.5 text-[12px] text-live">
                 <span className="h-1.5 w-1.5 rounded-full bg-live animate-pulse" /> Live
@@ -265,6 +268,7 @@ export function DashboardDesk() {
               <span className="inline-flex items-center gap-1 rounded-full border border-line bg-raised px-2.5 py-0.5 text-[11px] font-medium text-bone">
                 <MessageSquare size={12} /> {Object.keys(apiQuotes).length} quotes
               </span>
+              <WindowChip rfq={rfq} decided={isDecided} />
               <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${isDecided ? "border-success/30 bg-success/15 text-success" : "border-live/30 bg-live/15 text-live"}`}>
                 {isDecided ? "Decided" : "Open"}
               </span>
@@ -1246,5 +1250,23 @@ function ImportModal({ rfqId, onClose, onLoaded }: { rfqId: string; onClose: () 
         </div>
       </div>
     </div>
+  );
+}
+
+
+// ─── Quote window countdown ────────────────────────────────────────────────
+
+function WindowChip({ rfq, decided }: { rfq: NonNullable<RFQDetailsDTO["rfq"]>; decided: boolean }) {
+  const now = useNow();
+  if (decided || !rfq.window_ends_at) return null;
+  const left = rfq.window_closed ? null : timeLeft(rfq.window_ends_at, now);
+  const label = left
+    ? `Quotes close in ${left}`
+    : "Window closed. Quoted sellers can still revise";
+  return (
+    <span className={`num inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${left ? "border-live/30 bg-live/10 text-live" : "border-line bg-raised text-muted"}`}
+      title={`Closes ${closesAt(rfq.window_ends_at)}${rfq.demo_timing ? ". Demo timing: shortened for this demo." : ""}`}>
+      {label}{rfq.demo_timing ? " · demo timing" : ""}
+    </span>
   );
 }
