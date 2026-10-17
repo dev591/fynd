@@ -31,6 +31,7 @@ from .models import (
     SupplierProduct,
     ChatMessageIn,
     ChatMessage,
+    NotificationOut,
 )
 from .validators import cross_check_tax, mask_pan
 from .engine import evaluate, run_case_checks, negotiation
@@ -168,12 +169,31 @@ def create_rfq(payload: RFQCreate):
         "token": rfq.token,
         "supplier_url": f"/supplier/quote?token={rfq.token}",
         "supplier_tokens": rfq.supplier_tokens,
+        "matched": len(rfq.supplier_tokens),
         "supplier_urls": {
             sid: f"/supplier/quote?token={tok}"
             for sid, tok in rfq.supplier_tokens.items()
         },
         "rfq": rfq,
     }
+
+
+@app.get("/api/suppliers")
+def list_suppliers():
+    return store.list_suppliers()
+
+
+@app.get("/api/supplier/{supplier_id}/notifications", response_model=List[NotificationOut])
+def list_notifications(supplier_id: str):
+    return store.list_notifications(supplier_id)
+
+
+@app.post("/api/supplier/{supplier_id}/notifications/{notification_id}/read", response_model=NotificationOut)
+def read_notification(supplier_id: str, notification_id: str):
+    n = store.mark_notification_viewed(supplier_id, notification_id)
+    if not n:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    return n
 
 
 @app.get("/api/rfqs", response_model=List[RFQ])

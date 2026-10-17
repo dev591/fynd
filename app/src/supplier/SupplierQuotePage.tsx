@@ -49,8 +49,10 @@ export function SupplierQuotePage() {
 
   // Supplier products (one-time load)
   const { data: products } = useApiPoll<SupplierProductDTO[]>(
-    () => getSupplierProducts("A"), 5000, [],
+    () => rfq?.supplier_id ? getSupplierProducts(rfq.supplier_id) : Promise.resolve([]),
+    5000, [rfq?.supplier_id],
   );
+  const sellerName = rfq?.supplier_name || "Supplier";
 
   const [activeTab, setActiveTab] = useState<"quote" | "chat">("quote");
   const [isRevising, setIsRevising] = useState(false);
@@ -103,7 +105,7 @@ export function SupplierQuotePage() {
     setSubmitError(null);
     try {
       await submitQuoteByToken(token, {
-        supplier_name: "Supplier A",
+        supplier_name: sellerName,
         pack_price: data.packPrice,
         pack_size: data.packSize,
         freight: data.freight,
@@ -131,7 +133,7 @@ export function SupplierQuotePage() {
     try {
       await postChatByToken(token, {
         sender: "supplier",
-        sender_name: "Supplier A",
+        sender_name: sellerName,
         text,
       });
       refetchChat();
@@ -429,7 +431,7 @@ export function SupplierQuotePage() {
           <SupplierChat
             messages={chatMessages || []}
             currentRole="supplier"
-            currentUserName="Supplier A"
+            currentUserName={sellerName}
             onSendMessage={handleSendMessage}
             onReviseFromTarget={() => { setActiveTab("quote"); setIsRevising(true); }}
           />

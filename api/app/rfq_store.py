@@ -13,8 +13,12 @@ from .models import (
     SupplierProductIn,
     SupplierProfileIn,
     ChatMessage,
+    Notification,
+    NotificationOut,
+    Verdict,
 )
 from .engine import order
+from .matching import matching_product, verdict_for
 
 # Default supplier labels for demo invites
 _DEFAULT_SUPPLIERS = [
@@ -39,9 +43,11 @@ class RFQStore:
         self.supplier_profiles: Dict[str, SupplierProfileOut] = {}
         self.supplier_products: Dict[str, List[SupplierProduct]] = {}
         self.chats: Dict[str, Dict[str, List[ChatMessage]]] = {}
+        self.notifications: Dict[str, List[Notification]] = {}  # supplier_id -> inbox
 
         self._seed_default_data()
         self._seed_supplier_profiles()
+        self._seed_marketplace()
 
     # ─── Seeding ───────────────────────────────────────────────────────
 
@@ -113,29 +119,142 @@ class RFQStore:
         self.supplier_products["A"] = [
             SupplierProduct(id="prod_a1", name="M10 Hex Bolt (Grade 8.8 High-Tensile)",
                             category="fasteners", pack_price=10, pack_size=1, moq=50,
-                            usual_lead_days=3, unit="pc"),
+                            usual_lead_days=3, unit="pc", stock=500, freight=200,
+                            aliases=["M10 bolt", "M10 hex bolt"]),
             SupplierProduct(id="prod_a2", name="M10 Zinc-Plated Box Pack (Box of 50)",
                             category="fasteners", pack_price=450, pack_size=50, moq=50,
-                            usual_lead_days=2, unit="box"),
+                            usual_lead_days=2, unit="box", stock=2000, freight=200,
+                            aliases=["M10 box pack"]),
         ]
         self.supplier_products["B"] = [
             SupplierProduct(id="prod_b1", name="M10 Hex Bolt (Standard Grade)",
                             category="fasteners", pack_price=11, pack_size=1, moq=1,
-                            usual_lead_days=3, unit="pc"),
+                            usual_lead_days=3, unit="pc", stock=80, freight=50,
+                            aliases=["M10 bolt"]),
+        ]
+        self.supplier_products["C"] = [
+            SupplierProduct(id="prod_c1", name="M10 Bolt Box of 50",
+                            category="fasteners", pack_price=400, pack_size=50, moq=50,
+                            usual_lead_days=7, unit="box", stock=5000, freight=0,
+                            aliases=["M10 bolt"]),
+        ]
+
+    def _seed_marketplace(self):
+        """Synthetic sellers across 3 categories so matching has someone to find. All labelled synthetic."""
+        def seller(sid, name, city, state, cats, tier, products):
+            self.supplier_profiles[sid] = SupplierProfileOut(
+                supplier_id=sid, business_name=name, location_city=city, location_state=state,
+                categories=cats, description="Synthetic demo seller.", verification_tier=tier,
+                synthetic=True,
+            )
+            self.supplier_products[sid] = products
+
+        def prod(pid, name, cat, price, size, moq, lead, unit, stock, freight, aliases):
+            return SupplierProduct(id=pid, name=name, category=cat, pack_price=price, pack_size=size,
+                                   moq=moq, usual_lead_days=lead, unit=unit, stock=stock,
+                                   freight=freight, aliases=aliases)
+
+        washer = lambda pid, stock, lead: prod(pid, "M8 Flat Washer", "fasteners", 2, 1, 1, lead, "pc", stock, 80, ["M8 washer"])
+        seller("D", "Nashik Fastener Mart (synthetic)", "Nashik", "Maharashtra", ["fasteners"], "tax_ids", [
+            prod("prod_d1", "M10 Hex Bolt Zinc", "fasteners", 10.5, 1, 1, 2, "pc", 0, 90, ["M10 bolt"]),
+            washer("prod_d2", 3000, 2),
+        ])
+        seller("E", "Thane Industrial Hub (synthetic)", "Thane", "Maharashtra", ["fasteners"], "email", [
+            prod("prod_e1", "M10 Hex Bolt Black", "fasteners", 10.8, 1, 1, 4, "pc", 400, 120, ["M10 bolt"]),
+            washer("prod_e2", 1000, 3),
+        ])
+        for sid, name, city, state, price, stock, lead in [
+            ("F", "Vapi Pack Solutions (synthetic)", "Vapi", "Gujarat", 38, 900, 3),
+            ("G", "Bhiwandi Cartons (synthetic)", "Bhiwandi", "Maharashtra", 41, 150, 2),
+            ("H", "Surat Pack Co (synthetic)", "Surat", "Gujarat", 36, 5000, 6),
+        ]:
+            seller(sid, name, city, state, ["packaging"], "tax_ids", [
+                prod(f"prod_{sid.lower()}1", "5 Ply Corrugated Box", "packaging", price, 1, 50, lead, "pc",
+                     stock, 300, ["corrugated box", "5-ply box"]),
+            ])
+        for sid, name, city, state, price, stock, lead in [
+            ("I", "Pune Cable House (synthetic)", "Pune", "Maharashtra", 1450, 40, 2),
+            ("J", "Chakan Electricals (synthetic)", "Chakan", "Maharashtra", 1380, 200, 4),
+        ]:
+            seller(sid, name, city, state, ["electricals"], "registry", [
+                prod(f"prod_{sid.lower()}1", "1.5 sq mm Copper Wire 90m Coil", "electricals", price, 1, 1, lead,
+                     "coil", stock, 150, ["copper wire", "1.5mm copper wire"]),
+            ])
+
+        # The seeded demo request reaches its three invited sellers too.
+        seeded = self.rfqs["rfq_c27_01"]
+        self._notify(seeded, {sid: m for sid, m in self.match_suppliers(seeded.item).items()
+                              if sid in seeded.supplier_tokens})
+
+    # ─── Matching & notifications ──────────────────────────────────────
+
+    def _supplier_name(self, sid: str) -> str:
+        prof = self.supplier_profiles.get(sid)
+        return prof.business_name if prof else dict(_DEFAULT_SUPPLIERS).get(sid, f"Supplier {sid}")
+
+    def match_suppliers(self, item: str) -> Dict[str, SupplierProduct]:
+        """supplier_id -> matching catalog row. Exact and alias matches only."""
+        found: Dict[str, SupplierProduct] = {}
+        for sid, prods in self.supplier_products.items():
+            hit = matching_product(item, prods)
+            if hit:
+                found[sid] = hit
+        return found
+
+    def _notify(self, rfq: RFQ, matches: Dict[str, SupplierProduct]) -> None:
+        for sid, prod in matches.items():
+            self.notifications.setdefault(sid, []).append(Notification(
+                id="ntf_" + uuid.uuid4().hex[:8], rfq_id=rfq.id, supplier_id=sid,
+                product_id=prod.id, token=rfq.supplier_tokens[sid],
+                created_at=datetime.now().isoformat(),
+            ))
+
+    def _notification_out(self, n: Notification) -> Optional[NotificationOut]:
+        rfq = self.rfqs.get(n.rfq_id)
+        prod = next((p for p in self.supplier_products.get(n.supplier_id, []) if p.id == n.product_id), None)
+        if not rfq or not prod:
+            return None
+        return NotificationOut(
+            id=n.id, rfq_id=rfq.id, supplier_id=n.supplier_id, status=n.status, created_at=n.created_at,
+            item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days,
+            buyer_company=rfq.buyer_company, buyer_city=rfq.buyer_city, buyer_state=rfq.buyer_state,
+            note=rfq.note, priority_mode=rfq.priority_mode, rfq_status=rfq.status,
+            token=n.token, quote_url=f"/supplier/quote?token={n.token}",
+            product=prod, verdict=verdict_for(rfq, prod),
+            has_quoted=n.supplier_id in self.quotes.get(rfq.id, {}),
+        )
+
+    def list_notifications(self, supplier_id: str) -> List[NotificationOut]:
+        outs = (self._notification_out(n) for n in self.notifications.get(supplier_id, []))
+        return sorted((o for o in outs if o), key=lambda o: o.created_at, reverse=True)
+
+    def mark_notification_viewed(self, supplier_id: str, notification_id: str) -> Optional[NotificationOut]:
+        for n in self.notifications.get(supplier_id, []):
+            if n.id == notification_id:
+                n.status = "viewed"
+                return self._notification_out(n)
+        return None
+
+    def list_suppliers(self) -> List[dict]:
+        return [
+            {"supplier_id": sid, "business_name": p.business_name, "location_city": p.location_city,
+             "categories": p.categories, "synthetic": p.synthetic}
+            for sid, p in sorted(self.supplier_profiles.items())
         ]
 
     # ─── RFQ Lifecycle ─────────────────────────────────────────────────
 
-    def create_rfq(self, payload: RFQCreate, num_suppliers: int = 2) -> RFQ:
+    def create_rfq(self, payload: RFQCreate) -> RFQ:
+        """Create the request, find every seller whose catalog has the item, notify each once."""
         rfq_id = "rfq_" + uuid.uuid4().hex[:8]
+        matches = self.match_suppliers(payload.item)
         tokens: dict[str, str] = {}
-        for i in range(num_suppliers):
-            sid = chr(ord("A") + i)
+        for sid in matches:
             tok = "tok_" + uuid.uuid4().hex[:12]
             tokens[sid] = tok
             self.token_to_rfq_id[tok] = rfq_id
             self.token_to_supplier_id[tok] = sid
-            self.token_to_supplier_name[tok] = dict(_DEFAULT_SUPPLIERS).get(sid, f"Supplier {sid}")
+            self.token_to_supplier_name[tok] = self._supplier_name(sid)
 
         primary = list(tokens.values())[0] if tokens else "tok_" + uuid.uuid4().hex[:12]
         rfq = RFQ(
@@ -151,6 +270,7 @@ class RFQStore:
         self.quotes[rfq_id] = {}
         self.targets[rfq_id] = {}
         self.chats[rfq_id] = {}
+        self._notify(rfq, matches)
         return rfq
 
     def get_rfq(self, rfq_id: str) -> Optional[RFQ]:
@@ -175,6 +295,8 @@ class RFQStore:
             "buyer_state": rfq.buyer_state,
             "note": rfq.note,
             "status": rfq.status,
+            "supplier_id": self.token_to_supplier_id.get(token),
+            "supplier_name": self.get_supplier_name_for_token(token),
         }
 
     def submit_quote(
@@ -352,6 +474,7 @@ class RFQStore:
             moq=payload.moq, usual_lead_days=payload.usual_lead_days,
             capacity_cap=payload.capacity_cap, unit=payload.unit,
             stock=payload.stock, freight=payload.freight, price_breaks=payload.price_breaks,
+            aliases=payload.aliases,
         )
         self.supplier_products.setdefault(supplier_id, []).append(prod)
         return prod
@@ -371,6 +494,7 @@ class RFQStore:
                 p.stock = payload.stock
                 p.freight = payload.freight
                 p.price_breaks = payload.price_breaks
+                p.aliases = payload.aliases
                 return p
         return None
 

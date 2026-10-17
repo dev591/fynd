@@ -194,6 +194,7 @@ export interface RFQDetailsDTO {
 }
 
 export interface RFQCreateResponse {
+  matched?: number;
   id: string;
   token: string;
   supplier_url: string;
@@ -249,6 +250,8 @@ export interface SupplierRFQView {
   buyer_state: string;
   note?: string;
   status: string;
+  supplier_id?: string | null;
+  supplier_name?: string;
 }
 
 export interface QuoteSubmitPayload {
@@ -306,6 +309,7 @@ export interface SupplierProductDTO {
   stock?: number | null;
   freight?: number;
   price_breaks?: Array<{ min_qty: number; pack_price: number }>;
+  aliases?: string[];
 }
 
 export async function getSupplierProfile(supplierId: string): Promise<SupplierProfileDTO> {
@@ -336,6 +340,55 @@ export async function updateSupplierProduct(supplierId: string, productId: strin
 
 export async function deleteSupplierProduct(supplierId: string, productId: string): Promise<void> {
   await apiFetch(`/api/supplier/products/${supplierId}/${productId}`, { method: "DELETE" });
+}
+
+// ─── Sellers, matching, inbox ─────────────────────────────────────────────
+
+export interface SellerSummary {
+  supplier_id: string;
+  business_name: string;
+  location_city: string;
+  categories: string[];
+  synthetic: boolean;
+}
+
+export interface VerdictDTO {
+  can_fulfil: "yes" | "partly" | "no";
+  reasons: string[];
+}
+
+export interface NotificationDTO {
+  id: string;
+  rfq_id: string;
+  supplier_id: string;
+  status: "new" | "viewed";
+  created_at: string;
+  item: string;
+  qty: number;
+  need_in_days: number;
+  buyer_company: string;
+  buyer_city: string;
+  buyer_state: string;
+  note?: string | null;
+  priority_mode: PriorityMode;
+  rfq_status: string;
+  token: string;
+  quote_url: string;
+  product: SupplierProductDTO;
+  verdict: VerdictDTO;
+  has_quoted: boolean;
+}
+
+export async function getSellers(): Promise<SellerSummary[]> {
+  return apiFetch("/api/suppliers");
+}
+
+export async function getNotifications(supplierId: string): Promise<NotificationDTO[]> {
+  return apiFetch(`/api/supplier/${supplierId}/notifications`);
+}
+
+export async function markNotificationViewed(supplierId: string, id: string): Promise<NotificationDTO> {
+  return apiFetch(`/api/supplier/${supplierId}/notifications/${id}/read`, { method: "POST" });
 }
 
 // ─── Buyer-side supplier profile (click-through) ──────────────────────────

@@ -223,6 +223,7 @@ class SupplierProductIn(BaseModel):
     stock: int | None = None  # snapshot, not reserved; None = not tracked
     freight: float = 0.0
     price_breaks: list[PriceBreak] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)  # alternative names used for matching
 
 
 class SupplierProduct(BaseModel):
@@ -238,6 +239,7 @@ class SupplierProduct(BaseModel):
     stock: int | None = None  # snapshot, not reserved; None = not tracked
     freight: float = 0.0
     price_breaks: list[PriceBreak] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
 
 
 class SupplierProfileIn(BaseModel):
@@ -256,6 +258,7 @@ class SupplierProfileOut(BaseModel):
     categories: list[str] = Field(default_factory=list)
     description: str | None = None
     verification_tier: Literal["email", "tax_ids", "registry", "none"] = "none"
+    synthetic: bool = True  # all demo sellers are synthetic and labelled so
     products: list[SupplierProduct] = Field(default_factory=list)
 
 
@@ -281,3 +284,42 @@ class ChatMessage(BaseModel):
 class SupplierInviteIn(BaseModel):
     supplier_id: str  # for seeded data; auto-generated if blank
     supplier_name: str | None = None
+
+
+# ─── Matching, notifications, seller inbox ─────────────────────────────────
+
+class Verdict(BaseModel):
+    can_fulfil: Literal["yes", "partly", "no"]
+    reasons: list[str] = Field(default_factory=list)
+
+
+class Notification(BaseModel):
+    id: str
+    rfq_id: str
+    supplier_id: str
+    product_id: str
+    token: str
+    created_at: str
+    status: Literal["new", "viewed"] = "new"
+
+
+class NotificationOut(BaseModel):
+    id: str
+    rfq_id: str
+    supplier_id: str
+    status: Literal["new", "viewed"]
+    created_at: str
+    item: str
+    qty: int
+    need_in_days: int
+    buyer_company: str
+    buyer_city: str
+    buyer_state: str
+    note: str | None = None
+    priority_mode: PriorityMode = "cheapest"
+    rfq_status: str
+    token: str
+    quote_url: str
+    product: SupplierProduct
+    verdict: Verdict
+    has_quoted: bool = False

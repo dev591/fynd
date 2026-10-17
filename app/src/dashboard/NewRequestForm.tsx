@@ -92,6 +92,11 @@ export function NewRequestForm() {
             <p className="text-[13px] text-muted">
               <strong className="text-bone">{created.rfq.item}</strong> · {created.rfq.qty} units · needed within {created.rfq.need_in_days} days
             </p>
+            <p className="text-[12px] text-signal">
+              {created.matched
+                ? `${created.matched} seller${created.matched === 1 ? "" : "s"} stock this item and ${created.matched === 1 ? "was" : "were"} notified (synthetic demo sellers).`
+                : "No seller in the network stocks this item yet. Share the link below with your own suppliers."}
+            </p>
           </div>
 
           {/* QR Moment — the big QR display */}

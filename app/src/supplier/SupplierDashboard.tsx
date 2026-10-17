@@ -2,45 +2,42 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft, Building2, Package, Plus, ArrowRight,
-  Store, AlertTriangle,
+  Store, AlertTriangle, Bell,
 } from "lucide-react";
 import { VerifiedBadge } from "./components/VerifiedBadge";
 import { StatusChip } from "./components/StatusChip";
-import { Money } from "./components/Money";
 import { useApiPoll, useApiOnce } from "../lib/useApi";
+import { useSupplierId } from "../lib/useSupplierId";
 import { computeStatus } from "./types";
 import {
-  getRFQs, getSupplierProfile, getSupplierProducts,
+  getSellers, getNotifications, markNotificationViewed,
+  getSupplierProfile, getSupplierProducts,
   addSupplierProduct, deleteSupplierProduct,
-  getMyQuotes,
-  type RFQDTO, type SupplierProfileDTO, type SupplierProductDTO, type QuoteVersionDTO,
+  type NotificationDTO, type SellerSummary, type SupplierProfileDTO, type SupplierProductDTO,
 } from "../api/client";
 
-const SUPPLIER_ID = "A";
-const DEMO_TOKEN = "tok_supplier_a";
 
 export function SupplierDashboard() {
-  // Poll RFQs (invited requests)
-  const { data: rfqs, loading: rfqsLoading, error: rfqsError } = useApiPoll<RFQDTO[]>(
-    () => getRFQs(), 5000, [],
+  const [supplierId, setSupplierId] = useSupplierId();
+
+  // Sellers (demo selector) and this seller's inbox
+  const { data: sellers } = useApiOnce<SellerSummary[]>(() => getSellers(), []);
+  const { data: inbox, loading: inboxLoading, error: inboxError, refetch: refetchInbox } = useApiPoll<NotificationDTO[]>(
+    () => getNotifications(supplierId), 2000, [supplierId],
   );
 
   // Supplier profile
   const { data: profile } = useApiOnce<SupplierProfileDTO>(
-    () => getSupplierProfile(SUPPLIER_ID), [],
+    () => getSupplierProfile(supplierId), [supplierId],
   );
 
   // Products
   const { data: products, refetch: refetchProducts } = useApiPoll<SupplierProductDTO[]>(
-    () => getSupplierProducts(SUPPLIER_ID), 5000, [],
+    () => getSupplierProducts(supplierId), 5000, [supplierId],
   );
 
-  // My quotes on the seeded RFQ (for status display)
-  const { data: myData } = useApiPoll<{ quotes: QuoteVersionDTO[]; target: any }>(
-    () => getMyQuotes(DEMO_TOKEN), 2000, [],
-  );
-
-  const [activeTab, setActiveTab] = useState<"rfqs" | "products">("rfqs");
+  const [activeTab, setActiveTab] = useState<"rfqs" | "products">("rfqs")
+  const unread = (inbox || []).filter(n => n.status === "new").length;
 
   // Product form state
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -55,7 +52,7 @@ export function SupplierDashboard() {
     e.preventDefault();
     if (!newProdName || typeof newProdPrice !== "number" || typeof newProdPackSize !== "number") return;
     try {
-      await addSupplierProduct(SUPPLIER_ID, {
+      await addSupplierProduct(supplierId, {
         name: newProdName,
         category: "fasteners",
         pack_price: Number(newProdPrice),
@@ -76,15 +73,12 @@ export function SupplierDashboard() {
 
   const handleDeleteProduct = async (productId: string) => {
     try {
-      await deleteSupplierProduct(SUPPLIER_ID, productId);
+      await deleteSupplierProduct(supplierId, productId);
       refetchProducts();
     } catch (e) {
       console.error("Failed to delete product:", e);
     }
   };
-
-  const myQuotes = myData?.quotes || [];
-  const myTarget = myData?.target || null;
 
   return (
     <div className="landing grain min-h-screen bg-ink text-bone pb-16">
@@ -102,6 +96,29 @@ export function SupplierDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <select
+              value={supplierId}
+              onChange={e => setSupplierId(e.target.value)}
+              title="Demo: act as this seller"
+              className="max-w-[180px] rounded-full border border-line bg-surface px-3 py-1 text-[12px] text-bone"
+            >
+              {(sellers || [{ supplier_id: supplierId, business_name: `Seller ${supplierId}` } as SellerSummary]).map(sl => (
+                <option key={sl.supplier_id} value={sl.supplier_id}>{sl.supplier_id} · {sl.business_name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setActiveTab("rfqs")}
+              className="relative rounded-full border border-line bg-surface p-1.5 text-muted hover:text-bone"
+              title={`${unread} new request${unread === 1 ? "" : "s"}`}
+            >
+              <Bell size={15} />
+              {unread > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal px-1 text-[10px] font-bold text-ink">
+                  {unread}
+                </span>
+              )}
+            </button>
             {profile && (
               <div className="hidden sm:flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-[12px]">
                 <Store size={13} className="text-signal" />
@@ -149,7 +166,7 @@ export function SupplierDashboard() {
             onClick={() => setActiveTab("rfqs")}
             className={`pb-3 transition-colors border-b-2 ${activeTab === "rfqs" ? "border-signal text-bone font-semibold" : "border-transparent text-muted hover:text-bone"}`}
           >
-            Invited Requests ({rfqs?.length || 0})
+            Inbox ({inbox?.length || 0}){unread > 0 && <span className="ml-1.5 rounded-full bg-signal px-1.5 text-[10px] font-bold text-ink">{unread} new</span>}
           </button>
           <button
             type="button"
@@ -161,75 +178,67 @@ export function SupplierDashboard() {
           </button>
         </div>
 
-        {/* Tab 1: Requests */}
+        {/* Tab 1: Inbox */}
         {activeTab === "rfqs" && (
           <div className="space-y-4">
-            {rfqsLoading && !rfqs ? (
+            {inboxLoading && !inbox ? (
               <div className="rounded-2xl border border-line bg-surface/80 p-8 text-center">
                 <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-line border-t-signal" />
-                <p className="mt-3 text-[13px] text-muted">Loading requests…</p>
+                <p className="mt-3 text-[13px] text-muted">Loading inbox…</p>
               </div>
-            ) : rfqsError ? (
+            ) : inboxError ? (
               <div className="rounded-2xl border border-error/40 bg-error/10 p-6 text-center space-y-2">
                 <AlertTriangle size={24} className="mx-auto text-error" />
                 <p className="text-[13px] text-muted">Cannot reach server. Make sure the backend is running.</p>
               </div>
-            ) : !rfqs || rfqs.length === 0 ? (
+            ) : !inbox || inbox.length === 0 ? (
               <div className="rounded-2xl border border-line bg-surface/80 p-8 text-center space-y-3">
                 <Package size={32} className="mx-auto text-muted" />
                 <p className="text-[14px] text-bone">No requests yet</p>
-                <p className="text-[13px] text-muted">When a buyer invites you to quote, the request will appear here.</p>
+                <p className="text-[13px] text-muted">When a buyer asks for an item in your catalog, it lands here. Add products with stock under My Products.</p>
               </div>
             ) : (
-              rfqs.map(rfq => {
-                // Find this supplier's quotes on this RFQ
-                const token = rfq.supplier_tokens?.[SUPPLIER_ID] || DEMO_TOKEN;
-                const isSeeded = rfq.id === "rfq_c27_01";
-                const quotes = isSeeded ? myQuotes : [];
-                const target = isSeeded ? myTarget : null;
-                const lq = quotes.length > 0 ? quotes[quotes.length - 1] : null;
-                const st = computeStatus(quotes.length > 0, target?.status || null, rfq.status, false);
-
+              inbox.map(n => {
+                const st = computeStatus(n.has_quoted, null, n.rfq_status, false);
+                const tone = n.verdict.can_fulfil === "yes" ? "border-success/40 bg-success/15 text-success"
+                  : n.verdict.can_fulfil === "partly" ? "border-warn/40 bg-warn/15 text-warn"
+                  : "border-error/40 bg-error/15 text-error";
+                const label = n.verdict.can_fulfil === "yes" ? "Can fulfil" : n.verdict.can_fulfil === "partly" ? "Partly" : "Cannot fulfil";
                 return (
-                  <div key={rfq.id} className="rounded-2xl border border-line bg-surface/80 p-5 backdrop-blur-sm">
-                    <div className="rounded-xl border border-line bg-surface p-4 transition-all hover:border-line/80">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-lg text-bone">{rfq.item}</span>
-                            <span className="num rounded bg-raised px-2 py-0.5 text-[12px] font-medium text-bone">
-                              {rfq.qty} units
-                            </span>
-                            <StatusChip status={st} />
-                          </div>
-                          <p className="text-[13px] text-muted flex items-center gap-2">
-                            <Building2 size={13} />
-                            <span>{rfq.buyer_company} ({rfq.buyer_city})</span>
-                            <span>·</span>
-                            <span>Needed within {rfq.need_in_days} days</span>
-                          </p>
-                          {target && target.status === "pending" && (
-                            <p className="text-[12px] text-signal font-medium mt-1">
-                              ⚡ Buyer sent target: "{target.message}"
-                            </p>
-                          )}
+                  <div key={n.id} className={`rounded-2xl border bg-surface/80 p-5 backdrop-blur-sm ${n.status === "new" ? "border-signal/50" : "border-line"}`}>
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {n.status === "new" && <span className="rounded-full bg-signal px-2 py-0.5 text-[10px] font-bold text-ink">NEW</span>}
+                          <span className="font-semibold text-lg text-bone">{n.item}</span>
+                          <span className="num rounded bg-raised px-2 py-0.5 text-[12px] font-medium text-bone">{n.qty} units</span>
+                          <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${tone}`}>{label}</span>
+                          <StatusChip status={st} />
                         </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          {lq && (
-                            <div className="text-right hidden sm:block">
-                              <span className="label text-muted block">Your Quote</span>
-                              <Money amount={lq.landed_cost} className="num text-base font-bold text-bone" />
-                              <span className="text-[11px] text-muted block">v{lq.version}</span>
-                            </div>
-                          )}
-                          <Link
-                            to={`/supplier/quote?token=${token}`}
-                            className="flex items-center gap-1.5 rounded-full bg-signal px-4 py-2 text-[13px] font-medium text-ink transition-transform hover:opacity-95 active:scale-95"
-                          >
-                            <span>{lq ? "View & Revise" : "Quote in < 1 min"}</span>
-                            <ArrowRight size={14} />
-                          </Link>
-                        </div>
+                        <p className="text-[13px] text-muted flex items-center gap-2">
+                          <Building2 size={13} />
+                          <span>{n.buyer_company} ({n.buyer_city})</span>
+                          <span>·</span>
+                          <span>Needed within {n.need_in_days} days</span>
+                          <span>·</span>
+                          <span className="capitalize">Priority: {n.priority_mode}</span>
+                        </p>
+                        <ul className="text-[12px] text-muted list-disc pl-5">
+                          {n.verdict.reasons.map(r => <li key={r}>{r}</li>)}
+                        </ul>
+                        <p className="text-[11px] text-muted/80">
+                          Matched your catalog item: {n.product.name}. Not the same item? Skip it. Stock is a snapshot, not reserved.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <Link
+                          to={n.quote_url}
+                          onClick={() => { markNotificationViewed(supplierId, n.id).then(refetchInbox).catch(() => {}); }}
+                          className="flex items-center gap-1.5 rounded-full bg-signal px-4 py-2 text-[13px] font-medium text-ink transition-transform hover:opacity-95 active:scale-95"
+                        >
+                          <span>{n.has_quoted ? "View & Revise" : "Quote in < 1 min"}</span>
+                          <ArrowRight size={14} />
+                        </Link>
                       </div>
                     </div>
                   </div>
