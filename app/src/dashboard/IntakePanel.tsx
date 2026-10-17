@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Send, Check, AlertTriangle } from "lucide-react";
+import { dateFromDays, daysFromToday, tomorrow } from "../lib/dates";
 import {
   confirmRFQ, draftIntake, getIntakeStatus, transcribeAudio,
   type IntakeResultDTO, type PriorityMode, type RFQCreateResponse,
@@ -23,7 +24,8 @@ export function IntakePanel({ buyer, onCreated }: Props) {
   const [source, setSource] = useState<"chat" | "voice">("chat");
   const [item, setItem] = useState("");
   const [qty, setQty] = useState<number | "">("");
-  const [days, setDays] = useState<number | "">("");
+  const [needBy, setNeedBy] = useState("");          // YYYY-MM-DD
+  const days = needBy ? daysFromToday(needBy) : "";
   const [priority, setPriority] = useState<PriorityMode>("cheapest");
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +49,7 @@ export function IntakePanel({ buyer, onCreated }: Props) {
     setResult(r);
     setItem(r.draft.item ?? "");
     setQty(r.draft.qty ?? "");
-    setDays(r.draft.need_in_days ?? "");
+    setNeedBy(r.draft.need_in_days ? dateFromDays(r.draft.need_in_days) : "");
     setPriority(r.draft.priority_mode ?? "cheapest");
   };
 
@@ -77,7 +79,7 @@ export function IntakePanel({ buyer, onCreated }: Props) {
     }
   };
 
-  const valid = item.trim() && typeof qty === "number" && qty > 0 && typeof days === "number" && days > 0;
+  const valid = item.trim() && typeof qty === "number" && qty > 0 && typeof days === "number" && days >= 1;
 
   const confirm = async () => {
     if (!valid) return;
@@ -164,11 +166,14 @@ export function IntakePanel({ buyer, onCreated }: Props) {
                 className={`num ${field} ${missing("qty") ? "border-warn" : "border-line"}`} />
             </div>
             <div>
-              <label className="label mb-1 block text-muted">Need within (days)</label>
-              <input type="number" min="1" value={days} onChange={e => setDays(e.target.value === "" ? "" : Number(e.target.value))}
+              <label className="label mb-1 block text-muted">Need by (date)</label>
+              <input type="date" min={tomorrow()} value={needBy} onChange={e => setNeedBy(e.target.value)}
                 className={`num ${field} ${missing("need_in_days") ? "border-warn" : "border-line"}`} />
-              {result.draft.need_by_phrase && result.draft.need_in_days && (
-                <p className="mt-1 text-[11px] text-muted">"{result.draft.need_by_phrase}" counted as {result.draft.need_in_days} days.</p>
+              {typeof days === "number" && days >= 1 && (
+                <p className="mt-1 text-[11px] text-muted">
+                  {days} day{days === 1 ? "" : "s"} from today
+                  {result.draft.need_by_phrase ? `. You said "${result.draft.need_by_phrase}".` : "."}
+                </p>
               )}
             </div>
             <div>

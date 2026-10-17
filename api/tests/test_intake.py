@@ -221,3 +221,17 @@ def test_quantity_phrase_is_read_in_code_when_model_leaves_quantity_empty():
     assert build_draft("need a lot of M10 bolts in 5 days", raw, names, TODAY)["draft"]["qty"] is None
     raw = {**raw, "quantity_phrase": "5000 pieces"}
     assert build_draft("need M10 bolts in 5 days", raw, names, TODAY)["draft"]["qty"] is None
+
+
+def test_brief_endpoint_names_and_env_names_work_alongside_the_old_ones(monkeypatch):
+    from app import ai
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.setenv("MODEL_INTAKE", "old-name")
+    assert ai.intake_model() == "old-name"
+    monkeypatch.setenv("MODEL_FAST", "new-name")
+    assert ai.intake_model() == "new-name"
+    for path in ("/api/ai/request-draft", "/api/intake/draft"):
+        r = client.post(path, json={"text": "I need 100 M10 bolts in 5 days"})
+        assert r.status_code == 200 and "draft" in r.json()
+    for path in ("/api/ai/transcribe", "/api/intake/transcribe"):
+        assert client.post(path, content=b"\x00\x01", headers={"content-type": "audio/webm"}).status_code == 200

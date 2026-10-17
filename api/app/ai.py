@@ -21,7 +21,8 @@ def _key() -> str:
 
 
 def intake_model() -> str:
-    return os.environ.get("MODEL_INTAKE", "")
+    """The cheap, fast model for intake, wording and explaining. MODEL_FAST (brief) or MODEL_INTAKE (older name)."""
+    return os.environ.get("MODEL_FAST") or os.environ.get("MODEL_INTAKE", "")
 
 
 def stt_key() -> str:

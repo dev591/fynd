@@ -209,6 +209,7 @@ def intake_status():
     return {"ai_enabled": ai.ai_enabled(), "voice_enabled": ai.voice_enabled()}
 
 
+@app.post("/api/ai/request-draft")
 @app.post("/api/intake/draft")
 def intake_draft(payload: IntakeIn, user: AuthUser = Depends(buyer_only)):
     key = payload.text.strip().lower()
@@ -223,6 +224,7 @@ def intake_draft(payload: IntakeIn, user: AuthUser = Depends(buyer_only)):
     return result
 
 
+@app.post("/api/ai/transcribe")
 @app.post("/api/intake/transcribe")
 async def intake_transcribe(request: Request, user: AuthUser = Depends(buyer_only)):
     """Raw audio bytes in the body (no multipart dependency). Returns the transcript, or fallback=true."""

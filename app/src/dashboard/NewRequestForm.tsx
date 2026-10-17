@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { IntakePanel } from "./IntakePanel";
 import { useApiOnce } from "../lib/useApi";
+import { dateFromDays, daysFromToday, tomorrow } from "../lib/dates";
 import { useSession } from "../lib/useSession";
 import { getMe, createRFQ, type PriorityMode, type RFQCreateResponse } from "../api/client";
 
@@ -20,7 +21,8 @@ export function NewRequestForm() {
   // Form state
   const [item, setItem] = useState("");
   const [qty, setQty] = useState<number | "">("");
-  const [needInDays, setNeedInDays] = useState<number | "">(5);
+  const [needBy, setNeedBy] = useState(() => dateFromDays(5));
+  const needInDays = daysFromToday(needBy);
   const [note, setNote] = useState("");
   const [priority, setPriority] = useState<PriorityMode>("cheapest");
   // Who is asking comes from the signed-in profile, not from a hardcoded buyer.
@@ -42,7 +44,7 @@ export function NewRequestForm() {
   const [created, setCreated] = useState<RFQCreateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const isValid = item.trim() && typeof qty === "number" && qty > 0 && typeof needInDays === "number";
+  const isValid = item.trim() && typeof qty === "number" && qty > 0 && needInDays >= 1;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,15 +193,16 @@ export function NewRequestForm() {
               />
             </div>
             <div>
-              <label className="label mb-1.5 block text-bone">Need Within (Days) <span className="text-signal">*</span></label>
+              <label className="label mb-1.5 block text-bone">Need by (date) <span className="text-signal">*</span></label>
               <input
-                type="number"
+                type="date"
                 required
-                min="1"
-                value={needInDays}
-                onChange={e => setNeedInDays(e.target.value === "" ? "" : Number(e.target.value))}
+                min={tomorrow()}
+                value={needBy}
+                onChange={e => setNeedBy(e.target.value)}
                 className="num w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-[15px] text-bone focus:border-signal focus:outline-none"
               />
+              {needInDays >= 1 && <p className="mt-1 text-[11px] text-muted">{needInDays} day{needInDays === 1 ? "" : "s"} from today</p>}
             </div>
           </div>
 
