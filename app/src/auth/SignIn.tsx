@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, LogIn } from "lucide-react";
+import { Eye, EyeOff, LogIn, Store } from "lucide-react";
 import { signIn, authConfigured } from "../lib/auth";
-import { getMe } from "../api/client";
-import { getActiveRole, homeFor } from "../lib/activeRole";
+import { getDemoLogins, getMe, type DemoLoginsDTO } from "../api/client";
+import { getActiveRole, homeFor, setActiveRole } from "../lib/activeRole";
 import { useSession } from "../lib/useSession";
 
 export function SignIn() {
@@ -16,6 +16,22 @@ export function SignIn() {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [demo, setDemo] = useState<DemoLoginsDTO | null>(null);
+  useEffect(() => { getDemoLogins().then(setDemo).catch(() => setDemo(null)); }, []);
+
+  const quickLogin = async (sellerEmail: string) => {
+    if (!demo?.password) return;
+    setBusy(true); setError(null);
+    try {
+      await signIn(sellerEmail, demo.password);
+      setActiveRole("seller");
+      navigate("/supplier", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sign in as this seller. Has the seed script been run?");
+      setBusy(false);
+    }
+  };
 
   if (session && !busy) return <Navigate to={from || "/app"} replace />;
 
@@ -38,7 +54,7 @@ export function SignIn() {
 
   const field = "w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[14px] text-bone focus:border-signal focus:outline-none";
   return (
-    <div className="landing grain flex min-h-screen items-center justify-center bg-ink px-4 text-bone">
+    <div className="landing grain flex min-h-screen items-center justify-center gap-8 bg-ink px-4 py-8 text-bone max-lg:flex-col">
       <div className="w-full max-w-sm space-y-5">
         <div className="text-center">
           <p className="label text-muted">Crossover</p>
@@ -74,6 +90,30 @@ export function SignIn() {
           New here? <Link to="/login" className="text-signal underline">Create an account</Link>
         </p>
       </div>
+
+      {demo?.enabled && (
+        <aside className="w-full max-w-sm rounded-2xl border border-line bg-surface/80 p-5 backdrop-blur-sm" aria-label="Demo sellers">
+          <div className="flex items-center gap-2">
+            <Store size={16} className="text-signal" />
+            <h2 className="display text-xl">Demo sellers</h2>
+          </div>
+          <p className="mt-1 text-[12px] text-muted">Click one to sign in as that seller. All ten stock M10 bolts, with different prices, pack sizes and lead times.</p>
+          <ul className="mt-3 max-h-[28rem] space-y-1.5 overflow-y-auto pr-1">
+            {demo.sellers.map(s => (
+              <li key={s.email}>
+                <button type="button" disabled={busy} onClick={() => quickLogin(s.email)}
+                  className="w-full rounded-xl border border-line bg-raised/50 px-3 py-2 text-left hover:border-signal/60 disabled:opacity-50">
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="text-[14px] font-medium text-bone">{s.company}</span>
+                    <span className="text-[11px] text-muted">{s.city}</span>
+                  </span>
+                  <span className="block truncate text-[11px] text-muted">{s.items.join("  ·  ")}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
     </div>
   );
 }

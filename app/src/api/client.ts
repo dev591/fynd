@@ -442,6 +442,17 @@ export interface AiOpinionDTO {
 }
 
 /** The AI's reading of the current quotes. Null with no AI key, nothing to weigh, or text that failed the checks. */
+export interface DemoLoginsDTO {
+  enabled: boolean;
+  password?: string;
+  sellers: { email: string; company: string; city: string; items: string[] }[];
+}
+
+/** Ten demo seller accounts for one-click sign-in. Disabled (empty) unless the server turns it on for a local demo. */
+export async function getDemoLogins(): Promise<DemoLoginsDTO> {
+  return apiFetch("/api/demo/logins");
+}
+
 export async function getAiOpinion(rfqId: string): Promise<AiOpinionDTO | null> {
   const s = await apiFetch<SummaryDTO>(`/api/rfqs/${rfqId}/summary`);
   return s.ai_opinion ?? null;

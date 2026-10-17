@@ -88,10 +88,18 @@ State is saved to **SQLite (WAL)** at `api/data/app.db`. `cd api && python3 -m a
 | `PERSIST` (on), `CROSSOVER_DB` | SQLite persistence and its path |
 | `CORS_ORIGINS` | Extra allowed browser origins (localhost and private networks are always allowed) |
 
+### Ten demo sellers (optional, local demos only)
+
+For a live buyer-and-seller demo: put `DEMO_SELLER_PASSWORD` (you choose it) in `api/.env`, start the API, then run
+`cd api && python3 scripts/seed_demo_sellers.py`. It creates ten seller accounts in Supabase and fills their profile and
+catalog through the normal API (safe to run again; "Confirm email" must be off, or set `SUPABASE_SERVICE_ROLE_KEY` for the
+script only). Then set `DEMO_LOGINS=on` and restart the API: `/signin` shows the ten sellers as one-click logins. This hands
+out a shared password, so never turn it on for a public deployment.
+
 ## Test it
 
 ```bash
-cd api && python3 -m pytest -q          # 240 tests
+cd api && python3 -m pytest -q          # 265 tests
 cd app && npx tsc -b && npm run lint && npm run build
 cd api && python3 -m tests.golden.run_live   # real-model check of the 15 buyer sentences (needs keys)
 ```
@@ -115,7 +123,7 @@ worked example, import errors, windows with a fake clock, persistence across a r
 ```
 api/app/     engine.py (rules; landed cost + gates untouched), tax.py, views.py (what each audience may see),
              rfq_store.py, persist.py, auth.py, intake.py, quote_text.py, assistant.py, summary.py, importer.py
-api/tests/   240 tests + golden sets (15 buyer sentences, 8 seller cases)
+api/tests/   265 tests + golden sets (15 buyer sentences, 8 seller cases)
 api/supabase/schema.sql   an early Postgres draft with row-level security. NOT used and NOT kept in sync: the live API uses SQLite
 app/src/     landing story, wizard, buyer desk, seller desk, shared components
 AUDIT.md     what exists against the v2 brief, and the decisions made

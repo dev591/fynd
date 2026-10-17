@@ -51,7 +51,7 @@ from .models import (
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
 from .quote_text import draft_from_message
-from . import ai, assistant, delhivery
+from . import ai, assistant, delhivery, demo_roster
 from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
@@ -906,3 +906,12 @@ def shipping_estimate(token: str, payload: ShippingEstimateIn):
     if not out:
         raise HTTPException(status_code=409, detail="No estimate available. Enter freight and lead time yourself.")
     return out
+
+
+@app.get("/api/demo/logins")
+def demo_logins():
+    """One-click demo seller logins for the sign-in page. Off unless DEMO_LOGINS=on and DEMO_SELLER_PASSWORD is set,
+    because it hands out a shared password: use it for a local demo, never on a public deployment."""
+    if not demo_roster.logins_enabled():
+        return {"enabled": False, "sellers": []}
+    return {"enabled": True, "password": os.environ["DEMO_SELLER_PASSWORD"], "sellers": demo_roster.public_listing()}
