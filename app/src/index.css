@@ -1,0 +1,76 @@
+@import "tailwindcss";
+@import "@fontsource-variable/fraunces";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/* Palette lives in plain CSS variables so a whole theme can be swapped via data-theme on <html>.
+   Token names are roles (ink = page bg, bone = main text), not literal colors. */
+/* Crossover theme: "paper ledger". Warm paper, ink text, one vermilion accent (the winner).
+   All text pairs checked WCAG AA on ink/surface. Swap this block to re-theme; dark kept as opt-in. */
+:root, [data-theme="light"] {
+  --ink: #f6f3ec; --surface: #ffffff; --raised: #ece7da; --line: #d9d2c0;
+  --bone: #17150f; --muted: #5e5849;
+  --signal: #c8381a; --live: #0a7d6b;
+  --success: #0e7a4e; --warn: #955a00; --error: #b8231b;
+  --grain: 0.03; --shadow: 0.14;
+}
+[data-theme="dark"] {
+  --ink: #0e0e0c; --surface: #171714; --raised: #1f1e1a; --line: #2c2a25;
+  --bone: #f2ede4; --muted: #9a958a;
+  --signal: #ff5a1f; --live: #c6f432;
+  --success: #3ddc97; --warn: #ffb020; --error: #ff4d4f;
+  --grain: 0.035; --shadow: 0.6;
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-bone: var(--bone);
+  --color-muted: var(--muted);
+  --color-signal: var(--signal);
+  --color-live: var(--live);
+  --color-success: var(--success);
+  --color-warn: var(--warn);
+  --color-error: var(--error);
+
+  --font-display: "Fraunces Variable", Georgia, serif;
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+
+  --text-hook: clamp(5rem, 14vw, 12rem);
+  --text-chapter: clamp(2.5rem, 6vw, 5.5rem);
+  --text-section: clamp(1.5rem, 3vw, 2.25rem);
+}
+
+html { background: var(--color-ink); color: var(--color-bone); }
+body { font-family: var(--font-sans); font-size: 14px; line-height: 1.5; margin: 0; }
+.landing { font-size: 18px; line-height: 1.6; }
+.landing p { max-width: 65ch; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.display { font-family: var(--font-display); letter-spacing: -0.03em; }
+.label { font-size: 12px; font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase; }
+
+/* Scroll-scrubbed entrance, driven by --enter set on each chapter (0 off-screen, 1 arrived). */
+.rise {
+  opacity: var(--enter, 1);
+  transform: translateY(calc((1 - var(--enter, 1)) * 48px));
+}
+
+/* Lenis */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+/* Film grain over ink, 3.5% */
+.grain::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 100; opacity: var(--grain);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+/* Faint grid behind pinned sections */
+.dotgrid {
+  background-image: radial-gradient(var(--color-line) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+:focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
