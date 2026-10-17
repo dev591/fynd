@@ -89,3 +89,32 @@ def find_number(data: Any, *names: str) -> Optional[float]:
         elif isinstance(cur, list):
             stack.extend(cur)
     return None
+
+
+# Zone rate card used while no Delhivery token is set. It is an estimate we made up for the demo, so every
+# result carries basis "rate_card" and the UI says "estimated rate, not a carrier quote". Same pin area is local,
+# same first digit is regional, anything else national.
+RATE_CARD_LABEL = "Estimated rate (demo rate card, not a Delhivery quote)"
+_ZONES = {"local": (80, 6, 2), "regional": (150, 9, 3), "national": (250, 14, 5)}   # base rupees, rupees per kg, days
+
+
+def rate_card(source_pin: str, destination_pin: str, weight_kg: float) -> Optional[dict]:
+    if not (valid_pin(source_pin) and valid_pin(destination_pin)) or weight_kg <= 0:
+        return None
+    s, d = source_pin.strip(), destination_pin.strip()
+    zone = "local" if s[:3] == d[:3] else "regional" if s[0] == d[0] else "national"
+    base, per_kg, days = _ZONES[zone]
+    return {"freight": round(base + per_kg * weight_kg), "lead_days": days, "zone": zone,
+            "basis": "rate_card", "label": RATE_CARD_LABEL}
+
+
+def estimate(source_pin: str, destination_pin: str, weight_kg: float, **dims) -> Optional[dict]:
+    """The live Delhivery numbers when the token works and the reply has clearly named numbers, else the rate card."""
+    if not (valid_pin(source_pin) and valid_pin(destination_pin)) or weight_kg <= 0:
+        return None
+    raw = freight_estimate(source_pin, destination_pin, round(weight_kg * 1000), **dims)
+    freight = find_number(raw, "total_amount", "total_charge", "total", "freight_charge", "freight", "amount") if raw is not None else None
+    days = find_number(tat_estimate(source_pin, destination_pin), "tat", "tat_days", "days", "estimated_days", "delivery_days") if freight is not None else None
+    if freight is not None and days is not None:
+        return {"freight": round(freight), "lead_days": max(1, round(days)), "zone": None, "basis": "delhivery", "label": "Delhivery estimate"}
+    return rate_card(source_pin, destination_pin, weight_kg)

@@ -127,6 +127,7 @@ export function SupplierQuotePage() {
   const handleQuoteSubmit = async (data: {
     packPrice: number; packSize: number; freight: number; leadDays: number;
     moq?: number; maxQty?: number; taxRate?: number; priceIncludesTax?: boolean; notes?: string;
+    shipping?: "own" | "delhivery"; shippingBasis?: "delhivery" | "rate_card";
   }) => {
     setSubmitting(true);
     setSubmitError(null);
@@ -142,6 +143,8 @@ export function SupplierQuotePage() {
         notes: data.notes,
         tax_rate: data.taxRate,
         price_includes_tax: data.priceIncludesTax,
+        shipping: data.shipping,
+        shipping_basis: data.shippingBasis,
       });
       setIsRevising(false);
       refetchMine();

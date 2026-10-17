@@ -176,6 +176,8 @@ class QuoteSubmitIn(BaseModel):
     origin: QuoteOrigin = "manual"
     tax_rate: float | None = Field(default=None, ge=0, le=100)     # GST rate in percent, only if the seller states it
     price_includes_tax: bool | None = None                          # whether the pack price already includes GST
+    shipping: Literal["own", "delhivery"] | None = None             # how the seller will ship; shown to the buyer
+    shipping_basis: Literal["delhivery", "rate_card"] | None = None  # where an applied freight/lead estimate came from
 
 
 class QuoteVersion(BaseModel):
@@ -200,6 +202,8 @@ class QuoteVersion(BaseModel):
     submitted_at: str
     item: str | None = None                   # only set when an imported row names a different item than the request
     imported: bool = False                    # brought in by the buyer from a file; the seller has no portal
+    shipping: Literal["own", "delhivery"] | None = None
+    shipping_basis: Literal["delhivery", "rate_card"] | None = None
 
 
 class NegotiationTargetIn(BaseModel):

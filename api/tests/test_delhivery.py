@@ -79,3 +79,40 @@ def test_vendor_errors_and_timeouts_return_none(monkeypatch):
 def test_find_number_ignores_booleans_and_searches_nested():
     assert delhivery.find_number({"a": [{"tat": 3}]}, "tat") == 3.0
     assert delhivery.find_number({"tat": True}, "tat") is None
+
+
+def test_rate_card_zones_and_labelling():
+    local = delhivery.rate_card("400069", "400093", 10)
+    regional = delhivery.rate_card("400069", "411001", 10)
+    national = delhivery.rate_card("400069", "122001", 10)
+    assert (local["zone"], regional["zone"], national["zone"]) == ("local", "regional", "national")
+    assert local["freight"] < regional["freight"] < national["freight"]
+    assert local["lead_days"] < regional["lead_days"] < national["lead_days"]
+    assert all(r["basis"] == "rate_card" and "not a Delhivery quote" in r["label"] for r in (local, regional, national))
+    assert delhivery.rate_card("40", "122001", 5) is None and delhivery.rate_card("400069", "122001", 0) is None
+
+
+def test_estimate_endpoint_falls_back_to_the_rate_card_without_a_token():
+    r = client.post("/api/logistics/estimate", json={"source_pin": "400069", "consignee_pin": "122001", "weight_kg": 20})
+    assert r.status_code == 200 and r.json()["basis"] == "rate_card" and r.json()["freight"] == 250 + 14 * 20
+    assert client.post("/api/logistics/estimate", json={"source_pin": "x", "consignee_pin": "122001", "weight_kg": 1}).status_code == 422
+
+
+def test_estimate_prefers_live_delhivery_numbers_when_the_reply_has_them(monkeypatch):
+    monkeypatch.setenv("DELHIVERY_TOKEN", "t")
+    replies = iter([FakeResp({"total_amount": 990}), FakeResp({"tat": 4})])
+    monkeypatch.setattr(delhivery.httpx, "request", lambda *a, **k: next(replies))
+    out = client.post("/api/logistics/estimate", json={"source_pin": "400069", "consignee_pin": "122001", "weight_kg": 20}).json()
+    assert (out["basis"], out["freight"], out["lead_days"]) == ("delhivery", 990, 4)
+
+
+def test_quote_records_how_it_ships_and_only_delhivery_keeps_a_basis():
+    from tests.helpers import tokens_of
+    rid = client.post("/api/rfqs", json={"item": "M10 bolt", "qty": 10, "need_in_days": 5, "buyer_company": "c", "buyer_name": "b"}).json()["id"]
+    tok = tokens_of(rid)["A"]
+    body = {"supplier_name": "x", "pack_price": 10, "pack_size": 1, "freight": 300, "lead_days": 3}
+    own = client.post(f"/api/rfq-by-token/{tok}/quotes", json={**body, "shipping": "own", "shipping_basis": "rate_card"}).json()
+    assert own["shipping"] == "own" and own["shipping_basis"] is None
+    dl = client.post(f"/api/rfq-by-token/{tok}/quotes", json={**body, "shipping": "delhivery", "shipping_basis": "rate_card"}).json()
+    assert dl["shipping"] == "delhivery" and dl["shipping_basis"] == "rate_card"
+    assert client.post(f"/api/rfq-by-token/{tok}/quotes", json={**body, "shipping": "courier-x"}).status_code == 422

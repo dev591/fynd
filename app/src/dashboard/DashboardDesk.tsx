@@ -455,6 +455,17 @@ export function DashboardDesk() {
                               </button>
                             </p>
                           )}
+                          {versions[latestVer - 1]?.shipping && (
+                            <p className="mt-1 text-[11px] text-muted">
+                              {versions[latestVer - 1].shipping === "own"
+                                ? "Ships by the seller's own shipment"
+                                : versions[latestVer - 1].shipping_basis === "delhivery"
+                                  ? "Ships by Delhivery · freight from a Delhivery estimate"
+                                  : versions[latestVer - 1].shipping_basis === "rate_card"
+                                    ? "Ships by Delhivery · freight is an estimated rate, not a carrier quote"
+                                    : "Ships by Delhivery · freight set by the seller"}
+                            </p>
+                          )}
                           {versions[latestVer - 1] && (
                             versions[latestVer - 1].tax_basis === "assumed_exclusive" ? (
                               <p className="mt-1 text-[11px] text-warn" title="The seller did not say whether their price includes GST. We compare it as excluding GST. Confirm before ordering.">

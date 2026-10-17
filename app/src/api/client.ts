@@ -174,6 +174,8 @@ export interface QuoteVersionDTO {
   /** The pack price actually compared, on the buyer's GST basis. */
   compare_price?: number | null;
   tax_basis?: "stated" | "assumed_exclusive";
+  shipping?: "own" | "delhivery" | null;
+  shipping_basis?: "delhivery" | "rate_card" | null;
   landed_cost: number | null;
   units: number;
   packs: number;
@@ -510,6 +512,21 @@ export interface QuoteSubmitPayload {
   origin?: "manual" | "ai_draft_edited" | "ai_draft_sent" | "auto";
   tax_rate?: number;
   price_includes_tax?: boolean;
+  shipping?: "own" | "delhivery";
+  shipping_basis?: "delhivery" | "rate_card";
+}
+
+export interface ShippingEstimate {
+  freight: number;
+  lead_days: number;
+  zone: string | null;
+  basis: "delhivery" | "rate_card";
+  label: string;
+}
+
+/** Freight and delivery days for a seller's shipping choice. A suggestion only; the seller applies and may edit it. */
+export async function estimateShipping(body: { source_pin: string; consignee_pin: string; weight_kg: number }): Promise<ShippingEstimate> {
+  return apiFetch("/api/logistics/estimate", { method: "POST", body: JSON.stringify(body) });
 }
 
 export async function getRFQByToken(token: string): Promise<SupplierRFQView> {

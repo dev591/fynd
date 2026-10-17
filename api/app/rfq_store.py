@@ -729,6 +729,8 @@ class RFQStore:
         origin: str = "manual",
         tax_rate: Optional[float] = None,
         price_includes_tax: Optional[bool] = None,
+        shipping: Optional[str] = None,
+        shipping_basis: Optional[str] = None,
     ) -> QuoteVersion:
         rfq_id = self.token_to_rfq_id.get(token)
         if not rfq_id or rfq_id not in self.rfqs:
@@ -766,6 +768,7 @@ class RFQStore:
             lead_days=lead_days, moq=moq, max_qty=max_qty, notes=notes, origin=origin,
             tax_rate=tax_rate, price_includes_tax=price_includes_tax, compare_price=compare_price, tax_basis=tax_basis,
             landed_cost=landed, units=units, packs=packs,
+            shipping=shipping, shipping_basis=shipping_basis if shipping == "delhivery" else None,
             submitted_at=datetime.now().strftime("%I:%M %p"),
         )
         issued = self.assists.get(token)

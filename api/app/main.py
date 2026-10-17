@@ -661,6 +661,7 @@ def submit_supplier_quote(token: str, payload: QuoteSubmitIn):
             notes=payload.notes,
             max_qty=payload.max_qty,
             tax_rate=payload.tax_rate, price_includes_tax=payload.price_includes_tax,
+            shipping=payload.shipping, shipping_basis=payload.shipping_basis,
         )   # origin is decided by the server, never taken from the client
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -872,3 +873,17 @@ def logistics_tat(origin_pin: str, destination_pin: str, user: AuthUser = Depend
     raw = delhivery.tat_estimate(origin_pin, destination_pin)
     days = delhivery.find_number(raw, "tat", "tat_days", "days", "estimated_days", "delivery_days") if raw is not None else None
     return {"enabled": delhivery.enabled(), "suggested_lead_days": days, "source": "Delhivery estimate" if days is not None else None, "raw": raw}
+
+
+@app.post("/api/logistics/estimate")
+def logistics_estimate(payload: FreightIn, user: AuthUser = Depends(get_current_user)):
+    """Freight and delivery days for the seller's shipping choice. Live Delhivery numbers when available, else the
+    labelled demo rate card. Only ever a suggestion: the seller applies it by hand and can edit it."""
+    if not (delhivery.valid_pin(payload.source_pin) and delhivery.valid_pin(payload.consignee_pin)):
+        raise HTTPException(status_code=422, detail="Enter two 6-digit pincodes.")
+    if payload.weight_kg <= 0:
+        raise HTTPException(status_code=422, detail="Weight must be above zero.")
+    out = delhivery.estimate(payload.source_pin, payload.consignee_pin, payload.weight_kg, length_cm=payload.length_cm,
+                             width_cm=payload.width_cm, height_cm=payload.height_cm, box_count=payload.box_count,
+                             inv_amount=payload.inv_amount)
+    return out

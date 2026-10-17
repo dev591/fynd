@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { order } from "../../landing/engine";
 import { Money } from "./Money";
-import type { SupplierProductDTO } from "../../api/client";
+import { estimateShipping, type ShippingEstimate, type SupplierProductDTO } from "../../api/client";
 
 interface QuoteFormProps {
   rfq: { item: string; qty: number; needInDays: number };
@@ -38,6 +38,8 @@ interface QuoteFormProps {
     taxRate?: number;
     priceIncludesTax?: boolean;
     notes?: string;
+    shipping?: "own" | "delhivery";
+    shippingBasis?: "delhivery" | "rate_card";
   }) => void;
   isSubmitting?: boolean;
   versionNumber?: number;
@@ -73,6 +75,29 @@ export function QuoteForm({
     initialValues?.priceIncludesTax === undefined ? "unstated" : initialValues.priceIncludesTax ? "incl" : "excl");
   const [taxRate, setTaxRate] = useState<number | "">(initialValues?.taxRate ?? 18);
   const [notes, setNotes] = useState(initialValues?.notes ?? "");
+
+  // Shipping: own shipment, or Delhivery. The estimate only reaches the quote when the seller presses "Use this".
+  const [shipping, setShipping] = useState<"own" | "delhivery">("own");
+  const [fromPin, setFromPin] = useState("");
+  const [toPin, setToPin] = useState("");
+  const [weight, setWeight] = useState<number | "">("");
+  const [est, setEst] = useState<ShippingEstimate | null>(null);
+  const [estBusy, setEstBusy] = useState(false);
+  const [estError, setEstError] = useState<string | null>(null);
+  const [applied, setApplied] = useState<ShippingEstimate | null>(null);
+  const pinOk = (p: string) => /^[1-9][0-9]{5}$/.test(p);
+  const canEstimate = pinOk(fromPin) && pinOk(toPin) && typeof weight === "number" && weight > 0;
+  const getEstimate = async () => {
+    if (!canEstimate) return;
+    setEstBusy(true); setEstError(null); setEst(null);
+    try { setEst(await estimateShipping({ source_pin: fromPin, consignee_pin: toPin, weight_kg: Number(weight) })); }
+    catch { setEstError("Could not get an estimate. Enter freight and lead time yourself."); }
+    finally { setEstBusy(false); }
+  };
+  const useEstimate = () => {
+    if (!est) return;
+    setFreight(est.freight); setLeadDays(est.lead_days); setApplied(est);
+  };
 
   // Catalog item picker & item match check
   const [selectedProductId, setSelectedProductId] = useState<string>("");
@@ -148,6 +173,8 @@ export function QuoteForm({
       taxRate: basis !== "unstated" && typeof taxRate === "number" ? taxRate : undefined,
       priceIncludesTax: basis === "unstated" || typeof taxRate !== "number" ? undefined : basis === "incl",
       notes: notes.trim() || undefined,
+      shipping,
+      shippingBasis: shipping === "delhivery" && applied ? applied.basis : undefined,
     });
   };
 
@@ -250,7 +277,7 @@ export function QuoteForm({
               step="any"
               required
               value={freight}
-              onChange={(e) => setFreight(e.target.value === "" ? "" : Number(e.target.value))}
+              onChange={(e) => { setApplied(null); setFreight(e.target.value === "" ? "" : Number(e.target.value)); }}
               placeholder="150"
               className="num w-full rounded-lg border border-line bg-surface pl-8 pr-3 py-2 text-[14px] text-bone placeholder:text-muted/40 focus:border-signal focus:outline-none"
             />
@@ -272,7 +299,7 @@ export function QuoteForm({
               step="1"
               required
               value={leadDays}
-              onChange={(e) => setLeadDays(e.target.value === "" ? "" : Number(e.target.value))}
+              onChange={(e) => { setApplied(null); setLeadDays(e.target.value === "" ? "" : Number(e.target.value)); }}
               placeholder="3"
               className="num w-full rounded-lg border border-line bg-surface pl-8 pr-3 py-2 text-[14px] text-bone placeholder:text-muted/40 focus:border-signal focus:outline-none"
             />
@@ -282,6 +309,51 @@ export function QuoteForm({
           </span>
         </div>
       </div>
+
+      {/* How will you ship this? */}
+      <fieldset className="rounded-xl border border-line bg-raised/40 p-4 space-y-3">
+        <legend className="label px-1 text-bone">How will you ship it?</legend>
+        <div className="flex flex-wrap gap-2">
+          {([["own", "My own shipment"], ["delhivery", "Delhivery"]] as const).map(([v, label]) => (
+            <label key={v} className={`cursor-pointer rounded-full border px-4 py-1.5 text-[13px] ${shipping === v ? "border-signal bg-signal/10 text-bone" : "border-line text-muted hover:text-bone"}`}>
+              <input type="radio" name="shipping" value={v} checked={shipping === v} onChange={() => setShipping(v)} className="sr-only" />
+              {label}
+            </label>
+          ))}
+        </div>
+        {shipping === "delhivery" && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              <label className="text-[12px] text-muted">Your pincode
+                <input inputMode="numeric" maxLength={6} value={fromPin} onChange={(e) => { setFromPin(e.target.value.replace(/\D/g, "")); setEst(null); }} placeholder="400069"
+                  className="num mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-bone focus:border-signal focus:outline-none" />
+              </label>
+              <label className="text-[12px] text-muted">Buyer's pincode
+                <input inputMode="numeric" maxLength={6} value={toPin} onChange={(e) => { setToPin(e.target.value.replace(/\D/g, "")); setEst(null); }} placeholder="122001"
+                  className="num mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-bone focus:border-signal focus:outline-none" />
+              </label>
+              <label className="text-[12px] text-muted">Weight (kg)
+                <input type="number" min="0" step="any" value={weight} onChange={(e) => { setWeight(e.target.value === "" ? "" : Number(e.target.value)); setEst(null); }} placeholder="20"
+                  className="num mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-bone focus:border-signal focus:outline-none" />
+              </label>
+            </div>
+            <button type="button" onClick={getEstimate} disabled={!canEstimate || estBusy}
+              className="rounded-full border border-line bg-surface px-4 py-1.5 text-[13px] font-medium text-bone hover:border-signal/60 disabled:opacity-40">
+              {estBusy ? "Estimating…" : "Estimate freight and delivery time"}
+            </button>
+            {estError && <p className="text-[12px] text-error">{estError}</p>}
+            {est && (
+              <div className="rounded-lg border border-line bg-surface p-3 text-[13px]">
+                <p className="text-bone"><span className="num font-semibold">₹{est.freight.toLocaleString("en-IN")}</span> freight · <span className="num font-semibold">{est.lead_days} days</span> to the buyer</p>
+                <p className="mt-0.5 text-[11px] text-muted">{est.label}. It goes into your quote only if you press the button, and you can still edit it.</p>
+                <button type="button" onClick={useEstimate} className="mt-2 rounded-full bg-signal px-4 py-1.5 text-[12px] font-semibold text-ink hover:opacity-95">
+                  {applied ? "Applied to your quote" : "Use this in my quote"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </fieldset>
 
       {/* Folded Optional Fields Accordion */}
       <div className="border-t border-line/60 pt-3">
