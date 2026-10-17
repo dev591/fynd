@@ -12,12 +12,14 @@ interface BusinessStepProps {
   businessType: BusinessType;
   state: string;
   city: string;
+  pincode: string;
   categories: Category[];
   onChange: (fields: Partial<{
     company: string;
     businessType: BusinessType;
     state: string;
     city: string;
+    pincode: string;
     categories: Category[];
   }>) => void;
   onNext: () => void;
@@ -29,6 +31,7 @@ export function BusinessStep({
   businessType,
   state,
   city,
+  pincode,
   categories,
   onChange,
   onNext,
@@ -39,9 +42,10 @@ export function BusinessStep({
   const isCompanyValid = company.trim().length >= 2;
   const isStateValid = state.trim().length > 0;
   const isCityValid = city.trim().length >= 2;
+  const isPincodeValid = /^[1-9][0-9]{5}$/.test(pincode.trim());
   const isCategoriesValid = categories.length > 0;
 
-  const canProceed = isCompanyValid && isStateValid && isCityValid && isCategoriesValid;
+  const canProceed = isCompanyValid && isStateValid && isCityValid && isPincodeValid && isCategoriesValid;
 
   const toggleCategory = (cat: Category) => {
     if (categories.includes(cat)) {
@@ -174,6 +178,31 @@ export function BusinessStep({
             />
             {touched.city && !isCityValid && (
               <p className="mt-1 text-[12px] text-error">City or town is required.</p>
+            )}
+          </div>
+
+          {/* Pincode: asked once, used to estimate shipping. Never shown to the other side. */}
+          <div>
+            <label className="label mb-1.5 flex items-center justify-between text-muted">
+              <span className="text-bone">Pincode</span>
+              <span className="text-[11px] text-signal">*</span>
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={pincode}
+              placeholder="e.g. 411001"
+              onBlur={() => setTouched((t) => ({ ...t, pincode: true }))}
+              onChange={(e) => onChange({ pincode: e.target.value.replace(/\D/g, "") })}
+              className={`num w-full rounded-lg border bg-surface px-3.5 py-2.5 text-[14px] text-bone placeholder:text-muted/50 focus:outline-none transition-colors ${
+                touched.pincode && !isPincodeValid ? "border-error focus:border-error" : "border-line focus:border-signal"
+              }`}
+            />
+            {touched.pincode && !isPincodeValid ? (
+              <p className="mt-1 text-[12px] text-error">Enter a 6-digit pincode.</p>
+            ) : (
+              <p className="mt-1 text-[11px] text-muted">Used only to estimate shipping. Other users never see it.</p>
             )}
           </div>
         </div>

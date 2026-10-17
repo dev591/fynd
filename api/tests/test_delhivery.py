@@ -116,3 +116,45 @@ def test_quote_records_how_it_ships_and_only_delhivery_keeps_a_basis():
     dl = client.post(f"/api/rfq-by-token/{tok}/quotes", json={**body, "shipping": "delhivery", "shipping_basis": "rate_card"}).json()
     assert dl["shipping"] == "delhivery" and dl["shipping_basis"] == "rate_card"
     assert client.post(f"/api/rfq-by-token/{tok}/quotes", json={**body, "shipping": "courier-x"}).status_code == 422
+
+
+def _profile(role, pin, **kw):
+    return {"id": "ignored", "role": role, "full_name": "Pat", "email": "x@y.in", "phone": "9820144556", "company": "Pat Works",
+            "business_type": "manufacturer", "state": "Maharashtra", "city": "Mumbai", "pincode": pin, "categories": ["fasteners"], **kw}
+
+
+def test_profile_pincode_must_be_six_digits_or_blank():
+    from app.auth import AuthUser, get_current_user
+    app.dependency_overrides[get_current_user] = lambda: AuthUser(id="pin-user", email="p@t.dev")
+    assert client.post("/api/profile", json=_profile("buyer", "40006")).status_code == 422
+    assert client.post("/api/profile", json=_profile("buyer", "ABCDEF")).status_code == 422
+    assert client.post("/api/profile", json=_profile("buyer", "400069")).status_code in (200, 201)
+    assert client.post("/api/profile", json=_profile("buyer", "")).status_code in (200, 201)      # older accounts have none
+
+
+def test_estimate_uses_both_saved_pincodes_and_never_returns_them():
+    from app.auth import AuthUser, get_current_user
+    from app.main import store
+    from tests.helpers import tokens_of
+
+    def as_user(uid):
+        app.dependency_overrides[get_current_user] = lambda: AuthUser(id=uid, email=f"{uid}@t.dev")
+    as_user("pin-seller")
+    client.post("/api/profile", json=_profile("supplier", "400069", company="Seller Works"))
+    client.post("/api/me/roles", json={"role": "seller"})
+    client.post("/api/supplier/products/pin-seller", json={"name": "Pin widget", "pack_price": 5, "pack_size": 1, "moq": 1,
+                                                          "usual_lead_days": 2, "stock": 900})
+    as_user("pin-buyer")
+    client.post("/api/profile", json=_profile("buyer", "122001", company="Buyer Works", city="Gurugram", state="Haryana"))
+    rid = client.post("/api/rfqs", json={"item": "pin widget", "qty": 10, "need_in_days": 5, "buyer_company": "b", "buyer_name": "b"}).json()["id"]
+    tok = tokens_of(rid)["pin-seller"]
+    r = client.post(f"/api/rfq-by-token/{tok}/shipping-estimate", json={"weight_kg": 20})
+    assert r.status_code == 200 and r.json()["freight"] == 250 + 14 * 20 and r.json()["basis"] == "rate_card"   # national zone
+    assert "400069" not in r.text and "122001" not in r.text
+    assert client.post(f"/api/rfq-by-token/{tok}/shipping-estimate", json={"weight_kg": 0}).status_code == 422
+    # a buyer who never gave a pincode: no estimate, a clear message, nothing invented
+    as_user("pin-buyer-2")
+    client.post("/api/profile", json=_profile("buyer", ""))
+    rid2 = client.post("/api/rfqs", json={"item": "pin widget", "qty": 10, "need_in_days": 5, "buyer_company": "b", "buyer_name": "b"}).json()["id"]
+    r2 = client.post(f"/api/rfq-by-token/{tokens_of(rid2)['pin-seller']}/shipping-estimate", json={"weight_kg": 5})
+    assert r2.status_code == 409 and "pincode is missing" in r2.json()["detail"]

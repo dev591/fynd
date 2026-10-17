@@ -1,3 +1,4 @@
+import re
 from enum import Enum
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator
@@ -43,6 +44,7 @@ class Profile(BaseModel):
     business_type: BusinessType
     state: str
     city: str
+    pincode: str = ""                       # asked once at sign-up; used server-side for shipping estimates, never shown to others
     categories: list[str] = Field(default_factory=list)
     gstin: str | None = None
     pan_masked: str | None = None
@@ -51,6 +53,14 @@ class Profile(BaseModel):
     supplier: SupplierSetup | None = None
     # One account can hold both roles. Normalised by the server; the wizard's single `role` still seeds it.
     roles: list[Literal["buyer", "seller"]] = Field(default_factory=list)
+
+    @field_validator("pincode")
+    @classmethod
+    def _pincode_is_six_digits(cls, v: str) -> str:
+        v = (v or "").strip()
+        if v and not re.fullmatch(r"[1-9][0-9]{5}", v):
+            raise ValueError("Pincode must be 6 digits.")
+        return v
 
 
 # Crossover Engine Models

@@ -11,7 +11,7 @@ import { SupplierChat } from "./components/SupplierChat";
 import { Money } from "./components/Money";
 import { useApiPoll, useApiOnce } from "../lib/useApi";
 import {
-  getRFQByToken, getMyQuotes, submitQuoteByToken,
+  getRFQByToken, getMyQuotes, submitQuoteByToken, estimateShipping,
   getChatByToken, postChatByToken,
   getSupplierProducts, getAssist, checkItemMatch, markQuoting, declineRequest,
   type SupplierRFQView, type QuoteVersionDTO, type NegotiationTargetDTO,
@@ -501,6 +501,7 @@ export function SupplierQuotePage() {
                   onEdit={handleFirstEdit}
                   onCheckItem={(pid) => checkItemMatch(token, pid)}
                   onSubmit={handleQuoteSubmit}
+                  onEstimate={(kg) => estimateShipping(token, kg)}
                   isSubmitting={submitting}
                   versionNumber={quotes.length + 1}
                 />

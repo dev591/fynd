@@ -40,6 +40,7 @@ export interface Profile {
   business_type: BusinessType;
   state: string;
   city: string;
+  pincode?: string;
   categories: string[];
   gstin?: string;
   pan_masked?: string; // never return the full PAN
@@ -62,6 +63,7 @@ export interface WizardDraft {
   business_type: BusinessType;
   state: string;
   city: string;
+  pincode: string;
   categories: Category[];
   // Screen 3: Tax IDs
   gstin: string;

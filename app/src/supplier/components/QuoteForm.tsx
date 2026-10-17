@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { order } from "../../landing/engine";
 import { Money } from "./Money";
-import { estimateShipping, type ShippingEstimate, type SupplierProductDTO } from "../../api/client";
+import type { ShippingEstimate, SupplierProductDTO } from "../../api/client";
 
 interface QuoteFormProps {
   rfq: { item: string; qty: number; needInDays: number };
@@ -41,6 +41,8 @@ interface QuoteFormProps {
     shipping?: "own" | "delhivery";
     shippingBasis?: "delhivery" | "rate_card";
   }) => void;
+  /** Freight and delivery days from the pincodes saved at sign-up. Rejects when none can be worked out. */
+  onEstimate?: (weightKg: number) => Promise<ShippingEstimate>;
   isSubmitting?: boolean;
   versionNumber?: number;
   /** Fires on every edit; the page uses the first one to tell the buyer the seller is quoting. */
@@ -54,6 +56,7 @@ export function QuoteForm({
   products = [],
   initialValues,
   onSubmit,
+  onEstimate,
   isSubmitting = false,
   versionNumber = 1,
   onEdit,
@@ -78,20 +81,17 @@ export function QuoteForm({
 
   // Shipping: own shipment, or Delhivery. The estimate only reaches the quote when the seller presses "Use this".
   const [shipping, setShipping] = useState<"own" | "delhivery">("own");
-  const [fromPin, setFromPin] = useState("");
-  const [toPin, setToPin] = useState("");
   const [weight, setWeight] = useState<number | "">("");
   const [est, setEst] = useState<ShippingEstimate | null>(null);
   const [estBusy, setEstBusy] = useState(false);
   const [estError, setEstError] = useState<string | null>(null);
   const [applied, setApplied] = useState<ShippingEstimate | null>(null);
-  const pinOk = (p: string) => /^[1-9][0-9]{5}$/.test(p);
-  const canEstimate = pinOk(fromPin) && pinOk(toPin) && typeof weight === "number" && weight > 0;
+  const canEstimate = !!onEstimate && typeof weight === "number" && weight > 0;
   const getEstimate = async () => {
     if (!canEstimate) return;
     setEstBusy(true); setEstError(null); setEst(null);
-    try { setEst(await estimateShipping({ source_pin: fromPin, consignee_pin: toPin, weight_kg: Number(weight) })); }
-    catch { setEstError("Could not get an estimate. Enter freight and lead time yourself."); }
+    try { setEst(await onEstimate!(Number(weight))); }
+    catch { setEstError("No estimate for this request. Enter freight and lead time yourself."); }
     finally { setEstBusy(false); }
   };
   const useEstimate = () => {
@@ -323,20 +323,10 @@ export function QuoteForm({
         </div>
         {shipping === "delhivery" && (
           <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3">
-              <label className="text-[12px] text-muted">Your pincode
-                <input inputMode="numeric" maxLength={6} value={fromPin} onChange={(e) => { setFromPin(e.target.value.replace(/\D/g, "")); setEst(null); }} placeholder="400069"
-                  className="num mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-bone focus:border-signal focus:outline-none" />
-              </label>
-              <label className="text-[12px] text-muted">Buyer's pincode
-                <input inputMode="numeric" maxLength={6} value={toPin} onChange={(e) => { setToPin(e.target.value.replace(/\D/g, "")); setEst(null); }} placeholder="122001"
-                  className="num mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-bone focus:border-signal focus:outline-none" />
-              </label>
-              <label className="text-[12px] text-muted">Weight (kg)
-                <input type="number" min="0" step="any" value={weight} onChange={(e) => { setWeight(e.target.value === "" ? "" : Number(e.target.value)); setEst(null); }} placeholder="20"
-                  className="num mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-bone focus:border-signal focus:outline-none" />
-              </label>
-            </div>
+            <label className="block max-w-[12rem] text-[12px] text-muted">Parcel weight (kg)
+              <input type="number" min="0" step="any" value={weight} onChange={(e) => { setWeight(e.target.value === "" ? "" : Number(e.target.value)); setEst(null); }} placeholder="20"
+                className="num mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-bone focus:border-signal focus:outline-none" />
+            </label>
             <button type="button" onClick={getEstimate} disabled={!canEstimate || estBusy}
               className="rounded-full border border-line bg-surface px-4 py-1.5 text-[13px] font-medium text-bone hover:border-signal/60 disabled:opacity-40">
               {estBusy ? "Estimating…" : "Estimate freight and delivery time"}

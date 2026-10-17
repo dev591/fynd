@@ -525,8 +525,8 @@ export interface ShippingEstimate {
 }
 
 /** Freight and delivery days for a seller's shipping choice. A suggestion only; the seller applies and may edit it. */
-export async function estimateShipping(body: { source_pin: string; consignee_pin: string; weight_kg: number }): Promise<ShippingEstimate> {
-  return apiFetch("/api/logistics/estimate", { method: "POST", body: JSON.stringify(body) });
+export async function estimateShipping(token: string, weightKg: number): Promise<ShippingEstimate> {
+  return apiFetch(`/api/rfq-by-token/${token}/shipping-estimate`, { method: "POST", body: JSON.stringify({ weight_kg: weightKg }) });
 }
 
 export async function getRFQByToken(token: string): Promise<SupplierRFQView> {

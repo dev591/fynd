@@ -33,6 +33,7 @@ const INITIAL_DRAFT: WizardDraft = {
   business_type: "manufacturer",
   state: "",
   city: "",
+  pincode: "",
   categories: ["fasteners"],
   gstin: "",
   pan: "",
@@ -148,6 +149,7 @@ export function LoginWizard() {
       business_type: draft.business_type,
       state: draft.state,
       city: draft.city,
+      pincode: (draft.pincode ?? "").trim(),
       categories: draft.categories,
       gstin: draft.gstin.trim() || undefined,
       pan_masked: maskPan(draft.pan),
@@ -217,6 +219,7 @@ export function LoginWizard() {
                 businessType={draft.business_type}
                 state={draft.state}
                 city={draft.city}
+                pincode={draft.pincode ?? ""}
                 categories={draft.categories}
                 onChange={(fields) =>
                   updateDraft({
@@ -224,6 +227,7 @@ export function LoginWizard() {
                     business_type: fields.businessType ?? draft.business_type,
                     state: fields.state ?? draft.state,
                     city: fields.city ?? draft.city,
+                    pincode: fields.pincode ?? draft.pincode ?? "",
                     categories: fields.categories ?? draft.categories,
                   })
                 }

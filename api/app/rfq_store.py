@@ -552,6 +552,25 @@ class RFQStore:
         )
         self.supplier_products.setdefault(user_id, [])
 
+    # Pincodes for the synthetic sellers, by city. Real accounts give theirs once at sign-up.
+    _DEMO_CITY_PINS = {"mumbai": "400001", "pune": "411001", "ahmedabad": "380001", "delhi": "110001", "bengaluru": "560001",
+                       "bangalore": "560001", "chennai": "600001", "hyderabad": "500001", "kolkata": "700001",
+                       "surat": "395003", "jaipur": "302001", "ludhiana": "141001", "nashik": "422001", "thane": "400601"}
+
+    def shipping_pins(self, token: str) -> Optional[tuple[str, str]]:
+        """(seller pincode, buyer pincode) for the request behind this quote link. Used only to price shipping on the
+        server; neither pincode is ever returned to the other side."""
+        rfq = self.rfqs.get(self.token_to_rfq_id.get(token, ""))
+        sid = self.token_to_supplier_id.get(token)
+        if not rfq or not sid:
+            return None
+        owner = self.profiles.get(sid) if self.supplier_owner.get(sid) == sid else None
+        seller_pin = owner.pincode if owner else self._DEMO_CITY_PINS.get(
+            (self.supplier_profiles[sid].location_city if sid in self.supplier_profiles else "").strip().lower(), "")
+        buyer = self.profiles.get(rfq.owner_id or "")
+        buyer_pin = buyer.pincode if buyer else ""
+        return (seller_pin, buyer_pin) if seller_pin and buyer_pin else None
+
     def supplier_id_for_user(self, user_id: str) -> Optional[str]:
         return user_id if self.supplier_owner.get(user_id) == user_id else None
 

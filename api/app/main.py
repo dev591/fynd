@@ -887,3 +887,22 @@ def logistics_estimate(payload: FreightIn, user: AuthUser = Depends(get_current_
                              width_cm=payload.width_cm, height_cm=payload.height_cm, box_count=payload.box_count,
                              inv_amount=payload.inv_amount)
     return out
+
+
+class ShippingEstimateIn(BaseModel):
+    weight_kg: float
+
+
+@app.post("/api/rfq-by-token/{token}/shipping-estimate")
+def shipping_estimate(token: str, payload: ShippingEstimateIn):
+    """Freight and delivery days for this quote link, from the two pincodes saved at sign-up. The pincodes stay on the
+    server; the seller only sees the result, which they apply by hand."""
+    if payload.weight_kg <= 0:
+        raise HTTPException(status_code=422, detail="Weight must be above zero.")
+    pins = store.shipping_pins(token)
+    if not pins:
+        raise HTTPException(status_code=409, detail="No estimate for this request: a pincode is missing. Enter freight and lead time yourself.")
+    out = delhivery.estimate(pins[0], pins[1], payload.weight_kg)
+    if not out:
+        raise HTTPException(status_code=409, detail="No estimate available. Enter freight and lead time yourself.")
+    return out
