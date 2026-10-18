@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Ambient } from "../components/Ambient";
+import { LiveToasts, useChangeToasts } from "../components/LiveToasts";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, AlertTriangle, FileSpreadsheet,
@@ -86,6 +87,29 @@ export function DashboardDesk() {
     const row = q ? evaluation?.rows.find(r => r.quote.id === q.id) ?? null : null;
     return q && row ? { quote: q, landed: row.landed, unit: q.packPrice / (q.packSize ?? 1) } : null;
   }, [engineQuotes, rfq, qty, evaluation]);
+
+  // Announce quotes that land, revisions, and a change of best, so a quote sent from another laptop is seen here
+  const liveSig = useMemo(() => {
+    if (!rfq) return undefined;
+    const quotes: Record<string, { v: number; landed: number | null }> = {};
+    for (const [alias, versions] of Object.entries(apiQuotes)) {
+      const last = versions[versions.length - 1];
+      if (last) quotes[alias] = { v: versions.length, landed: last.landed_cost ?? null };
+    }
+    const atAsk = engineQuotes.length ? evaluate(engineQuotes, needFromRFQ(rfq), details?.exceptions ?? {}, (rfq.priority_mode as Mode) ?? "cheapest").winner : null;
+    return { quotes, best: atAsk?.quote.id ?? null, bestLanded: atAsk?.landed ?? null };
+  }, [apiQuotes, engineQuotes, rfq, details?.exceptions]);
+  const toasts = useChangeToasts(liveSig, (a, b) => {
+    const out: { tone: "new" | "best"; text: string }[] = [];
+    for (const [alias, q] of Object.entries(b.quotes)) {
+      const before = a.quotes[alias];
+      const money = q.landed != null ? ` ${inr(q.landed)} to your door` : "";
+      if (!before) out.push({ tone: "new", text: `${alias} just quoted${money}` });
+      else if (q.v > before.v) out.push({ tone: "new", text: `${alias} revised their quote${money ? ":" + money : ""}` });
+    }
+    if (b.best && b.best !== a.best && a.best) out.push({ tone: "best", text: `New best: ${b.best}${b.bestLanded != null ? ` at ${inr(b.bestLanded)}` : ""}` });
+    return out;
+  });
 
   // Chat polling
   const { data: chatMessages } = useApiPoll<ChatMessageDTO[]>(
@@ -240,6 +264,7 @@ export function DashboardDesk() {
   return (
     <div className="landing grain isolate min-h-screen bg-ink text-bone pb-16">
       <Ambient />
+      <LiveToasts toasts={toasts} />
       {/* Top Navigation */}
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">

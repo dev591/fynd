@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Ambient } from "../components/Ambient";
+import { LiveToasts, useChangeToasts } from "../components/LiveToasts";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft, Building2, Package, Plus, ArrowRight,
@@ -39,6 +40,13 @@ export function SupplierDashboard() {
   const { data: inbox, loading: inboxLoading, error: inboxError, refetch: refetchInbox } = useApiPoll<NotificationDTO[]>(
     () => getNotifications(supplierId), 2000, [supplierId],
   );
+
+  // A request landing while the seller watches pops up here too (the OS notification covers other tabs)
+  const inboxSig = useMemo(() => inbox ? Object.fromEntries(inbox.map(n => [n.id, n])) : undefined, [inbox]);
+  const toasts = useChangeToasts(inboxSig, (a, b) => Object.keys(b).filter(id => !a[id]).map(id => ({
+    tone: "new" as const,
+    text: `New request: ${b[id].qty} × ${b[id].item}${b[id].verdict.can_fulfil === "yes" ? ". You can supply it." : ""}`,
+  })));
 
   // Supplier profile
   const { data: profile } = useApiOnce<SupplierProfileDTO>(
@@ -126,6 +134,7 @@ export function SupplierDashboard() {
   return (
     <div className="landing grain isolate min-h-screen bg-ink text-bone pb-16">
       <Ambient />
+      <LiveToasts toasts={toasts} />
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6">
