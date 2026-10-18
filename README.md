@@ -92,7 +92,7 @@ State is saved to **SQLite (WAL)** at `api/data/app.db` on a laptop, or to a **S
 | `DEMO_AUTOPILOT` (on) | Synthetic demo sellers answer by themselves so quotes land in seconds |
 | `DEMO_WINDOW_MINUTES` (off) | Shorten every quote window for a demo; the UI says "demo timing" |
 | `ALLOW_DEMO_SELLERS` (true) | Let any seller-role user act as a synthetic demo seller |
-| `PERSIST` (on), `CROSSOVER_DB` | SQLite persistence and its path |
+| `PERSIST` (on), `PERSIST_BACKEND`, `CROSSOVER_DB` | Saving: SQLite file by default, `supabase` in production |
 | `CORS_ORIGINS` | Extra allowed browser origins (localhost and private networks are always allowed) |
 
 ### Ten demo sellers (optional, local demos only)
@@ -136,7 +136,7 @@ worked example, import errors, windows with a fake clock, persistence across a r
 api/app/     engine.py (rules; landed cost + gates untouched), tax.py, views.py (what each audience may see),
              rfq_store.py, persist.py, auth.py, intake.py, quote_text.py, assistant.py, summary.py, importer.py
 api/tests/   320 tests + golden sets (15 buyer sentences, 8 seller cases)
-api/supabase/schema.sql   an early Postgres draft with row-level security. NOT used and NOT kept in sync: the live API uses SQLite
+api/supabase/state.sql    the table production saves to. schema.sql is an early, unused draft
 app/src/     landing story, wizard, buyer desk, seller desk, shared components
 AUDIT.md     what exists against the v2 brief, and the decisions made
 ```
