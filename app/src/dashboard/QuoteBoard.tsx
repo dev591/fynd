@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { AlertTriangle, Check, Lock, MessageSquare, Minus, Plus, ShieldCheck, Sparkles, Trophy, Truck, Unlock, Upload, X, Zap } from "lucide-react";
 import { inr, type Mode, type Row } from "../landing/engine";
-import type { QuoteVersionDTO, RFQDetailsDTO } from "../api/client";
+import type { FinePrintFlagDTO, QuoteVersionDTO, RFQDetailsDTO } from "../api/client";
 
 /** "Thu 22 Oct" for a delivery `days` from today. Factory people think in dates, not lead times. */
 export function arriveOn(days: number): string {
@@ -93,6 +93,7 @@ export interface BoardProps {
   onOpen: (alias: string) => void;
   onChoose: (alias: string) => void;
   onWithdraw: (alias: string) => void;
+  finePrint?: Record<string, FinePrintFlagDTO[]>;
 }
 
 /** Every quote side by side, best first, each with plain yes/no checks. New quotes slide in; the order animates. */
@@ -204,6 +205,14 @@ function Column({ row, rank, cheapest, fastest, ...p }: BoardProps & { row: Row;
       )}
 
       {blocked && <p className="mt-3 rounded-lg bg-error/10 px-2.5 py-1.5 text-[12px] text-error">Can't be compared: {row.reason}.</p>}
+      {(p.finePrint?.[id] ?? []).length > 0 && (
+        <div className="mt-3 space-y-1 rounded-xl border border-warn/40 bg-warn/10 px-2.5 py-2" aria-label={`Fine print from ${id}`}>
+          <p className="label flex items-center gap-1 text-warn"><AlertTriangle size={11} />Read the fine print</p>
+          {p.finePrint![id].map(f => (
+            <p key={f.kind} className="text-[11.5px] leading-snug text-bone"><span className="font-medium">{f.label}:</span> <span className="text-muted">“{f.phrase}”</span></p>
+          ))}
+        </div>
+      )}
       {target && <p className="mt-2 text-[11px] text-signal">Asked to match: {target.message}</p>}
       {badge && <p className="mt-2 flex items-start gap-1 text-[10.5px] leading-snug text-muted"><ShieldCheck size={11} className="mt-px shrink-0" />{badge.region} · {badge.verification_text}</p>}
 

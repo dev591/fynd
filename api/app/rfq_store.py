@@ -23,6 +23,7 @@ from .models import (
     BuyerNotice,
     ExceptionRecord,
     Activity,
+    Event,
     AutopilotSettings,
     PriceBreak,
     check_tiers,
@@ -83,6 +84,7 @@ class RFQStore:
         self.aliases: Dict[str, Dict[str, str]] = {}      # rfq_id -> {supplier_id: "Seller N"}, in order of first quote
         self.revealed: Dict[str, Dict[str, dict]] = {}    # rfq_id -> {supplier_id: {buyer_id, at, kind}}
         self.reveal_log: List[dict] = []                  # every first-time reveal: buyer, seller, request, free/paid/repeat
+        self.events: Dict[str, List[Event]] = {}        # per request: what happened, oldest first
         self.history: List[dict] = []                     # synthetic past orders, labelled as such
         self.media: Dict[str, dict] = {}                          # rfq -> delivery photo/video, kept apart from the record
         self.buyer_notices: Dict[str, List[BuyerNotice]] = {}   # buyer_id -> their bell
@@ -287,9 +289,13 @@ class RFQStore:
 
     def set_exception(self, rfq_id: str, supplier_id: str, reason: str, approver: str) -> None:
         self.exceptions.setdefault(rfq_id, {})[supplier_id] = ExceptionRecord(reason=reason, approver=approver)
+        self.log_event(rfq_id, "exception", supplier_id, reason=reason, approver=approver)
 
     def clear_exception(self, rfq_id: str, supplier_id: str) -> bool:
-        return self.exceptions.get(rfq_id, {}).pop(supplier_id, None) is not None
+        removed = self.exceptions.get(rfq_id, {}).pop(supplier_id, None) is not None
+        if removed:
+            self.log_event(rfq_id, "exception_withdrawn", supplier_id)
+        return removed
 
     @staticmethod
     def is_known(supplier_id: str) -> bool:
@@ -382,6 +388,7 @@ class RFQStore:
         for holder in (rfq.decision, self.decisions.get(rfq_id)):          # same dict until a restart splits them
             if holder is not None:
                 holder["delivery"] = record
+        self.log_event(rfq_id, "delivery", on_time=on_time, matches_quote=matches_quote)
         return record
 
     def alias_for(self, rfq_id: str, supplier_id: str, create: bool = False) -> Optional[str]:
@@ -418,6 +425,7 @@ class RFQStore:
         )
         history.append(qv)
         self._quote_notices(rfq)
+        self.log_event(rfq_id, "imported", supplier_id if False else row.get("supplier_id"), supplier=row.get("supplier_name") or row.get("supplier"))
         return qv
 
     def supplier_for_alias(self, rfq_id: str, alias: str) -> Optional[str]:
@@ -464,6 +472,7 @@ class RFQStore:
         self.revealed.setdefault(rfq_id, {})[supplier_id] = {"buyer_id": buyer_id, "at": now, "kind": kind}
         self.reveal_log.append({"buyer_id": buyer_id, "supplier_id": supplier_id, "rfq_id": rfq_id,
                                 "alias": self.alias_for(rfq_id, supplier_id), "kind": kind, "at": now})
+        self.log_event(rfq_id, "reveal", supplier_id)
         for n in self.notifications.get(supplier_id, []):     # tell the seller: a buyer unlocked you
             if n.rfq_id == rfq_id:
                 n.unlocked_at, n.status = now, "new"
@@ -657,6 +666,7 @@ class RFQStore:
         if not n:
             return False
         n.status = "declined"
+        self.log_event(n.rfq_id, "declined", n.supplier_id)
         return True
 
     def draft_for_token(self, token: str) -> Optional[DraftQuote]:
@@ -703,6 +713,27 @@ class RFQStore:
 
     # ─── RFQ Lifecycle ─────────────────────────────────────────────────
 
+    def log_event(self, rfq_id: str, kind: str, seller_id: Optional[str] = None, **meta) -> None:
+        self.events.setdefault(rfq_id, []).append(Event(
+            id="evt_" + uuid.uuid4().hex[:8], at=self.clock().isoformat(), kind=kind, seller_id=seller_id, meta=meta))
+
+    def update_rfq(self, rfq_id: str, qty=None, need_in_days=None, note=None, priority_mode=None) -> RFQ:
+        """The owner edits an open request. Every change is logged and each matched seller is told to check their quote."""
+        rfq = self.rfqs[rfq_id]
+        changes = {}
+        for name, new in (("qty", qty), ("need_in_days", need_in_days), ("note", note), ("priority_mode", priority_mode)):
+            old = getattr(rfq, name)
+            if new is not None and new != old:
+                changes[name] = [old, new]
+                setattr(rfq, name, new)
+        if changes:
+            self.log_event(rfq_id, "edited", changes=changes)
+            for notes in self.notifications.values():
+                for n in notes:
+                    if n.rfq_id == rfq_id:
+                        n.reminder = "The buyer changed this request. Check your quote."
+        return rfq
+
     def create_rfq(self, payload: RFQCreate, owner_id: Optional[str] = None) -> RFQ:
         """Create the request, find every seller whose catalog has the item, notify each once."""
         rfq_id = "rfq_" + uuid.uuid4().hex[:8]
@@ -736,6 +767,8 @@ class RFQStore:
         self.targets[rfq_id] = {}
         self.chats[rfq_id] = {}
         self._notify(rfq, matches)
+        self.log_event(rfq_id, "created", qty=rfq.qty, item=rfq.item, need_in_days=rfq.need_in_days)
+        self.log_event(rfq_id, "sellers_notified", count=len(matches), item=rfq.item)
         return rfq
 
     def get_rfq(self, rfq_id: str) -> Optional[RFQ]:
@@ -828,6 +861,7 @@ class RFQStore:
         if rfq_id in self.targets and supplier_id in self.targets[rfq_id]:
             self.targets[rfq_id][supplier_id].status = "accepted"
 
+        self.log_event(rfq_id, "quote", supplier_id, version=next_ver, landed=landed, auto=(origin == "auto"))
         return qv
 
     def get_supplier_quotes_and_target(self, token: str) -> dict:
@@ -869,6 +903,7 @@ class RFQStore:
             sent_at=datetime.now().strftime("%I:%M %p"), sent_by=sent_by, status="pending",
         )
         self.targets.setdefault(rfq_id, {})[supplier_id] = target
+        self.log_event(rfq_id, "target", supplier_id, message=msg)
 
         # Also drop a structured chat message so the thread shows the target card
         chat = self.chats.setdefault(rfq_id, {}).setdefault(supplier_id, [])
@@ -902,6 +937,7 @@ class RFQStore:
             decision["split"] = split          # two sellers, each with their own quantity; winner_id is the larger share
         rfq.decision = decision
         self.decisions[rfq_id] = decision
+        self.log_event(rfq_id, "decision", winner=winner_id, split=[p["quote_id"] for p in split["parts"]] if split else None)
         return decision
 
     def split_options(self, rfq_id: str) -> Optional[dict]:

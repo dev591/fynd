@@ -20,6 +20,7 @@ import {
   getSupplierProfile, getSupplierProducts,
   addSupplierProduct, deleteSupplierProduct,
   type NotificationDTO, type SellerSummary, type SupplierProfileDTO, type SupplierProductDTO,
+  type SellerOrderDTO, getSellerOrders,
 } from "../api/client";
 
 
@@ -58,7 +59,8 @@ export function SupplierDashboard() {
     () => supplierId ? getSupplierProducts(supplierId) : Promise.resolve([]), 5000, [supplierId],
   );
 
-  const [activeTab, setActiveTab] = useState<"rfqs" | "products">("rfqs")
+  const [activeTab, setActiveTab] = useState<"rfqs" | "products" | "orders">("rfqs")
+  const { data: orders } = useApiPoll<SellerOrderDTO[]>(() => supplierId ? getSellerOrders(supplierId) : Promise.resolve([]), 5000, [supplierId]);
   const { data: autopilot, refetch: refetchAutopilot } = useApiPoll(() => supplierId ? getAutopilot(supplierId) : Promise.resolve(null), 5000, [supplierId]);
   const toggleAutopilot = async () => {
     try {
@@ -263,7 +265,44 @@ export function SupplierDashboard() {
             <span>My Products</span>
             <span className="rounded-full bg-raised px-1.5 py-0.2 text-[11px] text-muted">{products?.length || 0}</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("orders")}
+            className={`pb-3 transition-colors border-b-2 flex items-center gap-1.5 ${activeTab === "orders" ? "border-signal text-bone font-semibold" : "border-transparent text-muted hover:text-bone"}`}
+          >
+            <span>Orders received</span>
+            <span className="rounded-full bg-raised px-1.5 py-0.2 text-[11px] text-muted">{orders?.length || 0}</span>
+          </button>
         </div>
+
+        {activeTab === "orders" && (
+          <div className="space-y-3" aria-label="Orders received">
+            {(orders ?? []).length === 0 && (
+              <div className="rounded-2xl border border-line bg-surface p-8 text-center">
+                <p className="text-[15px] font-medium">No orders yet</p>
+                <p className="text-[13px] text-muted">When a buyer chooses your quote, the order and the buyer's contact appear here.</p>
+              </div>
+            )}
+            {(orders ?? []).map(o => (
+              <motion.article key={o.rfq_id + o.qty} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-line bg-surface p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[12px] text-muted">{o.decided_at ? new Date(o.decided_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}{o.split ? " · part of a split order" : ""}</p>
+                    <h3 className="text-[18px] font-semibold"><span className="num">{o.qty}</span> × {o.item}</h3>
+                  </div>
+                  <div className="text-right"><p className="num text-[20px] font-bold">{o.total != null ? `₹${Math.round(o.total).toLocaleString("en-IN")}` : "—"}</p>
+                    <span className="rounded-full bg-live/15 px-2.5 py-0.5 text-[11px] font-medium text-live">{o.status}</span></div>
+                </div>
+                <div className="mt-3 rounded-xl bg-raised/60 px-4 py-3 text-[13px]">
+                  <p className="label text-muted">Buyer to deliver to</p>
+                  <p className="mt-1 text-[15px] font-semibold">{o.buyer.company || o.buyer.name}</p>
+                  <p className="num text-muted">{[o.buyer.name, o.buyer.phone, o.buyer.email, o.buyer.city].filter(Boolean).join(" · ")}</p>
+                  {o.payment && <p className="mt-1 text-[12px] text-muted">{o.payment}</p>}
+                </div>
+              </motion.article>
+            ))}
+          </div>
+        )}
 
         {/* Tab 1: Inbox */}
         {activeTab === "rfqs" && (

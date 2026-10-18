@@ -115,3 +115,11 @@ Written with Claude Code (Anthropic), reviewed by the team. No backend or engine
   headline is written in code from engine numbers; no model is involved, and a suggestion that can be tried carries the exact
   question to ask. An "order more" idea must be strictly cheaper than today's winner at that quantity, never a tie. Also fixed:
   the website catch-all route now sits last in `main.py`, so no API route added after it is hidden on a deployed server.
+- **Request details, history and orders.** Each request has an event log (`events` in the store, saved with everything else); the
+  buyer sees it with seller aliases until a reveal, and a seller sees only their own thread plus what the buyer did to the whole
+  request. A buyer can edit an open request (limits enforced on the server; every change is logged and each matched seller gets a
+  "check your quote" reminder). Order history lists decided requests with the revealed receiver; sellers see orders they won.
+- **Fine print** (`api/app/fine_print.py`): rules plus a model read each seller's note for hidden terms. A model flag is kept only
+  if its kind is in a fixed list and the phrase it quotes is really in the note, so it can only point at the seller's own words.
+  Warnings only; they never change a price or a winner. Tested with fake model replies, not yet against the real model.
+- The "Get QR" wording on the new-request button was removed because no QR code was ever generated. A QR code is not built.

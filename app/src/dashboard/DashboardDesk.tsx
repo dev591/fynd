@@ -21,7 +21,7 @@ import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
 import {
   getRFQDetails, sendTarget, lockDecision,
   getChatMessages, postChatMessage,
-  getSupplierProfileForBuyer, getSummary, getAiOpinion, type AiOpinionDTO, getSplitOptions, lockSplitDecision, type SplitPlanDTO, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, draftQuotesFromMessage, type ImportResult, type QuoteDraftRow,
+  getSupplierProfileForBuyer, getSummary, getAiOpinion, type AiOpinionDTO, getSplitOptions, lockSplitDecision, type SplitPlanDTO, getFinePrint, type FinePrintFlagDTO, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, draftQuotesFromMessage, type ImportResult, type QuoteDraftRow,
   type DeliveryDTO, type RFQDetailsDTO, type ChatMessageDTO, type SellerPanelDTO, type SellerIdentity, type PlanInfo, type SummaryDTO,
 } from "../api/client";
 
@@ -131,6 +131,11 @@ export function DashboardDesk() {
   const { data: opinion } = useApiOnce<AiOpinionDTO | null>(
     () => !decidedNow && quoteSig ? getAiOpinion(rfqId ?? "").catch(() => null) : Promise.resolve(null),
     [decidedNow, rfqId, quoteSig],
+  );
+
+  // Terms hidden in sellers' notes (advance payment, short price validity...), read when quotes change
+  const { data: finePrint } = useApiOnce<Record<string, FinePrintFlagDTO[]>>(
+    () => quoteSig ? getFinePrint(rfqId ?? "").catch(() => ({})) : Promise.resolve({}), [rfqId, quoteSig],
   );
 
   // Best two-seller split, offered next to the normal pick. Refreshed when quotes or signed exceptions change.
@@ -309,7 +314,7 @@ export function DashboardDesk() {
         {/* What was asked, and how far along the answers are */}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="label text-muted">{rfq.buyer_company}</p>
+            <p className="label text-muted">{rfq.buyer_company} · <Link to={`/app/request/${rfq.id}`} className="text-signal underline">Details and history</Link></p>
             <h1 className="display text-[clamp(1.7rem,3.6vw,2.6rem)] leading-tight text-bone">
               <span className="num">{rfq.qty}</span> × {rfq.item}
             </h1>
@@ -502,6 +507,7 @@ export function DashboardDesk() {
             onReveal={handleReveal} onChat={setChatSupplierId} onException={setExceptionFor} onOpen={setProfileSupplierId}
             onChoose={(id) => { setChooseId(id); setShowDecisionModal(true); }}
             onWithdraw={(id) => withdrawException(rfqId ?? "", id).then(() => refetch())}
+            finePrint={finePrint ?? undefined}
           />
         </section>
 
@@ -1336,7 +1342,7 @@ function ImportModal({ rfqId, onClose, onLoaded }: { rfqId: string; onClose: () 
 
 // ─── Quote window countdown ────────────────────────────────────────────────
 
-function WindowChip({ rfq, decided }: { rfq: NonNullable<RFQDetailsDTO["rfq"]>; decided: boolean }) {
+export function WindowChip({ rfq, decided }: { rfq: NonNullable<RFQDetailsDTO["rfq"]>; decided: boolean }) {
   const now = useNow();
   if (decided || !rfq.window_ends_at) return null;
   const left = rfq.window_closed ? null : timeLeft(rfq.window_ends_at, now);

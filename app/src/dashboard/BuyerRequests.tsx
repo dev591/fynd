@@ -141,7 +141,7 @@ export function BuyerRequests() {
             ) : (() => { const rfq = g[0]; return (
               <motion.div key={rfq.id} initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ type: "spring", stiffness: 240, damping: 26, delay: Math.min(i, 9) * 0.05 }}>
-                <Link to={`/app/compare/${rfq.id}`}
+                <Link to={`/app/request/${rfq.id}`}
                   className="group relative flex h-full flex-col rounded-2xl border border-line bg-surface p-5 transition-all hover:-translate-y-1 hover:border-signal/50 hover:shadow-[0_22px_40px_-28px_var(--signal)]">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -158,7 +158,7 @@ export function BuyerRequests() {
                       {rfq.status === "Open" ? "Taking quotes" : rfq.status}
                     </span>
                     <span className="flex items-center gap-1 text-[13px] font-medium text-signal">
-                      {rfq.status === "Decided" ? "See decision" : "Compare"}
+                      Open
                       <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
                     </span>
                   </div>

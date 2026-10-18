@@ -233,3 +233,136 @@ def seller_my_quotes(store, token: str) -> dict[str, Any]:
     rfq_id, sid = store.token_to_rfq_id.get(token), store.token_to_supplier_id.get(token)
     shown = bool(rfq_id and sid) and store.is_revealed(rfq_id, sid)
     return {"quotes": data["quotes"], "target": seller_target(data["target"], shown)}
+
+
+# ─── request log and order history ─────────────────────────────────────────
+
+_FIELD = {"qty": "quantity", "need_in_days": "deadline", "note": "note", "priority_mode": "priority"}
+
+
+def _changes_text(changes: dict) -> str:
+    out = []
+    for k, (old, new) in changes.items():
+        unit = " days" if k == "need_in_days" else ""
+        out.append(f"{_FIELD.get(k, k)} {old if old not in (None, '') else '—'}{unit} → {new if new not in (None, '') else '—'}{unit}")
+    return ", ".join(out)
+
+
+def _money(n) -> str:
+    return f"₹{round(n):,}" if n is not None else "a quote"
+
+
+def render_event(store, rfq, e, audience: str, viewer_sid: str | None = None) -> str | None:
+    """One log line in words for this audience. None = this audience does not see the event. Buyers see aliases only."""
+    m, sid = e.meta, e.seller_id
+    alias = store.alias_for(rfq.id, sid) if sid else None
+    if audience == "buyer":
+        if e.kind == "created":
+            return f"You created this request: {m.get('qty')} × {m.get('item')}, needed in {m.get('need_in_days')} days"
+        if e.kind == "sellers_notified":
+            n = m.get("count", 0)
+            return f"{n} seller{'' if n == 1 else 's'} who stock {m.get('item')} {'was' if n == 1 else 'were'} notified"
+        if e.kind == "quote":
+            return f"{alias} {'sent a quote' if m.get('version', 1) == 1 else 'revised their quote (v' + str(m.get('version')) + ')'}: {_money(m.get('landed'))} to your door"
+        if e.kind == "imported":
+            return "You imported a quote from a file"
+        if e.kind == "declined":
+            return f"{alias} said they can't supply this"
+        if e.kind == "target":
+            return f"You asked {alias} to match a better offer: {scrub(m.get('message') or '')}"
+        if e.kind == "reveal":
+            name = store._supplier_name(sid) if sid else ""
+            return f"You revealed {alias}" + (f" ({name})" if name else "")
+        if e.kind == "exception":
+            return f"You approved {alias} anyway: “{scrub(m.get('reason') or '')}”, signed by {m.get('approver')}"
+        if e.kind == "exception_withdrawn":
+            return f"You withdrew the approval for {alias}"
+        if e.kind == "edited":
+            return f"You changed the request: {_changes_text(m.get('changes', {}))}"
+        if e.kind == "decision":
+            parts = m.get("split")
+            return f"You placed a split order with {' and '.join(parts)}" if parts else f"You placed the order with {m.get('winner')}"
+        if e.kind == "delivery":
+            return "You recorded the delivery" + (" (on time)" if m.get("on_time") else " (late)")
+        return None
+    # seller: only their own thread, plus what the buyer did to the request as a whole
+    if e.kind == "created":
+        return f"A buyer asked for {m.get('qty')} × {m.get('item')}, needed in {m.get('need_in_days')} days"
+    if e.kind == "edited":
+        return f"The buyer changed the request: {_changes_text(m.get('changes', {}))}"
+    if e.kind == "decision":
+        mine = viewer_sid and store.alias_for(rfq.id, viewer_sid)
+        winners = (m.get("split") or [m.get("winner")])
+        return "You won this order" if mine in winners else "The buyer chose another seller"
+    if sid != viewer_sid:
+        return None
+    if e.kind == "quote":
+        return f"You {'sent a quote' if m.get('version', 1) == 1 else 'revised your quote (v' + str(m.get('version')) + ')'}: {_money(m.get('landed'))}"
+    if e.kind == "declined":
+        return "You said you can't supply this"
+    if e.kind == "target":
+        return f"The buyer asked you to match a better offer: {scrub(m.get('message') or '')}"
+    if e.kind == "reveal":
+        return "The buyer unlocked your contact"
+    if e.kind == "delivery":
+        return "The buyer recorded the delivery"
+    return None
+
+
+def request_log(store, rfq, audience: str, viewer_sid: str | None = None) -> list[dict]:
+    out = []
+    for e in store.events.get(rfq.id, []):
+        text = render_event(store, rfq, e, audience, viewer_sid)
+        if text:
+            out.append({"id": e.id, "at": e.at, "kind": e.kind, "text": text})
+    return out
+
+
+def _decision_parts(store, rfq) -> list[tuple[str, int, float | None]]:
+    """(alias, units, total) for each seller on a decided request: one for a normal order, two for a split."""
+    d = rfq.decision or {}
+    if d.get("split"):
+        return [(p["quote_id"], p["qty"], p["landed"]) for p in d["split"]["parts"]]
+    alias = d.get("winner_id")
+    sid = store.supplier_for_alias(rfq.id, alias) if alias else None
+    latest = (store.quotes.get(rfq.id, {}).get(sid) or [None])[-1] if sid else None
+    return [(alias, rfq.qty, latest.landed_cost if latest else None)] if alias else []
+
+
+def _delivery_status(d: dict) -> str:
+    dv = (d or {}).get("delivery")
+    if not dv:
+        return "Awaiting delivery"
+    return "Delivered on time" if dv.get("on_time") and dv.get("matches_quote") else "Delivered, with a problem noted"
+
+
+def buyer_orders(store, buyer_id: str) -> list[dict]:
+    out = []
+    for rfq in store.rfqs.values():
+        if rfq.owner_id != buyer_id or not rfq.decision:
+            continue
+        revealed = buyer_revealed(store, rfq)
+        parts = _decision_parts(store, rfq)
+        out.append({
+            "rfq_id": rfq.id, "item": rfq.item, "qty": rfq.qty, "decided_at": rfq.decision.get("decided_at"),
+            "total_landed": (rfq.decision["split"]["total_landed"] if rfq.decision.get("split") else (parts[0][2] if parts else None)),
+            "approver": rfq.decision.get("approver"), "reason": rfq.decision.get("reason"), "split": bool(rfq.decision.get("split")),
+            "status": _delivery_status(rfq.decision),
+            "receivers": [{"alias": a, "units": u, "total": t, **{k: (revealed.get(a) or {}).get(k) for k in
+                           ("business_name", "contact_name", "phone", "email", "city", "state")}} for a, u, t in parts],
+        })
+    return sorted(out, key=lambda o: o["decided_at"] or "", reverse=True)
+
+
+def seller_orders(store, supplier_id: str) -> list[dict]:
+    out = []
+    for rfq in store.rfqs.values():
+        if not rfq.decision:
+            continue
+        for alias, units, total in _decision_parts(store, rfq):
+            if store.supplier_for_alias(rfq.id, alias) != supplier_id:
+                continue
+            out.append({"rfq_id": rfq.id, "item": rfq.item, "qty": units, "total": total, "decided_at": rfq.decision.get("decided_at"),
+                        "status": _delivery_status(rfq.decision), "buyer": buyer_contact(store, rfq),
+                        "payment": rfq.decision.get("payment_note"), "split": bool(rfq.decision.get("split"))})
+    return sorted(out, key=lambda o: o["decided_at"] or "", reverse=True)

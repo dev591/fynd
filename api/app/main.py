@@ -17,6 +17,7 @@ from .layers.semantic_cache import SemanticCache
 from .layers.llm import LLMCascade
 
 from .models import (
+    RFQEditIn,
     Profile,
     Quote,
     Need,
@@ -51,7 +52,7 @@ from .models import (
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
 from .quote_text import draft_from_message
-from . import ai, ask_desk, assistant, delhivery, demo_roster
+from . import ai, ask_desk, fine_print, assistant, delhivery, demo_roster
 from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
@@ -650,6 +651,41 @@ def split_options(rfq_id: str, user: AuthUser = Depends(buyer_only)):
     return {"plan": store.split_options(rfq_id)}
 
 
+@app.patch("/api/rfqs/{rfq_id}")
+def edit_request(rfq_id: str, payload: RFQEditIn, user: AuthUser = Depends(buyer_only)):
+    """The owner changes an open request. Sellers are told to check their quotes; everything is logged."""
+    rfq = _rfq_for(user, rfq_id)
+    if rfq.status != "Open" or rfq.decision:
+        raise HTTPException(status_code=409, detail={"code": "not_open", "message": "A decided request cannot be edited."})
+    store.update_rfq(rfq_id, payload.qty, payload.need_in_days, payload.note, payload.priority_mode)
+    return _rfq_response(rfq)
+
+
+@app.get("/api/rfqs/{rfq_id}/log")
+def request_log(rfq_id: str, user: AuthUser = Depends(buyer_only)):
+    """What happened on this request, oldest first. Sellers appear by alias until revealed."""
+    return {"events": views.request_log(store, _rfq_for(user, rfq_id), "buyer")}
+
+
+@app.get("/api/orders")
+def my_orders(user: AuthUser = Depends(buyer_only)):
+    """Order history: every request this buyer decided, with the seller who receives the order."""
+    return {"orders": views.buyer_orders(store, user.id)}
+
+
+@app.get("/api/supplier/{supplier_id}/orders")
+def orders_received(supplier_id: str, user: AuthUser = Depends(seller_only)):
+    """Orders this seller won, with the buyer's contact and the amount."""
+    _seller_for(user, supplier_id)
+    return {"orders": views.seller_orders(store, supplier_id)}
+
+
+@app.get("/api/rfqs/{rfq_id}/fine-print")
+def request_fine_print(rfq_id: str, user: AuthUser = Depends(buyer_only)):
+    """Terms hidden in each quote's notes, by alias. Warnings only; they never change a price or a winner."""
+    return {"flags": fine_print.for_request(store, _rfq_for(user, rfq_id))}
+
+
 @app.post("/api/rfqs/{rfq_id}/decision")
 def record_decision(rfq_id: str, payload: DecisionIn, user: AuthUser = Depends(buyer_only)):
     """Order handoff. The chosen seller must have been revealed first, so the buyer can actually contact them."""
@@ -700,6 +736,12 @@ def get_rfq_by_token(token: str, _seller: str = Depends(token_guard)):
     if not data:
         raise HTTPException(status_code=404, detail="This link isn't valid or has expired.")
     return data
+
+
+@app.get("/api/rfq-by-token/{token}/log")
+def seller_request_log(token: str, _seller: str = Depends(token_guard)):
+    rfq = store.rfqs.get(store.token_to_rfq_id.get(token, ""))
+    return {"events": views.request_log(store, rfq, "seller", store.token_to_supplier_id.get(token)) if rfq else []}
 
 
 @app.post("/api/rfq-by-token/{token}/quotes", response_model=QuoteVersion)

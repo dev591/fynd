@@ -558,6 +558,54 @@ export async function getDeskSuggestions(rfqId: string): Promise<DeskSuggestionD
   return (await apiFetch<{ suggestions: DeskSuggestionDTO[] }>(`/api/rfqs/${rfqId}/suggestions`)).suggestions;
 }
 
+export interface FinePrintFlagDTO { kind: string; phrase: string; label: string }
+
+/** Terms hidden in each quote's notes, by alias. Warnings only; they never change a price or a winner. */
+export async function getFinePrint(rfqId: string): Promise<Record<string, FinePrintFlagDTO[]>> {
+  return (await apiFetch<{ flags: Record<string, FinePrintFlagDTO[]> }>(`/api/rfqs/${rfqId}/fine-print`)).flags;
+}
+
+export interface LogEventDTO { id: string; at: string; kind: string; text: string }
+
+/** What happened on a request, oldest first. Sellers appear by alias until revealed. */
+export async function getRequestLog(rfqId: string): Promise<LogEventDTO[]> {
+  return (await apiFetch<{ events: LogEventDTO[] }>(`/api/rfqs/${rfqId}/log`)).events;
+}
+
+/** The seller's own side of a request's history, from their quote link. */
+export async function getSellerRequestLog(token: string): Promise<LogEventDTO[]> {
+  return (await apiFetch<{ events: LogEventDTO[] }>(`/api/rfq-by-token/${token}/log`)).events;
+}
+
+export interface RequestEdit { qty?: number; need_in_days?: number; note?: string; priority_mode?: PriorityMode }
+
+/** Change an open request. Sellers are told to check their quotes. */
+export async function editRequest(rfqId: string, edit: RequestEdit): Promise<RFQDTO> {
+  return apiFetch(`/api/rfqs/${rfqId}`, { method: "PATCH", body: JSON.stringify(edit) });
+}
+
+export interface BuyerOrderDTO {
+  rfq_id: string; item: string; qty: number; decided_at: string | null; total_landed: number | null;
+  approver: string | null; reason: string | null; split: boolean; status: string;
+  receivers: { alias: string; units: number; total: number | null; business_name?: string | null; contact_name?: string | null;
+               phone?: string | null; email?: string | null; city?: string | null; state?: string | null }[];
+}
+
+/** Order history: every decided request with the seller who receives the order. */
+export async function getOrders(): Promise<BuyerOrderDTO[]> {
+  return (await apiFetch<{ orders: BuyerOrderDTO[] }>("/api/orders")).orders;
+}
+
+export interface SellerOrderDTO {
+  rfq_id: string; item: string; qty: number; total: number | null; decided_at: string | null; status: string; split: boolean;
+  payment: string | null; buyer: { name?: string; company?: string; phone?: string | null; email?: string | null; city?: string | null };
+}
+
+/** Orders this seller won, with the buyer's contact. */
+export async function getSellerOrders(supplierId: string): Promise<SellerOrderDTO[]> {
+  return (await apiFetch<{ orders: SellerOrderDTO[] }>(`/api/supplier/${supplierId}/orders`)).orders;
+}
+
 export interface AiOpinionDTO {
   pick: string;
   agrees: boolean;

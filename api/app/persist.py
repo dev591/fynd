@@ -22,7 +22,7 @@ import httpx
 from pydantic import TypeAdapter
 
 from .models import (
-    AutopilotSettings, BuyerNotice, ChatMessage, ExceptionRecord, NegotiationTarget, Notification, Profile, QuoteVersion, RFQ,
+    AutopilotSettings, BuyerNotice, ChatMessage, Event, ExceptionRecord, NegotiationTarget, Notification, Profile, QuoteVersion, RFQ,
     SupplierProduct, SupplierProfileOut,
 )
 
@@ -53,6 +53,7 @@ FIELDS: Dict[str, Any] = {
     "autopilot": Dict[str, AutopilotSettings],
     "shares": Dict[str, str],
     "ai_log": List[dict],
+    "events": Dict[str, List[Event]],
 }
 _ADAPTERS = {name: TypeAdapter(tp) for name, tp in FIELDS.items()}
 _lock = threading.Lock()

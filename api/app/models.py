@@ -1,7 +1,7 @@
 import re
 from enum import Enum
 from typing import Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Role(str, Enum):
@@ -572,3 +572,25 @@ class DeliveryIn(BaseModel):
 class QuoteTextIn(BaseModel):
     text: str = Field(max_length=5000)
     rfq_id: str | None = None      # only used to attach the AI log to the request
+
+
+class Event(BaseModel):
+    """One line of a request's history. Stored as facts; each audience gets its own wording (aliases for the buyer)."""
+    id: str
+    at: str
+    kind: str
+    seller_id: str | None = None
+    meta: dict = Field(default_factory=dict)
+
+
+class RFQEditIn(BaseModel):
+    qty: int | None = Field(default=None, gt=0, le=1_000_000)
+    need_in_days: int | None = Field(default=None, gt=0, le=365)
+    note: str | None = Field(default=None, max_length=300)
+    priority_mode: PriorityMode | None = None
+
+    @model_validator(mode="after")
+    def _something_changes(self):
+        if all(v is None for v in (self.qty, self.need_in_days, self.note, self.priority_mode)):
+            raise ValueError("Nothing to change.")
+        return self
