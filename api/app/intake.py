@@ -93,10 +93,32 @@ def numbers_in_text(text: str) -> set[int]:
     return found
 
 
+# Hindi written in Devanagari (what speech-to-text returns for spoken Hindi), read as the same romanised words.
+_DEVANAGARI = {
+    "कल": "kal", "परसों": "parso", "परसो": "parso", "दिन": "din", "दिनों": "din", "हफ्ते": "hafte", "हफ़्ते": "hafte",
+    "हफ्ता": "hafta", "हफ़्ता": "hafta", "सप्ताह": "hafta", "अगले": "agle",
+    "सोमवार": "somvar", "मंगलवार": "mangalvar", "बुधवार": "budhvar", "गुरुवार": "guruvar", "शुक्रवार": "shukravar",
+    "शनिवार": "shanivar", "रविवार": "ravivar",
+    "एक": "1", "दो": "2", "तीन": "3", "चार": "4", "पांच": "5", "पाँच": "5", "छह": "6", "छः": "6", "सात": "7",
+    "आठ": "8", "नौ": "9", "दस": "10",
+}
+_UNIT = r"(weeks?|days?|din|dino|hafte|hafta)"
+
+
+def _as_digits(p: str) -> str:
+    """'two weeks' -> '2 weeks', 'ek hafte' -> '1 hafte', Devanagari words -> romanised. Only before a time unit."""
+    for dev, rom in _DEVANAGARI.items():
+        p = p.replace(dev, f" {rom} ")
+    def word(m):
+        n = _WORDS.get(m.group(1))
+        return f"{n} {m.group(2)}" if n is not None and n > 0 else m.group(0)
+    return re.sub(r"\b([a-z]+)\b[\s-]*" + _UNIT + r"\b", word, re.sub(r"\s+", " ", p))
+
+
 def resolve_need_days(phrase: str, today: Optional[date] = None) -> Optional[int]:
     """Turn the buyer's own deadline words into days, in code. None if it cannot be done honestly."""
     today = today or date.today()
-    p = phrase.lower().strip()
+    p = _as_digits(phrase.lower().strip())
     m = re.search(r"(\d+)\s*(?:weeks?|hafte|hafta)", p)
     if m and int(m.group(1)) > 0:
         return 7 * int(m.group(1))
@@ -203,11 +225,8 @@ def build_draft(text: str, raw: Optional[dict[str, Any]], catalog_names: dict[st
             draft["qty"] = nums.pop()
 
     days = raw.get("need_in_days")
-    if isinstance(days, int) and days > 0:
-        if days in numbers_in_text(text):
-            draft["need_in_days"] = days
-        else:
-            warnings.append("Dropped a deadline the buyer did not say.")
+    if isinstance(days, int) and days > 0 and days in numbers_in_text(text):
+        draft["need_in_days"] = days
     phrase = (raw.get("need_by_phrase") or "").strip()
     if phrase and phrase.lower() in low:
         draft["need_by_phrase"] = phrase
@@ -215,6 +234,8 @@ def build_draft(text: str, raw: Optional[dict[str, Any]], catalog_names: dict[st
             resolved = resolve_need_days(phrase, today)
             if resolved:
                 draft["need_in_days"] = resolved
+            else:
+                warnings.append(f'Could not turn "{phrase}" into a number of days. Please set the date.')
 
     pr = raw.get("priority")
     if pr in ("cheapest", "fastest", "balanced"):
