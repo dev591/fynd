@@ -51,6 +51,7 @@ def sb(monkeypatch):
     monkeypatch.setattr(persist, "_RETRY_SLEEP", 0)
     persist._last.clear()
     persist._offline = False
+    persist._status.update(last_error=None, last_ok=None, saves=0)
     yield fake
     persist._offline = False
 
@@ -128,3 +129,36 @@ def test_reset_clears_the_supabase_table(sb):
     persist.save(s)
     persist.clear()
     assert sb.rows == {} and any(c[0] == "DELETE" for c in sb.calls)
+
+
+def test_a_failed_save_records_why_in_words_without_any_key(sb):
+    class Bad(Resp):
+        def __init__(self):
+            super().__init__(401, {"message": "Invalid API key"})
+            self.text = '{"message":"Invalid API key"}'
+
+        def raise_for_status(self):
+            raise persist.httpx.HTTPStatusError("err", request=None, response=self)
+
+    s, _ = _busy_store()
+    sb.request = lambda *a, **k: Bad()
+    persist.httpx.request = sb.request
+    persist.save(s)
+    st = persist.status()
+    assert "401" in st["last_error"] and "Invalid API key" in st["last_error"] and "service-secret" not in st["last_error"]
+    assert st["saves"] == 0 and st["last_ok"] is None
+
+
+def test_a_good_save_is_counted_and_clears_the_error(sb):
+    s, _ = _busy_store()
+    persist._status.update(last_error="old problem")
+    assert persist.save(s) > 0
+    st = persist.status()
+    assert st["last_error"] is None and st["saves"] >= 1 and st["last_ok"]
+
+
+def test_an_unreachable_start_records_the_reason(sb):
+    sb.down = True
+    from app.rfq_store import RFQStore
+    assert persist.init(RFQStore()) == "offline"
+    assert persist.status()["last_error"]

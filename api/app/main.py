@@ -185,7 +185,7 @@ class RunIn(BaseModel):
 def _persistence_report() -> dict:
     """Where data is saved, and a plain warning when a restart would lose it. Never any key material."""
     backend = persist.backend() if persist.enabled() else "off"
-    out = {"state": PERSIST_STATE, "backend": backend}
+    out = {"state": PERSIST_STATE, "backend": backend, **{k: v for k, v in persist.status().items() if v not in (None, 0)}}
     if PERSIST_STATE == "offline":
         out["warning"] = "Supabase could not be reached at start, so this server is NOT saving. Fix the connection and restart."
     elif backend == "off":

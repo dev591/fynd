@@ -13,6 +13,7 @@ by the seed.
 import os
 import sqlite3
 import sys
+from datetime import datetime
 import threading
 import time
 from pathlib import Path
@@ -64,6 +65,20 @@ _last: Dict[str, str] = {}      # what is already on disk, per collection, so un
 
 
 _offline = False                # Supabase was unreachable at start: never save, so the saved data cannot be clobbered
+_status: Dict[str, Any] = {"last_error": None, "last_ok": None, "saves": 0}
+
+
+def status() -> Dict[str, Any]:
+    """What the saving layer last did, for /health. A reason in words, never any key."""
+    return dict(_status)
+
+
+def _why(e: Exception) -> str:
+    resp = getattr(e, "response", None)
+    if resp is not None and getattr(resp, "status_code", None):
+        body = (getattr(resp, "text", "") or "")[:160].replace(os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "\0"), "***")
+        return f"HTTP {resp.status_code}: {body}".strip()
+    return type(e).__name__
 _RETRY_SLEEP = 1.0
 
 
@@ -105,6 +120,7 @@ def _sb_read() -> Dict[str, str]:
             return {row["name"]: row["value"] for row in r.json()}
         except Exception as e:                                   # network, auth, missing table
             last = e
+            _status["last_error"] = _why(e)
             if attempt < 2:
                 time.sleep(_RETRY_SLEEP)
     raise Unreachable(str(last))
@@ -153,10 +169,12 @@ def save(store, path: Optional[Path] = None) -> int:
             try:
                 _sb_write(changed)
             except Exception as e:
-                print(f"Crossover: could not save to Supabase ({type(e).__name__}); the next API call retries.", file=sys.stderr)
+                _status["last_error"] = _why(e)
+                print(f"Crossover: could not save to Supabase ({_status['last_error']}); the next API call retries.", file=sys.stderr)
                 return 0
             for n, v in changed.items():
                 _last[(target, n)] = v
+            _status.update(last_error=None, last_ok=datetime.now().isoformat(timespec="seconds"), saves=_status["saves"] + 1)
             return len(changed)
         conn = _connect(path)
         try:

@@ -25,7 +25,7 @@ def test_health_reports_supabase_when_it_is_the_backend(monkeypatch):
     monkeypatch.setenv("RENDER", "true")
     p = client.get("/health").json()["persistence"]
     assert p["backend"] == "supabase" and "warning" not in p
-    assert set(p) <= {"state", "backend", "warning"} and "service-secret" not in str(client.get("/health").json())
+    assert set(p) <= {"state", "backend", "warning", "last_error", "last_ok", "saves"} and "service-secret" not in str(client.get("/health").json())
 
 
 def test_health_when_supabase_could_not_be_loaded_says_saving_is_off(monkeypatch):
