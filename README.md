@@ -77,7 +77,7 @@ npm install && npm run dev
 Login is real: **Supabase Auth**. Sign up in the wizard (`/login`), or `/signin`. In Supabase, switch off "Confirm email"
 for the demo. The API checks every token (locally with the JWT secret, or by asking Supabase).
 
-State is saved to **SQLite (WAL)** at `api/data/app.db`. `cd api && python3 -m app.reset` returns to the seed data.
+State is saved to **SQLite (WAL)** at `api/data/app.db` on a laptop, or to a **Supabase table** in production (`PERSIST_BACKEND=supabase`, see `DEPLOY.md`). `cd api && python3 -m app.reset` returns to the seed data.
 
 ### Configuration (`api/.env`)
 
@@ -111,7 +111,7 @@ notifications on both laptops). See `DEPLOY.md` and `render.yaml`.
 ## Test it
 
 ```bash
-cd api && python3 -m pytest -q          # 436 tests
+cd api && python3 -m pytest -q          # 448 tests
 cd app && npx tsc -b && npm run lint && npm run build
 cd api && python3 -m tests.golden.run_live   # real-model check of the 15 buyer sentences (needs keys)
 ```

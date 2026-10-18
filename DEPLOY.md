@@ -44,9 +44,18 @@ Vercel address. If requests go to the wrong host, `VITE_API_URL` was missing at 
 `ELEVENLABS_API_KEY`, `ELEVENLABS_STT_MODEL`. Optional: `SUPABASE_JWT_SECRET` (a ROTATED one), `DEMO_AUTOPILOT` (off for a
 real two-laptop demo), `FREE_REVEALS`, `DELHIVERY_TOKEN`. See `api/.env.example`.
 
+## Keep data across restarts: Supabase
+1. In Supabase, SQL Editor -> paste `api/supabase/state.sql` -> Run. It creates `crossover_state` with row level security
+   on and no policies, so only the server can touch it.
+2. In Render, set `SUPABASE_SERVICE_ROLE_KEY` (Supabase -> Project Settings -> API -> service_role) and
+   `PERSIST_BACKEND=supabase` (the blueprint already sets this). Never put the service_role key in the app or a browser.
+3. Redeploy. The log shows nothing special on success. If Supabase cannot be reached at start, the API says so in the log
+   and runs WITHOUT saving, so it never overwrites saved data with the seed; fix it and restart.
+4. To start over: on your laptop, with `PERSIST_BACKEND=supabase` and the service key in `api/.env`, run
+   `python3 -m app.reset`. That empties the table; the next start seeds fresh demo data.
+
 ## Things to know
-- **Data lives in SQLite at `/data/app.db`.** Without a persistent disk, every redeploy or restart on a free tier wipes it.
-  Re-run the seed script after a wipe. Everything else is recreated by using the app.
+- **Without the Supabase step, data lives in SQLite at `/data/app.db`,** and a free tier wipes it on every restart.
 - **Demo seller logins** (`DEMO_LOGINS=on`) hand a shared password to anyone who opens `/signin`. Turn it on only for the
   demo window, then off again.
 - **Seed the ten demo sellers against the public API:**
