@@ -151,3 +151,26 @@ def test_evidence_facts_are_tagged_observed_assumed_or_derived():
     assert landed["value"] == "₹1,150" and "packs" in landed["source"].lower()
     # nothing in the evidence names a seller
     assert "Bolt Express" not in json.dumps(ev) and "Seller" not in json.dumps([f["value"] for f in ev])
+
+
+def test_engine_reasons_say_lower_when_the_runner_up_is_cheaper_and_never_print_a_negative_amount():
+    from app.models import EvaluatedRow
+    def row(qid, name, landed, days):
+        return EvaluatedRow(quote_id=qid, supplier=name, status="eligible", reason=None, approved=False, packs=1, units=1,
+                            overbuy=0, landed=landed, lead_days=days, pack_price=1, pack_size=1, freight=0)
+    fast, cheap = row("a", "Seller 1", 1200, 3), row("b", "Seller 2", 1150, 4)
+    lines = summary.reasons_list([fast, cheap], fast, "fastest")
+    assert any("Seller 2 is ₹50 lower at ₹1,150 landed, 1 day slower" in l for l in lines)
+    assert not any("-" in l for l in lines)
+
+
+@pytest.mark.parametrize("text,cheapest,fastest,kept", [
+    ("Seller 2 wins at ₹1,150 landed with the lowest cost.", True, False, True),
+    ("Seller 2 wins at ₹1,150 landed with the lowest cost.", False, True, False),
+    ("Seller 2 wins at ₹1,150 landed as the fastest option.", True, False, False),
+    ("Seller 2 wins at ₹1,150 landed as the fastest option.", False, True, True),
+])
+def test_explainer_superlatives_must_be_true_of_the_pick(monkeypatch, text, cheapest, fastest, kept):
+    monkeypatch.setattr(summary, "structured_call", lambda *a, **k: {"text": text})
+    out = summary._explainer({"x": 1150}, {1150.0}, "Seller 2", "fallback", pick_is_cheapest=cheapest, pick_is_fastest=fastest)
+    assert (out["source"] == "ai") is kept

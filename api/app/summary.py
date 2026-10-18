@@ -103,11 +103,20 @@ def reasons_list(rows: list[EvaluatedRow], winner: Optional[EvaluatedRow], mode:
         elif r.status == "exception" and not r.approved:
             out.append(f"{r.supplier} needs a signed exception: {r.reason}.")
         elif r.landed is not None and winner and winner.landed is not None:
-            out.append(f"{r.supplier} is {inr(r.landed - winner.landed)} higher at {inr(r.landed)} landed.")
+            diff = r.landed - winner.landed
+            cost = f"{inr(diff)} higher" if diff > 0 else f"{inr(-diff)} lower" if diff < 0 else "the same price"
+            days = r.lead_days - winner.lead_days
+            lead = f", {abs(days)} day{'' if abs(days) == 1 else 's'} {'slower' if days > 0 else 'faster'}" if days else ""
+            out.append(f"{r.supplier} is {cost} at {inr(r.landed)} landed{lead}.")
     return out
 
 
-def _explainer(facts: dict, allowed: set[float], winner_name: str, fallback: str) -> dict[str, Any]:
+_CHEAPEST_CLAIM = re.compile(r"\b(lowest|cheapest|least expensive|best price)\b", re.I)
+_FASTEST_CLAIM = re.compile(r"\b(fastest|quickest|shortest|earliest|soonest)\b", re.I)
+
+
+def _explainer(facts: dict, allowed: set[float], winner_name: str, fallback: str,
+               pick_is_cheapest: bool = True, pick_is_fastest: bool = True) -> dict[str, Any]:
     raw = structured_call(EXPLAIN_SYSTEM, str(facts), "selection_explainer", EXPLAIN_SCHEMA)
     if raw is None:
         return {"text": fallback, "source": "engine", "discarded_reason": None}
@@ -116,6 +125,9 @@ def _explainer(facts: dict, allowed: set[float], winner_name: str, fallback: str
         return {"text": fallback, "source": "engine", "discarded_reason": "AI text did not name the winner"}
     if makes_promise(text):
         return {"text": fallback, "source": "engine", "discarded_reason": "AI text made an offer or promise"}
+    # A superlative must be true of the pick among the allowed quotes, or the sentence misleads even with real numbers.
+    if (_CHEAPEST_CLAIM.search(text) and not pick_is_cheapest) or (_FASTEST_CLAIM.search(text) and not pick_is_fastest):
+        return {"text": fallback, "source": "engine", "discarded_reason": "AI text claimed the pick was cheapest or fastest when it was not"}
     # "Seller 2" is a label, not a quantity: take the alias digits out before checking numbers.
     if not numbers_supported(re.sub(r"\bSeller \d+\b", "Seller", text), allowed):
         return {"text": fallback, "source": "engine", "discarded_reason": "AI text contained a number not in the engine output"}
@@ -257,7 +269,11 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
                           "quotes": [q.model_dump() for q in quotes]})
         key = (fp, shown.quote_id)
         if key not in _explain_cache:
-            _explain_cache[key] = _explainer(facts, allowed, shown.supplier, " ".join(reasons[:2]))
+            pool = [r for r in ev.rows if r.landed is not None and (r.status == "eligible" or (r.status == "exception" and r.approved))]
+            _explain_cache[key] = _explainer(
+                facts, allowed, shown.supplier, " ".join(reasons[:2]),
+                pick_is_cheapest=all(shown.landed <= r.landed for r in pool),
+                pick_is_fastest=all(shown.lead_days <= r.lead_days for r in pool))
         explainer = _explain_cache[key]
 
     opinion = None
