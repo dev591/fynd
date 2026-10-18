@@ -7,7 +7,7 @@ helpers. See the repo `README.md` for what the product does and how to run every
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env            # fill it in; it is git-ignored
 .venv/bin/uvicorn app.main:app --port 8000
-.venv/bin/python -m pytest -q   # 294 tests
+.venv/bin/python -m pytest -q   # 296 tests
 python3 -m app.reset            # back to the seed data (stop the API first)
 ```
 

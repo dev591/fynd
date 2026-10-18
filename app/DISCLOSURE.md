@@ -61,9 +61,10 @@ Written with Claude Code (Anthropic) and Kiro, reviewed by the team.
   buyer and seller benefits, how it works, and the spreadsheet-vs-Crossover example from the C27 brief. The six pinned scroll
   chapters, `DiveStage`, `PinnedChapter`, `ScrollProgress`, `SkipToApp` and the Lenis wiring were deleted. The packages
   `lenis`, `three`, `@react-three/fiber` and `@react-three/drei` were uninstalled because nothing imports them.
-- **AI second opinion** (`api/app/summary.py`): a model reads the engine's output and the buyer's note and may suggest a different
-  option. It can only pick an option the engine allowed, every number must exist in the engine output, and the engine's pick never
-  changes. The call is logged with the decision.
+- **AI second opinion** (`api/app/summary.py`): a model reads the buyer's note and may suggest a different option. A live check
+  showed it could write true numbers inside false claims, so it no longer writes any text: it chooses a seller and a concern
+  (deadline or cash) and quotes the buyer's own words, code verifies the quote and that the pick serves the concern, and code
+  writes the sentence from the engine's numbers. The engine's pick never changes. The call is logged with the decision.
 - **Shipping choice and estimate.** The seller picks own shipment or Delhivery. Without a Delhivery token the estimate comes from
   a zone rate card we wrote (`api/app/delhivery.py`), labelled "demo rate card, not a Delhivery quote". The Delhivery client
   is written against the pasted API examples and tested only with fake replies; no live Delhivery call has succeeded, because we

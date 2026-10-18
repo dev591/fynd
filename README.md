@@ -48,7 +48,7 @@ level or date that is not in the data.
 | Pasted supplier message | Read it into quote rows | Same checks; unstated pack size/freight/lead time stay blank and flagged; "free delivery" needs those words |
 | Seller note | Word a short message | Every number must exist in the data and offers/promises are rejected, else a template is used |
 | Seller voice quote | Turn a spoken quote into draft fields | Same number checks as pasted messages; unstated fields stay blank; the seller edits and presses Send |
-| Second opinion | Suggest an option from those the engine allowed | Must name one allowed seller; numbers and promises checked; engine pick unchanged |
+| Second opinion | Read the buyer's note for a deadline or cash concern and choose among options the engine allowed | The model only picks a seller and a concern and quotes the buyer's own words; code checks the quote and that the pick serves the concern, then writes the sentence from engine numbers. Engine pick unchanged |
 | Item-match, "why this supplier" | Warn / explain | Warn only; the explanation can never pick or change the winner |
 
 Voice uses ElevenLabs speech-to-text; text understanding uses OpenAI. Keys stay on the server. With no keys, every AI
@@ -109,7 +109,7 @@ notifications on both laptops). See `DEPLOY.md` and `render.yaml`.
 ## Test it
 
 ```bash
-cd api && python3 -m pytest -q          # 294 tests
+cd api && python3 -m pytest -q          # 296 tests
 cd app && npx tsc -b && npm run lint && npm run build
 cd api && python3 -m tests.golden.run_live   # real-model check of the 15 buyer sentences (needs keys)
 ```
@@ -133,7 +133,7 @@ worked example, import errors, windows with a fake clock, persistence across a r
 ```
 api/app/     engine.py (rules; landed cost + gates untouched), tax.py, views.py (what each audience may see),
              rfq_store.py, persist.py, auth.py, intake.py, quote_text.py, assistant.py, summary.py, importer.py
-api/tests/   294 tests + golden sets (15 buyer sentences, 8 seller cases)
+api/tests/   296 tests + golden sets (15 buyer sentences, 8 seller cases)
 api/supabase/schema.sql   an early Postgres draft with row-level security. NOT used and NOT kept in sync: the live API uses SQLite
 app/src/     landing story, wizard, buyer desk, seller desk, shared components
 AUDIT.md     what exists against the v2 brief, and the decisions made

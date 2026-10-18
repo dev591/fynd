@@ -26,11 +26,11 @@ EXPLAIN_SCHEMA = {
 
 
 OPINION_SYSTEM = (
-    "You are a second reader for a purchase decision. Rules have already ranked the quotes and the engine_pick is the "
-    "rules' choice. You may recommend a different option from the list only when the buyer's note or priority makes it "
-    "clearly the better fit; otherwise confirm the engine_pick. Choose only from the options given. Use only the facts "
-    "given, copy numbers exactly, write money with the ₹ symbol, and state the trade-off in rupees and days. Name the "
-    "seller you choose. Two sentences at most. No discount, guarantee or promise, and no other number."
+    "You read a buyer's free-text note next to a purchase decision that rules have already made. The engine_pick is the "
+    "rules' choice. Decide whether the note adds a concern the rules cannot see. concern 'deadline' only if the note "
+    "says time is critical; concern 'cash' only if it says money is tight; otherwise concern 'none' and pick the "
+    "engine_pick. With 'deadline' or 'cash', copy the exact words from the note that show it into note_phrase and pick "
+    "the option that serves that concern. With 'none', leave note_phrase empty. Choose only from the options given."
 )
 
 _explain_cache: dict[tuple, dict[str, Any]] = {}
@@ -123,43 +123,64 @@ def _explainer(facts: dict, allowed: set[float], winner_name: str, fallback: str
 
 
 def second_opinion(store, rfq: RFQ, rows: list[EvaluatedRow], engine_pick: Optional[EvaluatedRow], fp: str) -> Optional[dict[str, Any]]:
-    """AI's reading of the situation, alongside the engine's pick and never in place of it.
+    """AI's reading of the buyer's note, alongside the engine's pick and never in place of it.
 
-    It can only name an option the engine already allowed, every number it writes must exist in the engine output (or be a
-    gap between two of its numbers), and anything else is dropped. The buyer decides; the engine's pick is unchanged."""
-    from .assistant import numbers_used
+    The model only chooses a seller and a concern from a fixed list and quotes the buyer's own words. Code checks that the
+    quote is really in the note and that the pick serves the concern (a deadline concern needs a faster seller), then writes
+    the sentence itself from the engine's numbers, so nothing the model says about prices or days can be wrong."""
     cands = [r for r in rows if r.landed is not None and (r.status == "eligible" or (r.status == "exception" and r.approved))]
-    if engine_pick is None or len(cands) < 2:
+    if engine_pick is None or engine_pick.landed is None or len(cands) < 2:
         return None
     note = scrub(rfq.note or "")[:300]
     key = (fp, rfq.priority_mode, note)
     if key in _opinion_cache:
         return _opinion_cache[key]
-    options = [{"seller": r.supplier, "landed": round(r.landed), "lead_days": r.lead_days, "extra_units": r.overbuy,
-                "freight": round(r.freight or 0)} for r in cands]
-    facts = {"priority": rfq.priority_mode, "needed_within_days": rfq.need_in_days, "units": rfq.qty,
-             "buyer_note": note or None, "engine_pick": engine_pick.supplier, "options": options}
-    schema = {"type": "object", "additionalProperties": False, "required": ["pick", "reason"],
-              "properties": {"pick": {"type": "string", "enum": [o["seller"] for o in options]}, "reason": {"type": "string"}}}
+    by_name = {r.supplier: r for r in cands}
+    facts = {"priority": rfq.priority_mode, "buyer_note": note or None, "engine_pick": engine_pick.supplier,
+             "options": [{"seller": r.supplier, "landed": round(r.landed), "lead_days": r.lead_days} for r in cands]}
+    schema = {"type": "object", "additionalProperties": False, "required": ["pick", "concern", "note_phrase"],
+              "properties": {"pick": {"type": "string", "enum": list(by_name)},
+                             "concern": {"type": "string", "enum": ["none", "deadline", "cash"]},
+                             "note_phrase": {"type": "string"}}}
     raw = structured_call(OPINION_SYSTEM, str(facts), "second_opinion", schema)
-    out: Optional[dict[str, Any]] = None
-    if raw:
-        pick, reason = raw.get("pick"), (raw.get("reason") or "").strip()
-        allowed: set[float] = {float(rfq.need_in_days), float(rfq.qty)} | numbers_used(note)
-        for o in options:
-            allowed |= {float(o["landed"]), float(o["lead_days"]), float(o["extra_units"]), float(o["freight"])}
-            allowed |= {float(abs(o["landed"] - p["landed"])) for p in options} | {float(abs(o["lead_days"] - p["lead_days"])) for p in options}
-        ok = (pick in {o["seller"] for o in options} and reason and pick.lower() in reason.lower()
-              and not makes_promise(reason)
-              and numbers_supported(re.sub(r"\bSeller \d+\b", "Seller", reason), allowed))
-        if ok:
-            out = {"pick": pick, "agrees": pick == engine_pick.supplier, "reason": reason, "engine_pick": engine_pick.supplier,
-                   "source": "ai", "label": "AI suggestion, not a calculation"}
-            rid = "op_" + fp[:10]
-            store.log_ai("second_opinion", rid, facts, out)
-            store.link_ai_log(rid, rfq.id)
+    out = _build_opinion(raw, by_name, engine_pick, note)
+    if out:
+        rid = "op_" + fp[:10]
+        store.log_ai("second_opinion", rid, facts, out)
+        store.link_ai_log(rid, rfq.id)
     _opinion_cache[key] = out
     return out
+
+
+def _build_opinion(raw: Optional[dict], by_name: dict[str, EvaluatedRow], engine_pick: EvaluatedRow, note: str) -> Optional[dict[str, Any]]:
+    if not raw:
+        return None
+    pick, concern, phrase = raw.get("pick"), raw.get("concern"), (raw.get("note_phrase") or "").strip()
+    row = by_name.get(pick)
+    if row is None or concern not in ("none", "deadline", "cash"):
+        return None
+    if concern == "none":
+        if row.quote_id != engine_pick.quote_id:
+            return None                                  # no stated concern, so no reason to differ from the rules
+    else:
+        if not phrase or phrase.lower() not in note.lower():
+            return None                                  # the model must point at the buyer's own words
+        if row.quote_id != engine_pick.quote_id:
+            if concern == "deadline" and not row.lead_days < engine_pick.lead_days:
+                return None
+            if concern == "cash" and not row.landed < engine_pick.landed:
+                return None
+    agrees = row.quote_id == engine_pick.quote_id
+    if agrees:
+        text = f"{row.supplier} is the best fit: {inr(row.landed)} landed, arriving in {row.lead_days} days."
+    else:
+        d_cost, d_days = round(row.landed - engine_pick.landed), engine_pick.lead_days - row.lead_days
+        cost = f"{inr(abs(d_cost))} {'more' if d_cost > 0 else 'less'}" if d_cost else "the same cost"
+        days = f"{d_days} day{'' if d_days == 1 else 's'} sooner" if d_days > 0 else f"{-d_days} day{'' if d_days == -1 else 's'} later" if d_days < 0 else "on the same day"
+        text = f'Your note says "{phrase}". {row.supplier} costs {cost} than {engine_pick.supplier} and arrives {days}.' \
+            if d_cost else f'Your note says "{phrase}". {row.supplier} costs the same as {engine_pick.supplier} and arrives {days}.'
+    return {"pick": row.supplier, "agrees": agrees, "reason": text, "engine_pick": engine_pick.supplier,
+            "concern": concern, "source": "ai", "label": "AI suggestion, not a calculation"}
 
 
 def _decision_for(decision: Optional[dict], audience: str) -> Optional[dict]:
