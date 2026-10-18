@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Ambient } from "../components/Ambient";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, LogIn, Store } from "lucide-react";
 import { signIn, authConfigured } from "../lib/auth";
@@ -54,7 +55,8 @@ export function SignIn() {
 
   const field = "w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[14px] text-bone focus:border-signal focus:outline-none";
   return (
-    <div className="landing grain flex min-h-screen items-center justify-center gap-8 bg-ink px-4 py-8 text-bone max-lg:flex-col">
+    <div className="landing grain isolate flex min-h-screen items-center justify-center gap-8 bg-ink px-4 py-8 text-bone max-lg:flex-col">
+      <Ambient />
       <div className="w-full max-w-sm space-y-5">
         <div className="text-center">
           <p className="label text-muted">Crossover</p>

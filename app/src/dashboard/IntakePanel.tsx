@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Send, Check, AlertTriangle } from "lucide-react";
 import { dateFromDays, daysFromToday, tomorrow } from "../lib/dates";
@@ -102,39 +103,55 @@ export function IntakePanel({ buyer, onCreated }: Props) {
   const field = "w-full rounded-lg border bg-raised px-3 py-2 text-[14px] text-bone focus:border-signal focus:outline-none";
 
   return (
-    <section className="rounded-2xl border border-line bg-surface/90 p-5 sm:p-6 space-y-4 shadow-sm">
-      <div>
-        <span className="label text-signal">SAY OR TYPE IT</span>
-        <h2 className="display text-xl text-bone mt-0.5">What do you need?</h2>
-        <p className="text-[13px] text-muted">
-          e.g. "100 M10 bolts in 5 days" or "100 M10 bolt chahiye Friday tak". You check the card before anything is sent.
-        </p>
-      </div>
+    <section className="relative overflow-hidden rounded-3xl border border-line bg-surface p-6 sm:p-8 space-y-5">
+      <div aria-hidden className="pointer-events-none absolute -right-20 -top-28 h-72 w-72 rounded-full bg-signal/10 blur-3xl" />
+      <div className="relative flex flex-col items-center gap-5 text-center">
+        <div>
+          <span className="label text-signal">SAY IT OR TYPE IT</span>
+          <h2 className="display mt-1 text-[clamp(1.8rem,4vw,2.6rem)] leading-tight text-bone">What do you need?</h2>
+          <p className="mt-1 text-[13px] text-muted">English or Hinglish. You check the card before anything is sent.</p>
+        </div>
 
-      <form onSubmit={e => { e.preventDefault(); runDraft(text, "chat"); }} className="flex items-center gap-2">
-        <input
-          value={text}
-          onChange={e => setText(e.target.value)}
-          placeholder={recording ? "Listening…" : "Type your request"}
-          className="flex-1 rounded-full border border-line bg-raised px-4 py-2.5 text-[14px] text-bone placeholder:text-muted/50 focus:border-signal focus:outline-none"
-        />
         <button
           type="button"
           onClick={toggleRecording}
           disabled={!voiceOk || busy}
+          aria-label={recording ? "Stop and send" : "Speak your request"}
           title={voiceOk ? (recording ? "Stop and send" : "Speak your request") : "Voice needs the server key. Type instead."}
-          className={`flex h-10 w-10 items-center justify-center rounded-full border transition-all disabled:opacity-40 ${
-            recording ? "border-error bg-error/20 text-error animate-pulse" : "border-line bg-raised text-bone hover:border-signal/50"
+          className={`relative grid h-24 w-24 place-items-center rounded-full transition-all disabled:opacity-40 ${
+            recording ? "bg-error text-white" : "bg-signal text-ink hover:scale-105"
           }`}
         >
-          {recording ? <Square size={15} /> : <Mic size={16} />}
+          {recording && [0, 1, 2].map(k => (
+            <motion.span key={k} aria-hidden className="absolute inset-0 rounded-full border-2 border-error"
+              initial={{ scale: 1, opacity: 0.6 }} animate={{ scale: 1.9, opacity: 0 }}
+              transition={{ duration: 1.8, repeat: Infinity, delay: k * 0.6, ease: "easeOut" }} />
+          ))}
+          {!recording && voiceOk && (
+            <motion.span aria-hidden className="absolute inset-0 rounded-full bg-signal/30"
+              animate={{ scale: [1, 1.18, 1], opacity: [0.5, 0, 0.5] }} transition={{ duration: 2.6, repeat: Infinity }} />
+          )}
+          {recording ? <Square size={26} className="relative" /> : <Mic size={30} className="relative" />}
         </button>
+        <p className="-mt-2 text-[12px] text-muted">{recording ? "Listening… tap to stop" : voiceOk ? "Tap and speak" : "Voice is off on this server. Type below."}</p>
+      </div>
+
+      <form onSubmit={e => { e.preventDefault(); runDraft(text, "chat"); }} className="relative flex items-center gap-2">
+        <input
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder={recording ? "Listening…" : "Type your request"}
+          aria-label="Type your request"
+          className={`flex-1 rounded-full border border-line bg-raised px-5 py-3 text-[15px] text-bone focus:border-signal focus:outline-none ${recording ? "placeholder:text-muted/50" : "placeholder:text-transparent"}`}
+        />
+        {!text && !recording && <TypingHint />}
         <button
           type="submit"
           disabled={!text.trim() || busy}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-signal text-ink disabled:opacity-40"
+          aria-label="Read my request"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-signal text-ink disabled:opacity-40"
         >
-          <Send size={15} />
+          <Send size={17} />
         </button>
       </form>
 
@@ -204,5 +221,26 @@ export function IntakePanel({ buyer, onCreated }: Props) {
         </div>
       )}
     </section>
+  );
+}
+
+const HINTS = ["100 M10 bolts by Friday, fastest", "500 M8 nuts kal tak chahiye", "2 hazaar washers within two weeks", "300 hex bolts, cheapest is fine"];
+
+/** Example requests typing themselves inside the empty box, so a first-time user knows what to say. */
+function TypingHint() {
+  const [k, setK] = useState(0);
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const full = HINTS[k % HINTS.length];
+    const t = setTimeout(() => {
+      if (n < full.length) setN(n + 1);
+      else { setN(0); setK(k + 1); }
+    }, n < full.length ? 55 : 1600);
+    return () => clearTimeout(t);
+  }, [k, n]);
+  return (
+    <span aria-hidden className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-[15px] text-muted/60">
+      e.g. “{HINTS[k % HINTS.length].slice(0, n)}<span className="animate-pulse">|</span>”
+    </span>
   );
 }

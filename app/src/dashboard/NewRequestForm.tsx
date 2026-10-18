@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Ambient } from "../components/Ambient";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Package, Send, Check, ExternalLink,
@@ -99,7 +100,8 @@ export function NewRequestForm() {
 
   if (created) {
     return (
-      <div className="landing grain min-h-screen bg-ink text-bone pb-16">
+      <div className="landing grain isolate min-h-screen bg-ink text-bone pb-16">
+      <Ambient />
         <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
           <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
             <Link to="/app" className="flex items-center gap-1.5 rounded-full border border-line bg-surface/80 px-3 py-1.5 text-[12px] text-muted hover:text-bone">
@@ -166,7 +168,8 @@ export function NewRequestForm() {
   // ─── Form State ────────────────────────────────────────────────────
 
   return (
-    <div className="landing grain min-h-screen bg-ink text-bone pb-16">
+    <div className="landing grain isolate min-h-screen bg-ink text-bone pb-16">
+      <Ambient />
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <Link to="/app" className="flex items-center gap-1.5 rounded-full border border-line bg-surface/80 px-3 py-1.5 text-[12px] text-muted hover:text-bone">
@@ -177,12 +180,7 @@ export function NewRequestForm() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-6 space-y-6">
-        <div>
-          <h1 className="display text-2xl text-bone">New Request for Quotation</h1>
-          <p className="text-[13px] text-muted mt-1">
-            Fill in what you need. On submit you'll get supplier invite links and a QR code.
-          </p>
-        </div>
+        <h1 className="sr-only">New request</h1>
 
         <IntakePanel
           buyer={{ company: buyerCompany, name: buyerName, city: buyerCity, state: buyerState }}

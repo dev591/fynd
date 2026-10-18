@@ -79,3 +79,19 @@ html.lenis, html.lenis body { height: auto; }
   background-size: 28px 28px;
 }
 :focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
+
+/* Ambient drift behind app screens (components/Ambient.tsx) */
+.ambient-blob { position: absolute; border-radius: 9999px; filter: blur(80px); animation: ambient-drift 22s ease-in-out infinite alternate; }
+.ambient-blob-2 { animation-duration: 28s; animation-delay: -6s; }
+.ambient-blob-3 { animation-duration: 34s; animation-delay: -12s; }
+@keyframes ambient-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(6vw, 4vh, 0) scale(1.12); }
+  100% { transform: translate3d(-4vw, 8vh, 0) scale(0.95); }
+}
+@media (prefers-reduced-motion: reduce) { .ambient-blob { animation: none; } }
+
+/* Landing dive: beams from the request to each seller */
+.dive-beam { animation: dive-beam 1.6s linear infinite; }
+@keyframes dive-beam { to { stroke-dashoffset: -4.8; } }
+@media (prefers-reduced-motion: reduce) { .dive-beam { animation: none; } }

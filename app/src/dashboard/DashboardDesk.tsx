@@ -1,17 +1,18 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { Ambient } from "../components/Ambient";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, AlertTriangle, FileSpreadsheet,
-  TrendingDown, Target, MessageSquare, Check,
+  Target, Check,
   Save, Lock, X, Unlock, ShieldCheck, Upload, Download,
 } from "lucide-react";
 import { FactTag } from "../components/FactTag";
 import { NoticeBell } from "../components/NoticeBell";
 import { DeliveryCheck } from "./DeliveryCheck";
 import { closesAt, timeLeft, useNow } from "../lib/windowTime";
-import { evaluate, giveUp, inr, MODES, naivePick, negotiation, type Mode, type Quote } from "../landing/engine";
+import { evaluate, giveUp, inr, naivePick, negotiation, type Mode, type Quote } from "../landing/engine";
 import { CostChart } from "../landing/CostChart";
-import { QtyControl } from "../landing/QtyControl";
+import { AnswerCard, PriorityControl, QtyStepper, QuoteBoard, arriveOn } from "./QuoteBoard";
 import { SupplierChat } from "../supplier/components/SupplierChat";
 import { useApiPoll, useApiOnce } from "../lib/useApi";
 import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
@@ -40,6 +41,7 @@ export function DashboardDesk() {
   const [chatSupplierId, setChatSupplierId] = useState<string | null>(null);
   const [targetSuccessId, setTargetSuccessId] = useState<string | null>(null);
   const [showDecisionModal, setShowDecisionModal] = useState(false);
+  const [chooseId, setChooseId] = useState<string | null>(null);
   const [decisionSaved, setDecisionSaved] = useState(false);
   const [profileSupplierId, setProfileSupplierId] = useState<string | null>(null);
   const [paywall, setPaywall] = useState(false);
@@ -84,7 +86,6 @@ export function DashboardDesk() {
     const row = q ? evaluation?.rows.find(r => r.quote.id === q.id) ?? null : null;
     return q && row ? { quote: q, landed: row.landed, unit: q.packPrice / (q.packSize ?? 1) } : null;
   }, [engineQuotes, rfq, qty, evaluation]);
-  const unitPrice = (q: Quote) => q.packPrice / (q.packSize ?? 1);
 
   // Chat polling
   const { data: chatMessages } = useApiPoll<ChatMessageDTO[]>(
@@ -197,7 +198,8 @@ export function DashboardDesk() {
 
   if (loading && !details) {
     return (
-      <div className="landing grain min-h-screen bg-ink text-bone flex items-center justify-center">
+      <div className="landing grain isolate min-h-screen bg-ink text-bone flex items-center justify-center">
+      <Ambient />
         <div className="text-center space-y-3">
           <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-line border-t-signal" />
           <p className="text-[13px] text-muted">Loading RFQ comparison…</p>
@@ -208,7 +210,8 @@ export function DashboardDesk() {
 
   if (error && !details) {
     return (
-      <div className="landing grain min-h-screen bg-ink text-bone flex items-center justify-center">
+      <div className="landing grain isolate min-h-screen bg-ink text-bone flex items-center justify-center">
+      <Ambient />
         <div className="max-w-md rounded-2xl border border-error/40 bg-error/10 p-6 text-center space-y-3">
           <AlertTriangle size={28} className="mx-auto text-error" />
           <h2 className="display text-lg text-bone">Cannot reach the server</h2>
@@ -221,7 +224,8 @@ export function DashboardDesk() {
 
   if (!rfq || !evaluation) {
     return (
-      <div className="landing grain min-h-screen bg-ink text-bone flex items-center justify-center">
+      <div className="landing grain isolate min-h-screen bg-ink text-bone flex items-center justify-center">
+      <Ambient />
         <div className="text-center space-y-3">
           <p className="text-[13px] text-muted">No quotes yet on this request.</p>
           <Link to="/app" className="rounded-full bg-signal px-4 py-2 text-[13px] text-ink">Back to requests</Link>
@@ -234,7 +238,8 @@ export function DashboardDesk() {
   const liveDot = !isDecided;
 
   return (
-    <div className="landing grain min-h-screen bg-ink text-bone pb-16">
+    <div className="landing grain isolate min-h-screen bg-ink text-bone pb-16">
+      <Ambient />
       {/* Top Navigation */}
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
@@ -245,7 +250,7 @@ export function DashboardDesk() {
             <div className="h-4 w-px bg-line/60" />
             <div>
               <span className="display text-base font-semibold text-bone">Crossover Desk</span>
-              <span className="label ml-2 text-signal">COMPARE ENGINE</span>
+              <span className="label ml-2 text-signal">QUOTES</span>
             </div>
           </div>
 
@@ -274,374 +279,81 @@ export function DashboardDesk() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-6">
-        {/* Header Strip */}
-        <div className="rounded-2xl border border-line bg-surface/70 p-5 backdrop-blur-sm shadow-sm">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="label text-signal">REQUEST</span>
-                <span className="text-muted">·</span>
-                <span className="text-[13px] text-muted">{rfq.buyer_company}</span>
-              </div>
-              <h1 className="display text-2xl text-bone mt-1">
-                {rfq.item} · <span className="num">{rfq.qty}</span> units
-              </h1>
-              <p className="text-[13px] text-muted mt-0.5">
-                Needed within {rfq.need_in_days} days · {rfq.buyer_city}, {rfq.buyer_state}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full border border-line bg-raised px-2.5 py-0.5 text-[11px] font-medium text-bone">
-                <MessageSquare size={12} /> {Object.keys(apiQuotes).length} quotes
+      <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6">
+        {/* What was asked, and how far along the answers are */}
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="label text-muted">{rfq.buyer_company}</p>
+            <h1 className="display text-[clamp(1.7rem,3.6vw,2.6rem)] leading-tight text-bone">
+              <span className="num">{rfq.qty}</span> × {rfq.item}
+            </h1>
+            <p className="text-[13px] text-muted">
+              Needed by {arriveOn(rfq.need_in_days)} · {rfq.buyer_city || rfq.buyer_state}{rfq.note ? ` · “${rfq.note}”` : ""}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {details?.activity && details.activity.notified > 0 && (
+              <span className="rounded-full border border-line bg-surface px-3 py-1 text-[12px] text-muted">
+                <strong className="num text-bone">{details.activity.quoted}</strong> of <span className="num">{details.activity.notified}</span> sellers replied
               </span>
-              <WindowChip rfq={rfq} decided={isDecided} />
-              <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${isDecided ? "border-success/30 bg-success/15 text-success" : "border-live/30 bg-live/15 text-live"}`}>
-                {isDecided ? "Decided" : "Open"}
-              </span>
-              {rfq.note && (
-                <span className="text-[12px] text-muted max-w-xs truncate">"{rfq.note}"</span>
-              )}
-            </div>
+            )}
+            <WindowChip rfq={rfq} decided={isDecided} />
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${isDecided ? "border-success/30 bg-success/15 text-success" : "border-live/30 bg-live/15 text-live"}`}>
+              {isDecided ? "Decided" : "Open"}
+            </span>
           </div>
         </div>
 
-        {/* Live seller activity */}
-        {details?.activity && details.activity.notified > 0 && (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-2xl border border-line bg-surface/70 px-5 py-3 text-[13px]">
-            <span className="label text-muted">Seller activity</span>
-            {([
-              ["notified", details.activity.notified],
-              ["viewed", details.activity.viewed],
-              ["quoting", details.activity.quoting],
-              ["quoted", details.activity.quoted],
-              ["declined", details.activity.declined],
-            ] as const).map(([label, n]) => (
-              <span key={label} className="text-muted">
-                <strong className="num text-bone">{n}</strong> {label}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* 2-Column Layout */}
-        <div className="grid gap-6 lg:grid-cols-[1.25fr_1fr]">
-          {/* Left: Supplier Quotes */}
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-line bg-surface/70 p-5 backdrop-blur-sm space-y-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="display text-lg text-bone">Live Quote Comparison</h2>
-                  <p className="text-[13px] text-muted">
-                    {engineQuotes.length} supplier{engineQuotes.length !== 1 ? "s" : ""} quoted
+        {/* The answer, with the split and the AI's reading beside it */}
+        <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
+          <div>
+            {isDecided && rfq.decision ? (
+              <>
+            {/* Decision Summary (read-only after decided) */}
+              <div className="rounded-2xl border border-success/40 bg-success/10 p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Lock size={16} className="text-success" />
+                  <h3 className="display text-base font-semibold text-success">Decision Saved</h3>
+                </div>
+                <div className="text-[13px] text-muted space-y-1">
+                  <p>Winner: <strong className="text-bone">{(details?.revealed?.[rfq.decision.winner_id as string]?.business_name) ?? (rfq.decision.winner_id as string)}</strong></p>
+                  {details?.revealed?.[rfq.decision.winner_id as string]?.phone && (
+                    <p className="num">Contact: <span className="text-bone">
+                      {details.revealed[rfq.decision.winner_id as string].contact_name} · {details.revealed[rfq.decision.winner_id as string].phone} · {details.revealed[rfq.decision.winner_id as string].email}
+                    </span></p>
+                  )}
+                  {summary?.split && (
+                    <p>Split order: <span className="text-bone">{summary.split.parts.map(p => `${p.quote_id} ${p.qty} units (${inr(p.landed)})`).join(" + ")}</span></p>
+                  )}
+                  <p>Payment: <span className="text-bone">{(rfq.decision.payment_note as string) ?? "Cash on delivery. Crossover never holds money."}</span></p>
+                  <p>Reason: <span className="text-bone">{rfq.decision.reason as string}</span></p>
+                  <p>Approver: <span className="text-bone">{rfq.decision.approver as string}</span></p>
+                </div>
+                {summary?.savings && (
+                  <p className="text-[13px] text-bone">
+                    Spreadsheet pick: {summary.savings.spreadsheet_pick} at {inr(summary.savings.spreadsheet_landed)}.
+                    Crossover pick: {summary.savings.crossover_pick} at {inr(summary.savings.crossover_landed)}.
+                    Difference: <strong className="num text-signal">{inr(summary.savings.difference)}</strong>
+                    <span className="text-muted"> ({summary.savings.label})</span>
                   </p>
-                </div>
-                {!isDecided && (
-                  <button type="button" onClick={() => setShowImport(true)}
-                    className="mr-2 flex items-center gap-1.5 rounded-full border border-line bg-raised px-3 py-1 text-[12px] font-medium text-muted hover:text-bone">
-                    <Upload size={13} /><span>Import quotes</span>
-                  </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setSheetMode(s => !s)}
-                  className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium transition-all ${
-                    sheetMode
-                      ? "border border-error bg-error/15 text-error"
-                      : "border border-line bg-raised text-muted hover:text-bone"
-                  }`}
-                >
-                  <FileSpreadsheet size={13} />
-                  <span>{sheetMode ? "Naive Sheet View" : "Crossover Engine View"}</span>
-                </button>
+                <DeliveryCheck rfqId={rfq.id} saved={(rfq.decision as { delivery?: DeliveryDTO }).delivery ?? null} onSaved={() => refetch()} />
+                <Link to={`/app/decision/${rfq.id}`} className="inline-block rounded-full border border-success/40 px-3 py-1 text-[12px] font-medium text-success hover:bg-success/10">
+                  Open decision one-pager
+                </Link>
               </div>
-
-              {sheetMode && (
-                <div className="rounded-xl border border-error/40 bg-error/10 p-3 text-[13px] space-y-1" aria-live="polite">
-                  <p className="label text-error">Spreadsheet view: sorted by price per unit</p>
-                  {sheetPick ? (
-                    <p className="text-bone">
-                      A sheet picks <strong>{sheetPick.quote.supplier}</strong> at <span className="num">{inr(sheetPick.unit)}</span> a unit.
-                      {" "}It ignores freight, pack rounding and the delivery date.
-                      {winner && sheetPick.landed !== null && winner.landed !== null && (
-                        winner.quote.id === sheetPick.quote.id
-                          ? <> Here Crossover agrees: {winner.quote.supplier} is also cheapest landed.</>
-                          : <> Crossover picks <strong>{winner.quote.supplier}</strong> at <span className="num">{inr(winner.landed)}</span> landed,
-                              {" "}<strong className="num text-signal">{inr(sheetPick.landed - winner.landed)}</strong> less than the sheet's pick ({inr(sheetPick.landed)}).</>
-                      )}
-                    </p>
-                  ) : <p className="text-muted">No quote passes the delivery date, so a sheet would have nothing to pick.</p>}
-                </div>
-              )}
-
-              {/* Priority mode switch: winner under every mode, numbers from the engine */}
-              <div className="rounded-xl border border-line bg-raised/30 p-3 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="label text-muted">Priority</span>
-                  {MODES.map(m => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setMode(m)}
-                      className={`rounded-full border px-3 py-1 text-[12px] font-medium capitalize transition-all ${
-                        mode === m ? "border-signal bg-signal/15 text-signal" : "border-line bg-surface text-muted hover:text-bone"
-                      }`}
-                    >
-                      {m}
-                      <span className="ml-1.5 text-[11px] font-normal text-muted">
-                        {evaluation.winners[m]?.quote.supplier ?? "none"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                {giveUp(mode, evaluation.winners) && (
-                  <p className="text-[12px] text-muted">{giveUp(mode, evaluation.winners)}</p>
-                )}
-                {mode === "balanced" && (
-                  <p className="text-[11px] text-muted/80">Balanced pays up to 5% over the lowest landed cost to arrive sooner. The 5% is our assumption.</p>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                {(sheetMode ? [...evaluation.rows].sort((a, b) => unitPrice(a.quote) - unitPrice(b.quote)) : evaluation.rows).map((row) => {
-                  const isWin = winner?.quote.id === row.quote.id;
-                  const isBlocked = row.status === "blocked";
-                  const isLate = row.status === "exception";
-                  const versions = apiQuotes[row.quote.id] || [];
-                  const latestVer = versions.length;
-                  const target = targets[row.quote.id];
-                  const badge = details?.badges?.[row.quote.id];
-                  const identity = details?.revealed?.[row.quote.id];
-                  const imported = !!versions[latestVer - 1]?.imported;
-
-                  return (
-                    <div
-                      key={row.quote.id}
-                      className={`rounded-xl border p-4 transition-all cursor-pointer ${
-                        isWin ? "border-signal bg-signal/10 ring-1 ring-signal/40 shadow-sm"
-                        : isBlocked ? "border-line/40 bg-surface/40 opacity-70"
-                        : "border-line bg-surface/90 hover:border-signal/30"
-                      }`}
-                      onClick={() => setProfileSupplierId(row.quote.id)}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-bone">{row.quote.supplier}</span>
-                            {latestVer > 1 && (
-                              <span className="rounded bg-live/20 text-live px-1.5 py-0.2 text-[10px] font-bold">
-                                revised v{latestVer}
-                              </span>
-                            )}
-                            {versions[latestVer - 1]?.origin && versions[latestVer - 1].origin !== "manual" && (
-                              <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] font-medium text-muted" title="Numbers come from the seller's own catalog. Auto quotes were sent without a person reviewing them.">
-                                {versions[latestVer - 1].origin === "auto" ? "auto · seller autopilot, not reviewed"
-                                  : versions[latestVer - 1].origin === "ai_draft_sent" ? "assistant draft" : "assistant draft, edited"}
-                              </span>
-                            )}
-                            {sheetMode && sheetPick?.quote.id === row.quote.id && (
-                              <span className="rounded-full bg-error px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink">
-                                Sheet pick
-                              </span>
-                            )}
-                            {sheetMode && (
-                              <span className="num text-[11px] text-muted">{inr(unitPrice(row.quote))}/unit</span>
-                            )}
-                            {isWin && (
-                              <span className="rounded-full bg-signal px-2 py-0.5 text-[10px] font-bold text-ink uppercase tracking-wide">
-                                Winner · {mode === "cheapest" ? "Lowest Landed" : mode === "fastest" ? "Fastest" : "Balanced"}
-                              </span>
-                            )}
-                            {isLate && (
-                              <span className="flex items-center gap-1 text-[11px] font-medium text-warn">
-                                <AlertTriangle size={12} /> Needs exception ({row.quote.leadDays}d)
-                              </span>
-                            )}
-                            {isBlocked && (
-                              <span className="text-[11px] font-medium text-error">
-                                Blocked: {row.reason}
-                              </span>
-                            )}
-                          </div>
-                          <p className="mt-1 font-mono text-[13px] text-muted">"{row.quote.raw}"</p>
-                          {isLate && details?.exceptions?.[row.quote.id] && (
-                            <p className="mt-1 text-[12px] text-bone" onClick={e => e.stopPropagation()}>
-                              <strong>Exception recorded:</strong> “{details.exceptions[row.quote.id].reason}” — approved by {details.exceptions[row.quote.id].approver}{" "}
-                              {!isDecided && (
-                                <button type="button" className="text-muted underline hover:text-bone"
-                                  onClick={() => withdrawException(rfqId ?? "", row.quote.id).then(() => refetch())}>withdraw</button>
-                              )}
-                            </p>
-                          )}
-                          {isLate && !details?.exceptions?.[row.quote.id] && !isDecided && (
-                            <p className="mt-1 text-[12px] text-warn" onClick={e => e.stopPropagation()}>
-                              Not recommended: {row.reason}.{" "}
-                              <button type="button" className="font-medium underline hover:text-bone" onClick={() => setExceptionFor(row.quote.id)}>
-                                Approve an exception
-                              </button>
-                            </p>
-                          )}
-                          {(versions[latestVer - 1]?.price_breaks?.filter(b => b.min_qty > 1).length ?? 0) > 0 && (
-                            <p className="mt-1 text-[11px] text-muted">
-                              Volume pricing as quoted: {versions[latestVer - 1].price_breaks!.filter(b => b.min_qty > 1).map(b => `${b.min_qty}+ units ${inr(b.pack_price)} a pack`).join(" · ")}
-                            </p>
-                          )}
-                          {versions[latestVer - 1]?.free_freight_above != null && (
-                            <p className="mt-1 text-[11px] text-muted">
-                              Free delivery when goods reach{" "}
-                              {inr(versions[latestVer - 1].compare_free_freight_above ?? versions[latestVer - 1].free_freight_above as number)}{" "}
-                              {versions[latestVer - 1].compare_free_freight_above != null ? "(on your GST basis)" : "(as quoted)"}
-                            </p>
-                          )}
-                          {versions[latestVer - 1]?.per_unit_freight != null && (
-                            <p className="mt-1 text-[11px] text-muted">
-                              Per-unit freight:{" "}
-                              {inr(versions[latestVer - 1].compare_per_unit_freight ?? versions[latestVer - 1].per_unit_freight as number)}/unit{" "}
-                              {versions[latestVer - 1].compare_per_unit_freight != null ? "(on your GST basis)" : "(as quoted)"}
-                            </p>
-                          )}
-                          {versions[latestVer - 1]?.shipping && (
-                            <p className="mt-1 text-[11px] text-muted">
-                              {versions[latestVer - 1].shipping === "own"
-                                ? "Ships by the seller's own shipment"
-                                : versions[latestVer - 1].shipping_basis === "delhivery"
-                                  ? "Ships by Delhivery · freight from a Delhivery estimate"
-                                  : versions[latestVer - 1].shipping_basis === "rate_card"
-                                    ? "Ships by Delhivery · freight is an estimated rate, not a carrier quote"
-                                    : "Ships by Delhivery · freight set by the seller"}
-                            </p>
-                          )}
-                          {versions[latestVer - 1] && (
-                            versions[latestVer - 1].tax_basis === "assumed_exclusive" ? (
-                              <p className="mt-1 text-[11px] text-warn" title="The seller did not say whether their price includes GST. We compare it as excluding GST. Confirm before ordering.">
-                                GST basis not stated: compared as excluding GST
-                              </p>
-                            ) : versions[latestVer - 1].compare_price != null && Math.abs((versions[latestVer - 1].compare_price as number) - versions[latestVer - 1].pack_price) > 0.005 ? (
-                              <p className="mt-1 text-[11px] text-muted">
-                                Quoted {inr(versions[latestVer - 1].pack_price)} {versions[latestVer - 1].price_includes_tax ? "incl." : "excl."} {versions[latestVer - 1].tax_rate}% GST
-                                {" "}→ compared as <span className="num text-bone">{inr(versions[latestVer - 1].compare_price as number)}</span>{" "}
-                                {rfq.gst_claimable === false ? "incl. GST" : "ex-GST"}
-                              </p>
-                            ) : null
-                          )}
-                          {badge && (
-                            <p className="mt-1 flex items-center gap-1 text-[11px] text-muted">
-                              <ShieldCheck size={11} className="shrink-0" />
-                              <span>{badge.region} · {badge.verification_text}</span>
-                            </p>
-                          )}
-                          {identity && (
-                            <div className="mt-2 rounded-lg border border-live/40 bg-live/10 p-2 text-[12px] text-bone">
-                              <strong>{identity.business_name}</strong>
-                              {imported
-                                ? <span className="text-muted"> · imported by you, not checked by Crossover</span>
-                                : <span className="text-muted"> · {identity.city}, {identity.state}</span>}
-                              <div className="num text-muted">
-                                {identity.contact_name}{identity.phone ? ` · ${identity.phone}` : ""}{identity.email ? ` · ${identity.email}` : ""}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <p className="label text-muted">Total Landed</p>
-                          <p className={`num text-lg font-bold ${isWin ? "text-signal" : "text-bone"}`}>
-                            {row.landed !== null ? inr(row.landed) : "—"}
-                          </p>
-                        </div>
-                      </div>
-
-                      {!isBlocked && row.landed !== null && (
-                        <div className="mt-3 flex flex-wrap items-center justify-between border-t border-line/60 pt-2.5 text-[12px] text-muted" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center gap-3">
-                            <span>Order: <strong className="text-bone">{row.packs} packs</strong> ({row.units} units)</span>
-                            <span>·</span>
-                            <span>Freight: {inr(row.quote.freight)}</span>
-                            {row.landed !== null && qty > 0 && (
-                              <span title="Landed cost over the units you need" className="num">· {inr(row.landed / qty)} per usable unit</span>
-                            )}
-                            {row.overbuy > 0 && (
-                              <span className="text-warn" title="Extra units bought because of pack size or minimum order">
-                                +{row.overbuy} extra units ({inr(row.overbuy * unitPrice(row.quote))} tied up)
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {!imported && (
-                              <button
-                                type="button"
-                                onClick={() => setChatSupplierId(row.quote.id)}
-                                className="flex items-center gap-1 rounded-full border border-line px-2.5 py-0.5 text-[11px] hover:text-bone hover:border-signal/50"
-                              >
-                                <MessageSquare size={11} /><span>Chat</span>
-                              </button>
-                            )}
-                            {imported ? (
-                              <span className="flex items-center gap-1 rounded-full border border-line bg-raised px-2.5 py-0.5 text-[11px] text-muted">
-                                <Upload size={11} /><span>Imported</span>
-                              </span>
-                            ) : identity ? (
-                              <span className="flex items-center gap-1 rounded-full border border-live/40 bg-live/10 px-2.5 py-0.5 text-[11px] text-live">
-                                <Unlock size={11} /><span>Unlocked</span>
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={revealingAlias === row.quote.id}
-                                onClick={() => handleReveal(row.quote.id)}
-                                title="Unlock this seller's name and contact"
-                                className="flex items-center gap-1 rounded-full border border-signal/50 bg-signal/10 px-2.5 py-0.5 text-[11px] font-medium text-signal hover:bg-signal hover:text-ink disabled:opacity-40"
-                              >
-                                <Unlock size={11} /><span>{revealingAlias === row.quote.id ? "Revealing…" : "Reveal"}</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Target status indicator */}
-                      {target && (
-                        <div className="mt-2 text-[11px] text-signal">
-                          ⚡ Target sent: {target.message}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Quantity Slider */}
-            <div className="rounded-2xl border border-line bg-surface/70 p-5 backdrop-blur-sm">
-              <QtyControl
-                qty={qty}
-                onQty={setQty}
-                sheet={sheetMode}
-                onSheet={setSheetMode}
-                onReset={() => setQty(rfq.qty)}
+                          </>
+            ) : (
+              <AnswerCard
+                winner={winner} rows={evaluation.rows} pool={evaluation.pool} mode={mode} qty={qty} needInDays={rfq.need_in_days}
+                name={winner ? details?.revealed?.[winner.quote.id]?.business_name : undefined}
+                decided={isDecided}
+                waiting={details?.activity ? Math.max(0, details.activity.notified - details.activity.quoted - details.activity.declined) : 0}
+                onChoose={() => { setChooseId(null); setShowDecisionModal(true); }}
               />
-            </div>
+            )}
           </div>
-
-          {/* Right Column: Cost Curves + Negotiate + Why ───────────────── */}
           <div className="space-y-4">
-            {/* Live Curves */}
-            <div className="rounded-2xl border border-line bg-surface/70 p-5 backdrop-blur-sm space-y-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="display text-lg text-bone">Crossover Cost Curves</h2>
-                  <p className="text-[12px] text-muted">
-                    At <strong className="text-bone">{qty} units</strong>, {winner?.quote.supplier ?? "No one"} wins.
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 text-success text-[12px] font-medium">
-                  <TrendingDown size={14} /><span>Cost crossover</span>
-                </div>
-              </div>
-              <div className="rounded-xl border border-line bg-surface p-3">
-                <CostChart qty={qty} winnerId={winner?.quote.id} quotes={engineQuotes} late={evaluation.rows.filter(r => r.status === "exception").map(r => r.quote.id)} />
-              </div>
-            </div>
-
             {splitPlan && !decidedNow && (
               <div className="space-y-3 rounded-2xl border border-signal/40 bg-signal/5 p-4 text-[13px]" aria-label="Split order option">
                 <div>
@@ -689,28 +401,82 @@ export function DashboardDesk() {
               </div>
             )}
 
-            {/* Why this supplier: gates as pass/fail, facts tagged by where they came from */}
-            {winner && winner.landed !== null && (
-              <WhyCard row={winner} qty={qty} needInDays={rfq.need_in_days} mode={mode} />
-            )}
-
-            {/* Why This Supplier (gates + cheaper excluded) */}
-            {evaluation.cheaperExcluded.length > 0 && (
-              <div className="rounded-2xl border border-warn/30 bg-warn/5 p-5 space-y-3">
-                <h3 className="display text-base text-bone flex items-center gap-2">
-                  <AlertTriangle size={16} className="text-warn" />
-                  Cheaper But Excluded
-                </h3>
-                {evaluation.cheaperExcluded.map((r) => (
-                  <div key={r.quote.id} className="flex items-center justify-between text-[12px] border-b border-line/40 py-1.5 last:border-0">
-                    <span className="text-bone font-medium">{r.quote.supplier}</span>
-                    <span className="text-warn">{r.reason}</span>
-                    <span className="num text-muted">{r.landed !== null ? inr(r.landed) : "—"}</span>
-                  </div>
-                ))}
+            {!splitPlan && !opinion && !isDecided && details?.activity && details.activity.notified > 0 && (
+              <div className="rounded-2xl border border-line bg-surface/70 p-4 text-[13px]">
+                <p className="label text-muted">Sellers right now</p>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                  {([["Opened it", details.activity.viewed], ["Typing a quote", details.activity.quoting], ["Sent a quote", details.activity.quoted]] as const).map(([l, n]) => (
+                    <div key={l} className="rounded-xl bg-raised/50 px-2 py-2.5">
+                      <p className="num text-[20px] font-bold text-bone">{n}</p>
+                      <p className="text-[11px] text-muted">{l}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
+          </div>
+        </div>
 
+        {/* Controls: what matters, how many, and the spreadsheet comparison */}
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface/70 px-4 py-3">
+            <PriorityControl mode={mode} onMode={setMode} winners={evaluation.winners} />
+            <QtyStepper qty={qty} base={rfq.qty} onQty={setQty} />
+            <div className="flex items-center gap-2">
+              {!isDecided && (
+                <button type="button" onClick={() => setShowImport(true)}
+                  className="flex items-center gap-1.5 rounded-full border border-line bg-raised px-3 py-1.5 text-[12px] font-medium text-muted hover:text-bone">
+                  <Upload size={13} /><span>Import quotes</span>
+                </button>
+              )}
+              <button type="button" onClick={() => setSheetMode(s => !s)} aria-pressed={sheetMode}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${sheetMode ? "border border-error bg-error/15 text-error" : "border border-line bg-raised text-muted hover:text-bone"}`}>
+                <FileSpreadsheet size={13} /><span>{sheetMode ? "Hide spreadsheet view" : "Compare with a spreadsheet"}</span>
+              </button>
+            </div>
+          </div>
+          {giveUp(mode, evaluation.winners) && mode !== "cheapest" && (
+            <p className="px-1 text-[12px] text-muted">{giveUp(mode, evaluation.winners)}{mode === "balanced" ? " Balanced pays up to 5% more to arrive sooner; the 5% is our assumption." : ""}</p>
+          )}
+          {sheetMode && (
+                <div className="rounded-xl border border-error/40 bg-error/10 p-3 text-[13px] space-y-1" aria-live="polite">
+                  <p className="label text-error">Spreadsheet view: sorted by price per unit</p>
+                  {sheetPick ? (
+                    <p className="text-bone">
+                      A sheet picks <strong>{sheetPick.quote.supplier}</strong> at <span className="num">{inr(sheetPick.unit)}</span> a unit.
+                      {" "}It ignores freight, pack rounding and the delivery date.
+                      {winner && sheetPick.landed !== null && winner.landed !== null && (
+                        winner.quote.id === sheetPick.quote.id
+                          ? <> Here Crossover agrees: {winner.quote.supplier} is also cheapest landed.</>
+                          : <> Crossover picks <strong>{winner.quote.supplier}</strong> at <span className="num">{inr(winner.landed)}</span> landed,
+                              {" "}<strong className="num text-signal">{inr(sheetPick.landed - winner.landed)}</strong> less than the sheet's pick ({inr(sheetPick.landed)}).</>
+                      )}
+                    </p>
+                  ) : <p className="text-muted">No quote passes the delivery date, so a sheet would have nothing to pick.</p>}
+                </div>
+              )}
+
+        </div>
+
+        {/* Every quote side by side, best first */}
+        <section aria-label="All quotes">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="display text-xl text-bone">All quotes, best first</h2>
+            <span className="text-[12px] text-muted">{engineQuotes.length} quote{engineQuotes.length === 1 ? "" : "s"} · scroll sideways</span>
+          </div>
+          <QuoteBoard
+            rows={evaluation.rows} pool={evaluation.pool} winnerId={winner?.quote.id ?? null} mode={mode} qty={qty}
+            needInDays={rfq.need_in_days} details={details} sheetPickId={sheetMode ? sheetPick?.quote.id ?? null : null}
+            decided={isDecided} revealingAlias={revealingAlias}
+            onReveal={handleReveal} onChat={setChatSupplierId} onException={setExceptionFor} onOpen={setProfileSupplierId}
+            onChoose={(id) => { setChooseId(id); setShowDecisionModal(true); }}
+            onWithdraw={(id) => withdrawException(rfqId ?? "", id).then(() => refetch())}
+          />
+        </section>
+
+        {/* Ask a seller to beat the best, and talk to them */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-4">
             {/* The Negotiate Panel */}
             {!isDecided && (
               <div className="rounded-2xl border border-line bg-surface/80 p-5 backdrop-blur-sm space-y-4 shadow-sm">
@@ -815,42 +581,8 @@ export function DashboardDesk() {
               </div>
             )}
 
-            {/* Decision Summary (read-only after decided) */}
-            {isDecided && rfq.decision && (
-              <div className="rounded-2xl border border-success/40 bg-success/10 p-5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Lock size={16} className="text-success" />
-                  <h3 className="display text-base font-semibold text-success">Decision Saved</h3>
-                </div>
-                <div className="text-[13px] text-muted space-y-1">
-                  <p>Winner: <strong className="text-bone">{(details?.revealed?.[rfq.decision.winner_id as string]?.business_name) ?? (rfq.decision.winner_id as string)}</strong></p>
-                  {details?.revealed?.[rfq.decision.winner_id as string]?.phone && (
-                    <p className="num">Contact: <span className="text-bone">
-                      {details.revealed[rfq.decision.winner_id as string].contact_name} · {details.revealed[rfq.decision.winner_id as string].phone} · {details.revealed[rfq.decision.winner_id as string].email}
-                    </span></p>
-                  )}
-                  {summary?.split && (
-                    <p>Split order: <span className="text-bone">{summary.split.parts.map(p => `${p.quote_id} ${p.qty} units (${inr(p.landed)})`).join(" + ")}</span></p>
-                  )}
-                  <p>Payment: <span className="text-bone">{(rfq.decision.payment_note as string) ?? "Cash on delivery. Crossover never holds money."}</span></p>
-                  <p>Reason: <span className="text-bone">{rfq.decision.reason as string}</span></p>
-                  <p>Approver: <span className="text-bone">{rfq.decision.approver as string}</span></p>
-                </div>
-                {summary?.savings && (
-                  <p className="text-[13px] text-bone">
-                    Spreadsheet pick: {summary.savings.spreadsheet_pick} at {inr(summary.savings.spreadsheet_landed)}.
-                    Crossover pick: {summary.savings.crossover_pick} at {inr(summary.savings.crossover_landed)}.
-                    Difference: <strong className="num text-signal">{inr(summary.savings.difference)}</strong>
-                    <span className="text-muted"> ({summary.savings.label})</span>
-                  </p>
-                )}
-                <DeliveryCheck rfqId={rfq.id} saved={(rfq.decision as { delivery?: DeliveryDTO }).delivery ?? null} onSaved={() => refetch()} />
-                <Link to={`/app/decision/${rfq.id}`} className="inline-block rounded-full border border-success/40 px-3 py-1 text-[12px] font-medium text-success hover:bg-success/10">
-                  Open decision one-pager
-                </Link>
-              </div>
-            )}
-
+          </div>
+          <div className="space-y-4">
             {/* Chat Flyout */}
             {chatSupplierId && (
               <SupplierChat
@@ -862,6 +594,42 @@ export function DashboardDesk() {
             )}
           </div>
         </div>
+
+        {/* For anyone who wants the working: chart, every number and where it came from */}
+        <details className="group rounded-2xl border border-line bg-surface/70 p-5">
+          <summary className="flex cursor-pointer list-none items-center justify-between text-[14px] font-medium text-bone">
+            <span>How Crossover worked this out</span>
+            <span className="text-[12px] text-muted group-open:hidden">Cost chart, every number and where it came from</span>
+          </summary>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-line bg-surface p-4">
+              <p className="text-[13px] text-muted">How each seller's total grows with quantity. At <strong className="text-bone">{qty} units</strong>, {winner?.quote.id ?? "no one"} is best.</p>
+              <div className="mt-3"><CostChart qty={qty} winnerId={winner?.quote.id} quotes={engineQuotes} late={evaluation.rows.filter(r => r.status === "exception").map(r => r.quote.id)} /></div>
+            </div>
+            <div className="space-y-4">
+              {winner && winner.landed !== null && (
+                <WhyCard row={winner} qty={qty} needInDays={rfq.need_in_days} mode={mode} />
+              )}
+            {/* Why This Supplier (gates + cheaper excluded) */}
+            {evaluation.cheaperExcluded.length > 0 && (
+              <div className="rounded-2xl border border-warn/30 bg-warn/5 p-5 space-y-3">
+                <h3 className="display text-base text-bone flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-warn" />
+                  Cheaper But Excluded
+                </h3>
+                {evaluation.cheaperExcluded.map((r) => (
+                  <div key={r.quote.id} className="flex items-center justify-between text-[12px] border-b border-line/40 py-1.5 last:border-0">
+                    <span className="text-bone font-medium">{r.quote.supplier}</span>
+                    <span className="text-warn">{r.reason}</span>
+                    <span className="num text-muted">{r.landed !== null ? inr(r.landed) : "—"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            </div>
+          </div>
+        </details>
       </main>
 
       {/* Seller panel (click-through): anonymous until revealed */}
@@ -939,6 +707,7 @@ export function DashboardDesk() {
       {showDecisionModal && evaluation && (
         <SaveDecisionModal
           evaluation={evaluation}
+          initialWinnerId={chooseId}
           buyerName={rfq.buyer_name}
           revealed={details?.revealed ?? {}}
           revealing={revealingAlias !== null}
@@ -1001,9 +770,10 @@ export function DashboardDesk() {
 // ─── Save Decision Modal ───────────────────────────────────────────────────
 
 function SaveDecisionModal({
-  evaluation, buyerName, revealed, revealing, onReveal, onSave, onClose,
+  evaluation, initialWinnerId, buyerName, revealed, revealing, onReveal, onSave, onClose,
 }: {
   evaluation: ReturnType<typeof evaluate>;
+  initialWinnerId?: string | null;
   buyerName: string;
   revealed: Record<string, SellerIdentity>;
   revealing: boolean;
@@ -1011,7 +781,7 @@ function SaveDecisionModal({
   onSave: (winnerId: string, reason: string, approver: string) => void;
   onClose: () => void;
 }) {
-  const [winnerId, setWinnerId] = useState(evaluation.winner?.quote.id || "");
+  const [winnerId, setWinnerId] = useState(initialWinnerId || evaluation.winner?.quote.id || "");
   const [reason, setReason] = useState(
     evaluation.winner
       ? `${evaluation.mode === "cheapest" ? "Lowest landed cost" : evaluation.mode === "fastest" ? "Fastest delivery" : "Best balance of cost and speed"} at ${inr(evaluation.winner.landed!)}. ${evaluation.winner.quote.supplier} wins.`

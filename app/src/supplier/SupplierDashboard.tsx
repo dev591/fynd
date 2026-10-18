@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Ambient } from "../components/Ambient";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft, Building2, Package, Plus, ArrowRight,
@@ -122,7 +123,8 @@ export function SupplierDashboard() {
   };
 
   return (
-    <div className="landing grain min-h-screen bg-ink text-bone pb-16">
+    <div className="landing grain isolate min-h-screen bg-ink text-bone pb-16">
+      <Ambient />
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6">

@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from "react";
+import { Ambient } from "../components/Ambient";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Building2, Clock, History, RotateCcw, MessageSquare,
@@ -197,7 +198,8 @@ export function SupplierQuotePage() {
 
   if (!token) {
     return (
-      <div className="landing grain min-h-screen bg-ink text-bone flex items-center justify-center">
+      <div className="landing grain isolate min-h-screen bg-ink text-bone flex items-center justify-center">
+      <Ambient />
         <div className="max-w-md text-center space-y-3">
           <AlertTriangle size={28} className="mx-auto text-warn" />
           <h2 className="display text-lg text-bone">No token provided</h2>
@@ -210,7 +212,8 @@ export function SupplierQuotePage() {
 
   if (loading && !rfq) {
     return (
-      <div className="landing grain min-h-screen bg-ink text-bone flex items-center justify-center">
+      <div className="landing grain isolate min-h-screen bg-ink text-bone flex items-center justify-center">
+      <Ambient />
         <div className="text-center space-y-3">
           <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-line border-t-signal" />
           <p className="text-[13px] text-muted">Loading request…</p>
@@ -221,7 +224,8 @@ export function SupplierQuotePage() {
 
   if (error && !rfq) {
     return (
-      <div className="landing grain min-h-screen bg-ink text-bone flex items-center justify-center">
+      <div className="landing grain isolate min-h-screen bg-ink text-bone flex items-center justify-center">
+      <Ambient />
         <div className="max-w-md rounded-2xl border border-error/40 bg-error/10 p-6 text-center space-y-3">
           <XCircle size={28} className="mx-auto text-error" />
           <h2 className="display text-lg text-bone">This link isn't valid</h2>
@@ -236,7 +240,8 @@ export function SupplierQuotePage() {
   const isClosed = rfq.status === "Decided" || rfq.status === "Closed";
 
   return (
-    <div className="landing grain min-h-screen bg-ink text-bone pb-16">
+    <div className="landing grain isolate min-h-screen bg-ink text-bone pb-16">
+      <Ambient />
       {/* Top Bar */}
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">

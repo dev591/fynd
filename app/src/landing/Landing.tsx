@@ -5,13 +5,14 @@ import { Nav } from '../components/Nav'
 import { prefersReducedMotion } from '../lib/motion'
 import { evaluate, naivePick } from './engine'
 import { NEED, QUOTES } from './fixture'
+import { Dive } from './Dive'
 
 /** One short page: say what it is, show it working, let a buyer or a seller in. */
 export function Landing() {
   return (
-    <div className="landing grain min-h-screen bg-ink text-bone">
+    <div data-theme="dark" className="landing grain min-h-screen bg-ink text-bone">
       <Nav />
-      <Hero />
+      <Dive />
       <TwoSides />
       <Steps />
       <Proof />
@@ -22,37 +23,8 @@ export function Landing() {
 
 const inr = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN')
 
-/* ── Hero ─────────────────────────────────────────────────────────────── */
-
-function Hero() {
-  return (
-    <header className="mx-auto grid max-w-6xl items-center gap-10 px-6 pb-16 pt-28 md:grid-cols-[1.05fr_1fr] md:pb-24 md:pt-36">
-      <div>
-        <p className="label text-live">Free for sellers · quotes in minutes</p>
-        <h1 className="display mt-4 text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02] tracking-tight">
-          Post what you need. Real quotes land while you wait.
-        </h1>
-        <p className="mt-5 max-w-[46ch] text-[clamp(1rem,1.6vw,1.2rem)] text-muted">
-          Every seller who stocks your item is pinged. Their quotes come back without names, priced all the way to your
-          door. Pick one, and only then see who they are.
-        </p>
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <Link to="/login" className="flex items-center gap-2 rounded-full bg-signal px-6 py-3.5 text-[15px] font-semibold text-ink hover:opacity-95">
-            I need to buy <ArrowRight size={17} />
-          </Link>
-          <Link to="/login" className="flex items-center gap-2 rounded-full border border-line bg-surface px-6 py-3.5 text-[15px] font-semibold text-bone hover:border-signal/60">
-            I sell things
-          </Link>
-          <Link to="/signin" className="px-2 text-sm text-muted underline-offset-4 hover:text-bone hover:underline">Sign in</Link>
-        </div>
-      </div>
-      <LiveFeed />
-    </header>
-  )
-}
-
 /** Quotes arriving one by one, then the pick. Same rules the product runs, on the C27 brief's four quotes. */
-function LiveFeed() {
+export function LiveFeed() {
   const result = evaluate(QUOTES, NEED)
   const winner = result.winner?.quote.id
   const rank = (r: (typeof result.rows)[number]) => (r.status === 'eligible' ? 0 : r.status === 'exception' ? 1 : 2)
