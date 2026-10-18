@@ -708,6 +708,7 @@ export function DashboardDesk() {
                 <div>{supplierProfile.contact.contact_name}</div>
                 <div className="num">{supplierProfile.contact.phone}</div>
                 <div className="num">{supplierProfile.contact.email}</div>
+                {supplierProfile.contact.address && <div>{supplierProfile.contact.address}</div>}
               </div>
             ) : (
               <div className="rounded-lg border border-line bg-raised/40 p-3 space-y-2">

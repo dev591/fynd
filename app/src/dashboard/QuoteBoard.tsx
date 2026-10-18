@@ -156,6 +156,12 @@ function Column({ row, rank, cheapest, fastest, ...p }: BoardProps & { row: Row;
           <span className="num text-[11px] text-muted">#{rank + 1}</span>
           <h3 className="text-[15px] font-semibold leading-tight text-bone">{id}</h3>
           {identity && <p className="truncate text-[11px] text-live">{identity.business_name}</p>}
+          {identity && (
+            <p className="mt-0.5 text-[10.5px] leading-snug text-muted">
+              {[identity.contact_name, identity.phone, identity.email].filter(Boolean).join(" · ")}
+              {(identity.address || identity.city) && <><br />{[identity.address, identity.city, identity.state].filter(Boolean).join(", ")}</>}
+            </p>
+          )}
           {identity && imported && <p className="text-[10.5px] text-muted">imported by you, not checked by Crossover</p>}
         </button>
         <div className="flex flex-col items-end gap-1">

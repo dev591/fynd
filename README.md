@@ -119,7 +119,7 @@ notifications on both laptops). See `DEPLOY.md` and `render.yaml`.
 ## Test it
 
 ```bash
-cd api && python3 -m pytest -q          # 448 tests
+cd api && python3 -m pytest -q          # 600 tests
 cd app && npx tsc -b && npm run lint && npm run build
 cd api && python3 -m tests.golden.run_live   # real-model check of the 15 buyer sentences (needs keys)
 ```

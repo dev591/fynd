@@ -41,6 +41,7 @@ export interface Profile {
   state: string;
   city: string;
   pincode?: string;
+  address?: string;
   categories: string[];
   gstin?: string;
   pan_masked?: string; // never return the full PAN
@@ -64,6 +65,7 @@ export interface WizardDraft {
   state: string;
   city: string;
   pincode: string;
+  address: string;
   categories: Category[];
   // Screen 3: Tax IDs
   gstin: string;

@@ -133,3 +133,9 @@ Written with Claude Code (Anthropic), reviewed by the team. No backend or engine
 - A buyer who places an order is notified to choose cash on delivery or a 50% advance; a paid advance is shown to the seller on
   their Orders received tab. In test mode no real money moves; the earlier claim that Crossover never holds money applies to
   cash on delivery only.
+
+## Matching by meaning and seller details
+A request reaches a seller when the item names match exactly, match after acronyms and word order are normalised
+("High-Density Interconnect (HDI) Boards" and "HDI"), or, as a last resort, when the AI relates it to a catalog name.
+The AI may only pick names that already exist in the seller's catalog (checked in code), and the seller is told it was a
+guess. The optional street address is stored on the profile and shown only after a reveal or an order.

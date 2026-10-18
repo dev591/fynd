@@ -37,7 +37,7 @@ def identity_of(store, supplier_id: str, rfq_id: Optional[str] = None) -> dict[s
         return {}
     return {
         "business_name": p.business_name, "contact_name": p.contact_name, "phone": p.phone, "email": p.email,
-        "city": p.location_city, "state": p.location_state, "categories": p.categories,
+        "address": p.address, "city": p.location_city, "state": p.location_state, "categories": p.categories,
         "description": p.description, "synthetic": p.synthetic,
         "verification_tier": p.verification_tier, "verification_text": verification_text(p.verification_tier, p.synthetic),
     }
@@ -55,7 +55,8 @@ def buyer_contact(store, rfq) -> dict[str, Any]:
     """The buyer's contact, released to a seller only after that seller is revealed."""
     prof = store.profiles.get(rfq.owner_id) if rfq.owner_id else None
     if prof:
-        return {"name": prof.full_name, "company": prof.company, "phone": prof.phone, "email": prof.email, "city": prof.city}
+        return {"name": prof.full_name, "company": prof.company, "phone": prof.phone, "email": prof.email, "city": prof.city,
+                "address": prof.address or None}
     return {"name": rfq.buyer_name, "company": rfq.buyer_company, "phone": None, "email": None, "city": rfq.buyer_city}
 
 
@@ -163,7 +164,7 @@ def supplier_for_buyer(store, rfq, alias: str) -> Optional[dict[str, Any]]:
     if store.is_revealed(rfq.id, sid):
         ident = identity_of(store, sid)
         base.update({"revealed": True, "business_name": ident.get("business_name", alias), "location_city": ident.get("city", ""),
-                     "description": ident.get("description"), "contact": {k: ident.get(k) for k in ("contact_name", "phone", "email")},
+                     "description": ident.get("description"), "contact": {k: ident.get(k) for k in ("contact_name", "phone", "email", "address")},
                      "products": [x.model_dump() for x in store.supplier_products.get(sid, [])]})
     return base
 
@@ -355,7 +356,7 @@ def buyer_orders(store, buyer_id: str) -> list[dict]:
             "approver": rfq.decision.get("approver"), "reason": rfq.decision.get("reason"), "split": bool(rfq.decision.get("split")),
             "status": _delivery_status(rfq.decision), "payment": rfq.decision.get("payment"), "payment_note": rfq.decision.get("payment_note"),
             "receivers": [{"alias": a, "units": u, "total": t, **{k: (revealed.get(a) or {}).get(k) for k in
-                           ("business_name", "contact_name", "phone", "email", "city", "state")}} for a, u, t in parts],
+                           ("business_name", "contact_name", "phone", "email", "address", "city", "state")}} for a, u, t in parts],
         })
     return sorted(out, key=lambda o: o["decided_at"] or "", reverse=True)
 

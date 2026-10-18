@@ -296,7 +296,7 @@ export function SupplierDashboard() {
                 <div className="mt-3 rounded-xl bg-raised/60 px-4 py-3 text-[13px]">
                   <p className="label text-muted">Buyer to deliver to</p>
                   <p className="mt-1 text-[15px] font-semibold">{o.buyer.company || o.buyer.name}</p>
-                  <p className="num text-muted">{[o.buyer.name, o.buyer.phone, o.buyer.email, o.buyer.city].filter(Boolean).join(" · ")}</p>
+                  <p className="num text-muted">{[o.buyer.name, o.buyer.phone, o.buyer.email, o.buyer.address, o.buyer.city].filter(Boolean).join(" · ")}</p>
                   {o.payment && <p className="mt-1 text-[12px] text-muted">{o.payment}</p>}
                 </div>
               </motion.article>
@@ -371,13 +371,18 @@ export function SupplierDashboard() {
                             <strong>A buyer unlocked you.</strong> Contact: {n.buyer_contact.name}, {n.buyer_contact.company}
                             {n.buyer_contact.phone ? ` · ${n.buyer_contact.phone}` : ""}
                             {n.buyer_contact.email ? ` · ${n.buyer_contact.email}` : ""}
+                            {n.buyer_contact.address ? ` · ${n.buyer_contact.address}` : ""}
                           </div>
                         )}
                         <ul className="text-[12px] text-muted list-disc pl-5">
                           {n.verdict.reasons.map(r => <li key={r}>{r}</li>)}
                         </ul>
                         <p className="text-[11px] text-muted/80">
-                          Matched your catalog item: {n.product.name}. Not the same item? Skip it. Stock is a snapshot, not reserved.
+                          {n.match_basis === "ai"
+                            ? `The desk's AI thinks this is your catalog item "${n.product.name}". It is a guess, so check it before you quote.`
+                            : n.match_basis === "similar"
+                              ? `Worded differently from your catalog item "${n.product.name}" but it looks like the same thing.`
+                              : `Matched your catalog item: ${n.product.name}.`} Not the same item? Skip it. Stock is a snapshot, not reserved.
                         </p>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">

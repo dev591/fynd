@@ -59,7 +59,7 @@ export function OrderHistory() {
                     <p className="label text-muted">Order receiver</p>
                     <p className="mt-1 text-[15px] font-semibold">{r.business_name ?? r.alias}</p>
                     <p className="text-muted">{[r.city, r.state].filter(Boolean).join(", ")}{o.split ? ` · ${r.units} units · ${r.total != null ? inr(r.total) : ""}` : ""}</p>
-                    {(r.contact_name || r.phone) && <p className="num mt-1 flex items-center gap-1.5 text-bone"><Phone size={12} />{[r.contact_name, r.phone, r.email].filter(Boolean).join(" · ")}</p>}
+                    {(r.contact_name || r.phone) && <p className="num mt-1 flex items-center gap-1.5 text-bone"><Phone size={12} />{[r.contact_name, r.phone, r.email, r.address].filter(Boolean).join(" · ")}</p>}
                   </div>
                 ))}
               </div>

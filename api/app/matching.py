@@ -2,6 +2,8 @@
 import re
 from typing import Iterable, List
 
+from . import ai
+from .ai import structured_call
 from .models import DraftQuote, PriceBreak, RFQ, SupplierProduct, Verdict
 
 
@@ -11,18 +13,85 @@ def normalise_item(name: str) -> str:
 
 
 def product_names(p: SupplierProduct) -> set[str]:
-    return {normalise_item(n) for n in [p.name, *p.aliases] if n.strip()}
+    """Every name this product answers to: its name, its aliases, the acronym written in brackets ("... (HDI) Boards" is also
+    "HDI"), and the name with the bracket removed."""
+    out: set[str] = set()
+    for n in [p.name, *p.aliases]:
+        if not n.strip():
+            continue
+        out.add(normalise_item(n))
+        for acro in re.findall(r"\(([A-Za-z0-9][A-Za-z0-9 .-]{1,14})\)", n):
+            out.add(normalise_item(acro))
+        bare = normalise_item(re.sub(r"\([^)]*\)", " ", n))
+        if bare:
+            out.add(bare)
+    return out
+
+
+def singular(token: str) -> str:
+    """boards -> board, boxes -> box, glass stays glass. Same rule the intake reader uses."""
+    if len(token) > 4 and token.endswith(("xes", "ches", "shes", "sses", "zes")):
+        return token[:-2]
+    return token[:-1] if len(token) > 3 and token.endswith("s") and not token.endswith("ss") else token
+
+
+def _tokens(text: str) -> set[str]:
+    return {singular(t) for t in normalise_item(text).split()}
+
+
+def match_with_basis(item: str, products: Iterable[SupplierProduct]) -> tuple[SupplierProduct | None, str | None]:
+    """(product, 'exact' | 'similar'). Exact name or alias first. Otherwise one name's words sit inside the other's, so 'HDI boards'
+    finds 'High-Density Interconnect (HDI) Boards' and the other way round. A different size or number never matches
+    (M10 bolt is not M8 bolt) because then neither side's words contain the other's."""
+    want = normalise_item(item)
+    if not want:
+        return None, None
+    plist = list(products)
+    for p in plist:
+        if want in product_names(p):
+            return p, "exact"
+    wt = _tokens(item)
+    for p in plist:
+        for name in product_names(p):
+            nt = _tokens(name)
+            if nt and wt and (wt <= nt or nt <= wt):
+                return p, "similar"
+    return None, None
 
 
 def matching_product(item: str, products: Iterable[SupplierProduct]) -> SupplierProduct | None:
-    """Exact name or alias match only. First hit wins."""
-    want = normalise_item(item)
-    if not want:
-        return None
-    for p in products:
-        if want in product_names(p):
-            return p
-    return None
+    return match_with_basis(item, products)[0]
+
+
+# ─── AI: relate a term the rules cannot (PCB and "Multilayer Printed Circuit Board") ───
+
+_ai_cache: dict[tuple, list[str]] = {}
+AI_SYSTEM = (
+    "A buyer wants an item. From the catalog product names below, list the ones that are the same kind of product, allowing "
+    "abbreviations, synonyms and different wording. Do not include products that are merely related, or whose size or "
+    "specification makes them a different product. Copy names exactly as given. If none, return an empty list."
+)
+AI_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["matches"],
+             "properties": {"matches": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["name"],
+                                                                 "properties": {"name": {"type": "string"}}}}}}
+
+
+def ai_matches(item: str, candidates: list[tuple[str, SupplierProduct]]) -> dict[str, SupplierProduct]:
+    """seller id -> product, for catalog items a model says are the same product. Only names that really exist in the catalog
+    are kept; with AI off, or on any failure, nothing is added."""
+    if not candidates or not ai.ai_enabled():
+        return {}
+    names = sorted({p.name for _, p in candidates})[:80]
+    key = (normalise_item(item), tuple(names))
+    if key not in _ai_cache:
+        raw = structured_call(AI_SYSTEM, f"Requested item: {item}\nCatalog products:\n" + "\n".join(f"- {n}" for n in names), "item_match_ai", AI_SCHEMA)
+        _ai_cache[key] = [m.get("name") for m in (raw or {}).get("matches", []) if m.get("name") in names]
+    chosen = set(_ai_cache[key])
+    out: dict[str, SupplierProduct] = {}
+    for sid, p in candidates:
+        if p.name in chosen and sid not in out:
+            out[sid] = p
+    return out
 
 
 def verdict_for(rfq: RFQ, product: SupplierProduct) -> Verdict:

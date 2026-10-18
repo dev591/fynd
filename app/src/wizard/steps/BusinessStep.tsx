@@ -12,12 +12,14 @@ interface BusinessStepProps {
   state: string;
   city: string;
   pincode: string;
+  address: string;
   onChange: (fields: Partial<{
     company: string;
     businessType: BusinessType;
     state: string;
     city: string;
     pincode: string;
+    address: string;
   }>) => void;
   onNext: () => void;
   onBack: () => void;
@@ -29,6 +31,7 @@ export function BusinessStep({
   state,
   city,
   pincode,
+  address,
   onChange,
   onNext,
   onBack,
@@ -193,6 +196,23 @@ export function BusinessStep({
               <p className="mt-1 text-[11px] text-muted">Used only to estimate shipping. Other users never see it.</p>
             )}
           </div>
+        </div>
+
+        {/* Street address: optional, shown to the other side only after a reveal or an order. */}
+        <div>
+          <label className="label mb-1.5 flex items-center justify-between text-muted">
+            <span className="text-bone">Street address</span>
+            <span className="text-[11px] text-muted">Optional</span>
+          </label>
+          <input
+            type="text"
+            maxLength={200}
+            value={address}
+            placeholder="e.g. Plot 14, MIDC Bhosari"
+            onChange={(e) => onChange({ address: e.target.value })}
+            className="w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[14px] text-bone placeholder:text-muted/50 focus:border-signal focus:outline-none transition-colors"
+          />
+          <p className="mt-1 text-[11px] text-muted">Hidden until a buyer reveals you or an order is placed.</p>
         </div>
 
       </div>

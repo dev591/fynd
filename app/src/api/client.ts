@@ -47,6 +47,8 @@ export interface ApiProfile {
   business_type: "manufacturer" | "trader" | "distributor" | "other";
   state: string;
   city: string;
+  pincode?: string;
+  address?: string;
   categories: string[];
   gstin?: string;
   pan_masked?: string;
@@ -251,6 +253,7 @@ export interface SellerIdentity {
   contact_name: string | null;
   phone: string | null;
   email: string | null;
+  address?: string | null;
   city: string;
   state: string;
   categories: string[];
@@ -621,7 +624,7 @@ export interface BuyerOrderDTO {
   approver: string | null; reason: string | null; split: boolean; status: string;
   payment?: { method: "cod" | "split_50" | null; status: string; advance: number | null; balance: number | null } | null; payment_note?: string | null;
   receivers: { alias: string; units: number; total: number | null; business_name?: string | null; contact_name?: string | null;
-               phone?: string | null; email?: string | null; city?: string | null; state?: string | null }[];
+               phone?: string | null; email?: string | null; address?: string | null; city?: string | null; state?: string | null }[];
 }
 
 /** Order history: every decided request with the seller who receives the order. */
@@ -631,7 +634,7 @@ export async function getOrders(): Promise<BuyerOrderDTO[]> {
 
 export interface SellerOrderDTO {
   rfq_id: string; item: string; qty: number; total: number | null; decided_at: string | null; status: string; split: boolean;
-  payment: string | null; buyer: { name?: string; company?: string; phone?: string | null; email?: string | null; city?: string | null };
+  payment: string | null; buyer: { name?: string; company?: string; phone?: string | null; email?: string | null; address?: string | null; city?: string | null };
 }
 
 /** Orders this seller won, with the buyer's contact. */
@@ -712,6 +715,7 @@ export interface BuyerContact {
   company: string;
   phone: string | null;
   email: string | null;
+  address?: string | null;
   city: string;
 }
 
@@ -954,6 +958,8 @@ export interface NotificationDTO {
   product: SupplierProductDTO;
   verdict: VerdictDTO;
   has_quoted: boolean;
+  /** How this request was matched to the seller's catalog. */
+  match_basis?: "exact" | "similar" | "ai";
 }
 
 export async function getSellers(): Promise<SellerSummary[]> {
@@ -991,7 +997,7 @@ export interface SellerPanelDTO {
   verification_tier: string;
   verification_text: string;
   synthetic: boolean;
-  contact?: { contact_name: string | null; phone: string | null; email: string | null };
+  contact?: { contact_name: string | null; phone: string | null; email: string | null; address?: string | null };
 }
 
 export async function getSupplierProfileForBuyer(rfqId: string, alias: string): Promise<SellerPanelDTO> {

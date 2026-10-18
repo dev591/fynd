@@ -44,6 +44,7 @@ class Profile(BaseModel):
     business_type: BusinessType
     state: str
     city: str
+    address: str = Field(default="", max_length=200)    # street / area, shown to the other side only after a reveal
     pincode: str = ""                       # asked once at sign-up; used server-side for shipping estimates, never shown to others
     categories: list[str] = Field(default_factory=list)
     gstin: str | None = None
@@ -364,6 +365,7 @@ class SupplierProfileOut(BaseModel):
     contact_name: str | None = None
     phone: str | None = None
     email: str | None = None
+    address: str | None = None
     products: list[SupplierProduct] = Field(default_factory=list)
 
 
@@ -403,6 +405,7 @@ class Notification(BaseModel):
     rfq_id: str
     supplier_id: str
     product_id: str
+    match_basis: Literal["exact", "similar", "ai"] = "exact"    # how the request was matched to this seller's catalog item
     token: str
     created_at: str
     status: Literal["new", "viewed", "quoting", "declined"] = "new"
@@ -432,6 +435,7 @@ class NotificationOut(BaseModel):
     closes_at: str | None = None
     window_closed: bool = False
     product: SupplierProduct
+    match_basis: Literal["exact", "similar", "ai"] = "exact"
     verdict: Verdict
     has_quoted: bool = False
 

@@ -35,7 +35,7 @@ from .tax import normalise_price
 from .assistant import template_message
 from . import views
 from .masking import scrub
-from .matching import draft_quote, matching_product, normalise_item, verdict_for
+from .matching import ai_matches, draft_quote, match_with_basis, matching_product, normalise_item, verdict_for
 
 # Default supplier labels for demo invites
 _DEFAULT_SUPPLIERS = [
@@ -491,12 +491,19 @@ class RFQStore:
         return prof.business_name if prof else dict(_DEFAULT_SUPPLIERS).get(sid, f"Supplier {sid}")
 
     def match_suppliers(self, item: str) -> Dict[str, SupplierProduct]:
-        """supplier_id -> matching catalog row. Exact and alias matches only."""
-        found: Dict[str, SupplierProduct] = {}
+        """supplier_id -> matching catalog row (exact, similar by wording or acronym, or AI-related)."""
+        return {sid: p for sid, (p, _) in self.match_detailed(item).items()}
+
+    def match_detailed(self, item: str) -> Dict[str, tuple]:
+        """supplier_id -> (catalog row, 'exact' | 'similar' | 'ai'). Rules first; AI only looks at sellers the rules missed."""
+        found: Dict[str, tuple] = {}
         for sid, prods in self.supplier_products.items():
-            hit = matching_product(item, prods)
+            hit, basis = match_with_basis(item, prods)
             if hit:
-                found[sid] = hit
+                found[sid] = (hit, basis)
+        missed = [(sid, p) for sid, prods in self.supplier_products.items() if sid not in found for p in prods]
+        for sid, p in ai_matches(item, missed).items():
+            found[sid] = (p, "ai")
         return found
 
     def catalog_names(self) -> Dict[str, str]:
@@ -525,7 +532,7 @@ class RFQStore:
         for sid, prod in matches.items():
             self.notifications.setdefault(sid, []).append(Notification(
                 id="ntf_" + uuid.uuid4().hex[:8], rfq_id=rfq.id, supplier_id=sid,
-                product_id=prod.id, token=rfq.supplier_tokens[sid],
+                product_id=prod.id, match_basis=getattr(self, "_bases", {}).get(sid, "exact"), token=rfq.supplier_tokens[sid],
                 created_at=datetime.now().isoformat(),
             ))
             self.maybe_autopilot_quote(rfq, sid)
@@ -568,7 +575,7 @@ class RFQStore:
             location_state=profile.state, categories=profile.categories,
             description=existing.description if existing else None,
             verification_tier=tier, synthetic=False,
-            contact_name=profile.full_name, phone=profile.phone, email=profile.email,
+            contact_name=profile.full_name, phone=profile.phone, email=profile.email, address=profile.address or None,
         )
         self.supplier_products.setdefault(user_id, [])
 
@@ -638,7 +645,7 @@ class RFQStore:
             unlocked=unlocked, buyer_contact=views.buyer_contact(self, rfq) if unlocked else None,
             reminder=n.reminder, closes_at=rfq.window_ends_at, window_closed=rfq.window_closed,
             token=n.token, quote_url=f"/supplier/quote?token={n.token}",
-            product=prod, verdict=verdict_for(rfq, prod),
+            product=prod, match_basis=n.match_basis, verdict=verdict_for(rfq, prod),
             has_quoted=n.supplier_id in self.quotes.get(rfq.id, {}),
         )
 
@@ -775,7 +782,9 @@ class RFQStore:
     def create_rfq(self, payload: RFQCreate, owner_id: Optional[str] = None) -> RFQ:
         """Create the request, find every seller whose catalog has the item, notify each once."""
         rfq_id = "rfq_" + uuid.uuid4().hex[:8]
-        matches = self.match_suppliers(payload.item)
+        detailed = self.match_detailed(payload.item)
+        matches = {sid: p for sid, (p, _) in detailed.items()}
+        self._bases = {sid: b for sid, (_, b) in detailed.items()}
         tokens: dict[str, str] = {}
         for sid in matches:
             tok = "tok_" + uuid.uuid4().hex[:12]
