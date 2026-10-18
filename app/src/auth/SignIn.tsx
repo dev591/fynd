@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { motion } from "motion/react";
+import { LiveFeed } from "../landing/Landing";
 import { Ambient } from "../components/Ambient";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, LogIn, Store } from "lucide-react";
@@ -55,8 +57,20 @@ export function SignIn() {
 
   const field = "w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[14px] text-bone focus:border-signal focus:outline-none";
   return (
-    <div className="landing grain isolate flex min-h-screen items-center justify-center gap-8 bg-ink px-4 py-8 text-bone max-lg:flex-col">
+    <div className="landing grain isolate grid min-h-screen bg-ink text-bone lg:grid-cols-[1.05fr_1fr]">
       <Ambient />
+      {/* Left: the product, alive, so signing in feels like walking into the desk */}
+      <section data-theme="dark" className="relative hidden flex-col justify-between overflow-hidden bg-ink p-10 text-bone lg:flex">
+        <div aria-hidden className="pointer-events-none absolute -left-32 top-1/3 h-[30rem] w-[30rem] rounded-full bg-signal/15 blur-3xl" />
+        <Link to="/" className="display relative text-2xl">Crossover</Link>
+        <div className="relative space-y-6">
+          <h2 className="display text-[clamp(2.2rem,3.6vw,3.4rem)] leading-[1.02]">Your quotes are<br />already landing.</h2>
+          <LiveFeed />
+        </div>
+        <p className="relative text-[13px] text-muted">Free for sellers · Names hidden until you choose · Cash on delivery</p>
+      </section>
+
+      <div className="flex flex-col items-center justify-center gap-8 px-4 py-10 xl:flex-row xl:items-start xl:pt-24">
       <div className="w-full max-w-sm space-y-5">
         <div className="text-center">
           <p className="label text-muted">Crossover</p>
@@ -100,22 +114,25 @@ export function SignIn() {
             <h2 className="display text-xl">Demo sellers</h2>
           </div>
           <p className="mt-1 text-[12px] text-muted">Click one to sign in as that seller. All ten stock M10 bolts, with different prices, pack sizes and lead times.</p>
-          <ul className="mt-3 max-h-[28rem] space-y-1.5 overflow-y-auto pr-1">
-            {demo.sellers.map(s => (
-              <li key={s.email}>
-                <button type="button" disabled={busy} onClick={() => quickLogin(s.email)}
-                  className="w-full rounded-xl border border-line bg-raised/50 px-3 py-2 text-left hover:border-signal/60 disabled:opacity-50">
-                  <span className="flex items-baseline justify-between gap-2">
-                    <span className="text-[14px] font-medium text-bone">{s.company}</span>
-                    <span className="text-[11px] text-muted">{s.city}</span>
+          <ul className="mt-3 grid grid-cols-2 gap-2">
+            {demo.sellers.map((s, i) => (
+              <motion.li key={s.email} initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.04 }}>
+                <button type="button" disabled={busy} onClick={() => quickLogin(s.email)} title={s.items.join(" · ")}
+                  className="group flex w-full items-center gap-2 rounded-xl border border-line bg-raised/50 px-2.5 py-2 text-left transition-all hover:-translate-y-0.5 hover:border-signal/60 disabled:opacity-50">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-signal/15 text-[11px] font-bold text-signal group-hover:bg-signal group-hover:text-ink">
+                    {s.company.split(/\s+/).slice(0, 2).map(w => w[0]).join("")}
                   </span>
-                  <span className="block truncate text-[11px] text-muted">{s.items.join("  ·  ")}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-[12.5px] font-medium text-bone">{s.company}</span>
+                    <span className="block text-[11px] text-muted">{s.city}</span>
+                  </span>
                 </button>
-              </li>
+              </motion.li>
             ))}
           </ul>
         </aside>
       )}
+      </div>
     </div>
   );
 }

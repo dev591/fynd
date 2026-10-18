@@ -155,6 +155,7 @@ function Column({ row, rank, cheapest, fastest, ...p }: BoardProps & { row: Row;
           <span className="num text-[11px] text-muted">#{rank + 1}</span>
           <h3 className="text-[15px] font-semibold leading-tight text-bone">{id}</h3>
           {identity && <p className="truncate text-[11px] text-live">{identity.business_name}</p>}
+          {identity && imported && <p className="text-[10.5px] text-muted">imported by you, not checked by Crossover</p>}
         </button>
         <div className="flex flex-col items-end gap-1">
           {cheapest && !blocked && <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">Cheapest</span>}
@@ -197,7 +198,7 @@ function Column({ row, rank, cheapest, fastest, ...p }: BoardProps & { row: Row;
             <div className="flex justify-between"><dt>Free delivery from</dt><dd className="num text-bone">{inr(v.compare_free_freight_above ?? v.free_freight_above)}</dd></div>
           )}
           {v?.shipping && (
-            <div className="flex justify-between"><dt>Ships by</dt><dd className="text-bone">{v.shipping === "own" ? "Seller" : v.shipping_basis === "delhivery" ? "Delhivery" : "Delhivery (est.)"}</dd></div>
+            <div className="flex justify-between gap-2"><dt>Ships by</dt><dd className="text-right text-bone">{v.shipping === "own" ? "Seller's own shipment" : v.shipping_basis === "delhivery" ? "Delhivery, from a Delhivery estimate" : v.shipping_basis === "rate_card" ? "Delhivery, estimated rate, not a carrier quote" : "Delhivery"}</dd></div>
           )}
         </dl>
       )}

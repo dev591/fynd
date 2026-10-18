@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Ambient } from "../components/Ambient";
 import { Link } from "react-router-dom";
@@ -179,44 +180,47 @@ export function SupplierDashboard() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 space-y-6">
-        {/* Verification Banner */}
-        <div className="rounded-2xl border border-line bg-surface/90 p-5 shadow-sm backdrop-blur-md">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="label text-signal">SUPPLIER VERIFICATION</span>
-                <span className="text-muted">·</span>
-                <span className="text-[13px] text-muted">{profile?.business_name || "Loading…"}</span>
+        {/* Who wants what you sell, right now */}
+        {(() => {
+          const open = (inbox ?? []).filter(n => n.rfq_status === "Open" && !n.has_quoted && n.status !== "declined" && n.verdict.can_fulfil !== "no").length;
+          const quoted = (inbox ?? []).filter(n => n.has_quoted).length;
+          const fresh = (inbox ?? []).filter(n => n.status === "new").length;
+          return (
+            <div className="relative overflow-hidden rounded-3xl border border-line bg-surface p-6 sm:p-7">
+              <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-live/10 blur-3xl" />
+              <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
+                    <span className="font-medium text-bone">{profile?.business_name || "Your business"}</span>
+                    {profile && <VerifiedBadge tier={profile.verification_tier} />}
+                  </p>
+                  <h1 className="display mt-2 text-[clamp(1.8rem,4.2vw,3rem)] leading-[1.05] text-bone">
+                    {open > 0
+                      ? <><span className="num text-signal">{open}</span> buyer{open === 1 ? "" : "s"} want what you sell</>
+                      : "You're all caught up"}
+                  </h1>
+                  <p className="mt-1 text-[14px] text-muted">Quote in one tap. Your price and stock are already filled in. Free for sellers.</p>
+                </div>
+                <div className="grid grid-cols-3 gap-2 sm:min-w-[22rem]">
+                  {([["New", fresh, "text-signal"], ["To quote", open, "text-bone"], ["Quoted", quoted, "text-live"]] as const).map(([l, n, c]) => (
+                    <motion.div key={l} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl bg-raised/60 px-3 py-3 text-center">
+                      <p className={`num text-[26px] font-bold leading-none ${c}`}>{n}</p>
+                      <p className="mt-1 text-[11px] text-muted">{l}</p>
+                    </motion.div>
+                  ))}
+                </div>
               </div>
-              <h1 className="display text-2xl text-bone mt-1">Welcome back</h1>
-              <p className="text-[13px] text-muted mt-0.5">
-                Quotes compete exclusively on real landed cost with automatic pack rounding.
-              </p>
             </div>
-            <div className="flex flex-col sm:items-end gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {profile && <VerifiedBadge tier={profile.verification_tier} />}
-              </div>
-              {profile?.categories.map(c => (
-                <span key={c} className="rounded-full bg-raised px-2 py-0.5 text-[11px] text-muted">{c}</span>
-              ))}
-            </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Autopilot: off by default */}
-        <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface/80 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-0.5">
-            <span className="label text-muted">Autopilot</span>
-            <p className="text-[13px] text-bone">
-              {autopilot?.enabled ? "On: " : "Off. "}
-              Sends a first quote from your catalog, without review, only when stock covers the request, lead time fits and the
-              minimum order fits. Buyers see these marked "auto".
-            </p>
-            <p className="text-[12px] text-muted">
-              It never answers a buyer's counter-offer and never revises a quote. Those stay with you.
-            </p>
-          </div>
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-surface/80 px-4 py-3">
+          <p className="text-[13px] text-muted">
+            <span className="label mr-2 text-bone">Autopilot</span>
+            {autopilot?.enabled ? "On: " : "Off. "}sends a first quote from your catalog only when stock, lead time and minimum order all fit.
+            It never answers a counter-offer.
+          </p>
           <button
             type="button"
             role="switch"
@@ -272,20 +276,23 @@ export function SupplierDashboard() {
                 <p className="text-[13px] text-muted">When a buyer asks for an item in your catalog, it lands here. Add products with stock under My Products.</p>
               </div>
             ) : (
-              inbox.map(n => {
+              inbox.map((n, idx) => {
                 const st = computeStatus(n.has_quoted, null, n.rfq_status, false, n.status === "declined");
                 const tone = n.verdict.can_fulfil === "yes" ? "border-success/40 bg-success/15 text-success"
                   : n.verdict.can_fulfil === "partly" ? "border-warn/40 bg-warn/15 text-warn"
                   : "border-error/40 bg-error/15 text-error";
                 const label = n.verdict.can_fulfil === "yes" ? "Can fulfil" : n.verdict.can_fulfil === "partly" ? "Partly" : "Cannot fulfil";
                 return (
-                  <div key={n.id} className={`rounded-2xl border bg-surface/80 p-5 backdrop-blur-sm ${n.status === "new" ? "border-signal/50" : "border-line"}`}>
+                  <motion.div key={n.id} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ type: "spring", stiffness: 240, damping: 26, delay: Math.min(idx, 8) * 0.05 }}
+                    className={`relative overflow-hidden rounded-2xl border bg-surface p-5 pl-6 transition-shadow hover:shadow-[0_18px_40px_-28px_var(--signal)] ${n.status === "new" ? "border-signal/50" : "border-line"}`}>
+                    <span aria-hidden className={`absolute inset-y-0 left-0 w-1.5 ${n.verdict.can_fulfil === "yes" ? "bg-success" : n.verdict.can_fulfil === "partly" ? "bg-warn" : "bg-error"}`} />
+                    {n.status === "new" && <span aria-hidden className="absolute right-4 top-4 h-2 w-2 animate-ping rounded-full bg-signal" />}
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                       <div className="space-y-1.5">
                         <div className="flex flex-wrap items-center gap-2">
                           {n.status === "new" && <span className="rounded-full bg-signal px-2 py-0.5 text-[10px] font-bold text-ink">NEW</span>}
-                          <span className="font-semibold text-lg text-bone">{n.item}</span>
-                          <span className="num rounded bg-raised px-2 py-0.5 text-[12px] font-medium text-bone">{n.qty} units</span>
+                          <span className="text-[20px] font-semibold text-bone"><span className="num">{n.qty}</span> × {n.item}</span>
                           <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${tone}`}>{label}</span>
                           <StatusChip status={st} />
                         </div>
@@ -332,7 +339,7 @@ export function SupplierDashboard() {
                         </Link>
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })
             )}
