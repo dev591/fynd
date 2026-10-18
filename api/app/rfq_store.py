@@ -729,6 +729,7 @@ class RFQStore:
             status="Open", supplier_tokens=tokens,
             priority_mode=payload.priority_mode, source=payload.source, owner_id=owner_id,
             gst_claimable=True if payload.gst_claimable is None else payload.gst_claimable,
+            budget=payload.budget, order_id=payload.order_id,
         )
         self.rfqs[rfq_id] = rfq
         self.quotes[rfq_id] = {}

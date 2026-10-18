@@ -138,7 +138,7 @@ export function SupplierDashboard() {
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <Link to="/" className="flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1 text-[12px] text-muted hover:text-bone">
               <ArrowLeft size={13} /><span>Story</span>
             </Link>
@@ -148,7 +148,7 @@ export function SupplierDashboard() {
               <span className="label ml-2 text-signal">SUPPLIER DESK</span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <select
               value={supplierId}
               onChange={e => setSupplierId(e.target.value)}

@@ -1,7 +1,6 @@
 import {
   ArrowLeft,
   ArrowRight,
-  Calculator,
   Calendar,
   Percent,
   Truck,
@@ -59,49 +58,6 @@ export function RoleSetupStep({
         {role === "buyer" ? (
           /* BUYER SETUP */
           <>
-            {/* GST Claimable Policy Switch */}
-            <div className="rounded-xl border border-line bg-raised/30 p-4 transition-colors hover:border-line/80">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Calculator size={16} className="text-signal" />
-                    <span className="text-[14px] font-medium text-bone">
-                      "We can claim GST back" (Input Tax Credit)
-                    </span>
-                  </div>
-                  <p className="text-[13px] leading-relaxed text-muted">
-                    When active, the Crossover engine strips 18% GST out of comparisons
-                    and evaluates vendors on pure base price + freight.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    onBuyerChange({ gst_claimable: !buyerSetup.gst_claimable })
-                  }
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    buyerSetup.gst_claimable ? "bg-signal" : "bg-line"
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out ${
-                      buyerSetup.gst_claimable ? "translate-x-5" : "translate-x-0"
-                    }`}
-                  />
-                </button>
-              </div>
-
-              <div className="mt-3 flex items-center gap-2 border-t border-line/50 pt-2.5 text-[12px]">
-                <span className="label text-muted">Engine Rule:</span>
-                <span className="num font-medium text-bone">
-                  {buyerSetup.gst_claimable
-                    ? "Evaluating quotes EX-GST (true corporate cost basis)"
-                    : "Evaluating quotes INCL-GST (gross outflow)"}
-                </span>
-              </div>
-            </div>
-
             {/* Monthly Material Spend Band */}
             <div>
               <label className="label mb-2 flex items-center justify-between text-muted">

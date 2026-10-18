@@ -222,7 +222,6 @@ export function LoginWizard() {
                 state={draft.state}
                 city={draft.city}
                 pincode={draft.pincode ?? ""}
-                categories={draft.categories}
                 onChange={(fields) =>
                   updateDraft({
                     company: fields.company ?? draft.company,
@@ -230,7 +229,6 @@ export function LoginWizard() {
                     state: fields.state ?? draft.state,
                     city: fields.city ?? draft.city,
                     pincode: fields.pincode ?? draft.pincode ?? "",
-                    categories: fields.categories ?? draft.categories,
                   })
                 }
                 onNext={nextStep}

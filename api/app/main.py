@@ -340,6 +340,7 @@ def confirm_rfq(payload: ConfirmIn, user: AuthUser = Depends(buyer_only)):
         buyer_city=city, buyer_state=state,
         note=payload.note, priority_mode=payload.priority_mode, source=payload.source,
         gst_claimable=_gst_policy(user, payload.gst_claimable), window=payload.window,
+        budget=payload.budget, order_id=payload.order_id,
     ), owner_id=user.id)
     if payload.intake_id:
         store.link_ai_log(payload.intake_id, rfq.id)

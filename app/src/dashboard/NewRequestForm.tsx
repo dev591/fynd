@@ -22,6 +22,7 @@ export function NewRequestForm() {
   // Form state
   const [item, setItem] = useState("");
   const [qty, setQty] = useState<number | "">("");
+  const [budget, setBudget] = useState<number | "">("");        // optional ceiling for this item, in rupees
   const [needBy, setNeedBy] = useState(() => dateFromDays(5));
   const needInDays = daysFromToday(needBy);
   // Last order vs today, once an item is typed. Numbers only; history marked synthetic is demo data.
@@ -29,7 +30,6 @@ export function NewRequestForm() {
   const [note, setNote] = useState("");
   const [priority, setPriority] = useState<PriorityMode>("cheapest");
   const [windowKey, setWindowKey] = useState<WindowKey | "auto">("auto");     // auto = from the priority
-  const [gstClaimable, setGstClaimable] = useState<boolean | null>(null);   // null = follow the saved profile
   // Who is asking comes from the signed-in profile, not from a hardcoded buyer.
   const session = useSession();
   const { data: me } = useApiOnce(() => getMe(), []);
@@ -58,11 +58,14 @@ export function NewRequestForm() {
   const [created, setCreated] = useState<RFQCreateResponse | null>(null);
   const [createdMore, setCreatedMore] = useState<RFQCreateResponse[]>([]);
   // More items on the same order. Each one becomes its own request, compared on its own.
-  const [extras, setExtras] = useState<{ item: string; qty: number | "" }[]>([]);
-  const extraOk = (x: { item: string; qty: number | "" }) => x.item.trim() && typeof x.qty === "number" && x.qty > 0;
+  type Extra = { item: string; qty: number | ""; budget: number | "" };
+  const [extras, setExtras] = useState<Extra[]>([]);
+  const budgetOk = (b: number | "") => b === "" || b > 0;
+  const extraOk = (x: Extra) => x.item.trim() && typeof x.qty === "number" && x.qty > 0 && budgetOk(x.budget);
+  const [orderId, setOrderId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const isValid = item.trim() && typeof qty === "number" && qty > 0 && needInDays >= 1 && extras.every(extraOk);
+  const isValid = item.trim() && typeof qty === "number" && qty > 0 && needInDays >= 1 && budgetOk(budget) && extras.every(extraOk);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,9 +73,13 @@ export function NewRequestForm() {
     setSubmitting(true);
     setError(null);
     try {
-      const make = (it: string, q: number) => createRFQ({
+      // Items asked together share one order id, so they can be compared and read as one order afterwards.
+      const oid = extras.length ? "ord_" + Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, "0")).join("") : undefined;
+      const make = (it: string, q: number, bud: number | "") => createRFQ({
         item: it.trim(),
         qty: q,
+        ...(typeof bud === "number" ? { budget: bud } : {}),
+        ...(oid ? { order_id: oid } : {}),
         need_in_days: Number(needInDays),
         buyer_company: buyerCompany,
         buyer_name: buyerName,
@@ -80,13 +87,14 @@ export function NewRequestForm() {
         buyer_state: buyerState,
         note: note.trim() || undefined,
         priority_mode: priority,
-        gst_claimable: gstClaimable ?? me?.profile?.buyer?.gst_claimable ?? true,
+        gst_claimable: me?.profile?.buyer?.gst_claimable ?? true,
         window: windowKey === "auto" ? undefined : windowKey,
         source: "form",
       });
-      const res = await make(item, Number(qty));
+      const res = await make(item, Number(qty), budget);
       const more: RFQCreateResponse[] = [];
-      for (const x of extras) more.push(await make(x.item, Number(x.qty)));
+      for (const x of extras) more.push(await make(x.item, Number(x.qty), x.budget));
+      setOrderId(oid ?? null);
       setCreatedMore(more);
       setCreated(res);
     } catch (e) {
@@ -139,22 +147,32 @@ export function NewRequestForm() {
                   <button type="button" onClick={() => navigate(`/app/compare/${r.id}`)} className="text-signal underline">Compare</button>
                 </li>
               ))}
-              <li className="px-4 py-2 text-[11px] text-muted">Each item is its own request, so each is compared and decided on its own.</li>
+              <li className="px-4 py-2 text-[11px] text-muted">Each item goes to sellers as its own request, so a different seller can win each one. The combined order shows the best seller for every item side by side.</li>
             </ul>
           )}
 
           <div className="flex flex-col sm:flex-row gap-3">
+            {orderId && (
+              <button
+                type="button"
+                onClick={() => navigate(`/app/order/${orderId}`)}
+                className="flex-1 flex items-center justify-center gap-2 rounded-full bg-signal py-3 text-[14px] font-semibold text-ink hover:opacity-95"
+              >
+                <span>See the combined order</span>
+                <ExternalLink size={16} />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => navigate(`/app/compare/${created.id}`)}
-              className="flex-1 flex items-center justify-center gap-2 rounded-full bg-signal py-3 text-[14px] font-semibold text-ink hover:opacity-95"
+              className={`flex-1 flex items-center justify-center gap-2 rounded-full py-3 text-[14px] font-semibold hover:opacity-95 ${orderId ? "border border-line bg-raised text-bone" : "bg-signal text-ink"}`}
             >
-              <span>Watch quotes arrive</span>
+              <span>{orderId ? `Compare ${created.rfq.item} only` : "Watch quotes arrive"}</span>
               <ExternalLink size={16} />
             </button>
             <button
               type="button"
-              onClick={() => { setCreated(null); setCreatedMore([]); setExtras([]); setItem(""); setQty(""); setNote(""); }}
+              onClick={() => { setCreated(null); setCreatedMore([]); setExtras([]); setOrderId(null); setItem(""); setQty(""); setBudget(""); setNote(""); }}
               className="flex items-center justify-center gap-2 rounded-full border border-line bg-raised px-5 py-3 text-[14px] font-medium text-bone hover:border-signal/50"
             >
               <Package size={16} /><span>Create another</span>
@@ -239,9 +257,20 @@ export function NewRequestForm() {
             </div>
           </div>
 
+          <div>
+            <label className="label mb-1.5 block text-bone">Budget <span className="text-muted">(₹, optional)</span></label>
+            <input
+              type="number" min="1" value={budget} aria-label="Budget in rupees"
+              onChange={e => setBudget(e.target.value === "" ? "" : Number(e.target.value))}
+              placeholder="e.g. 5000"
+              className="num w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-[15px] text-bone placeholder:text-muted/40 focus:border-signal focus:outline-none"
+            />
+            <p className="mt-1 text-[11px] text-muted">The most you want to spend on this item, delivered. We show how each quote compares. Sellers never see it.</p>
+          </div>
+
           {extras.map((x, i) => (
-            <div key={i} className="grid grid-cols-[1fr_7rem_auto] items-end gap-3">
-              <div>
+            <div key={i} className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[1fr_6rem_8rem_auto]">
+              <div className="col-span-2 sm:col-span-1">
                 <label className="label mb-1.5 block text-bone">Item {i + 2}</label>
                 <input type="text" value={x.item} placeholder="e.g. M8 nut" aria-label={`Item ${i + 2}`}
                   onChange={e => setExtras(extras.map((y, j) => j === i ? { ...y, item: e.target.value } : y))}
@@ -253,14 +282,20 @@ export function NewRequestForm() {
                   onChange={e => setExtras(extras.map((y, j) => j === i ? { ...y, qty: e.target.value === "" ? "" : Number(e.target.value) } : y))}
                   className="num w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-[15px] text-bone placeholder:text-muted/40 focus:border-signal focus:outline-none" />
               </div>
+              <div>
+                <label className="label mb-1.5 block text-bone">Budget ₹</label>
+                <input type="number" min="1" value={x.budget} placeholder="optional" aria-label={`Budget ${i + 2}`}
+                  onChange={e => setExtras(extras.map((y, j) => j === i ? { ...y, budget: e.target.value === "" ? "" : Number(e.target.value) } : y))}
+                  className="num w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-[15px] text-bone placeholder:text-muted/40 focus:border-signal focus:outline-none" />
+              </div>
               <button type="button" onClick={() => setExtras(extras.filter((_, j) => j !== i))}
                 className="mb-1 rounded-full border border-line px-3 py-2 text-[12px] text-muted hover:text-bone">Remove</button>
             </div>
           ))}
           <div>
-            <button type="button" onClick={() => setExtras([...extras, { item: "", qty: "" }])} disabled={extras.length >= 9}
+            <button type="button" onClick={() => setExtras([...extras, { item: "", qty: "", budget: "" }])} disabled={extras.length >= 9}
               className="text-[13px] text-signal underline disabled:opacity-40">+ Add another item to this order</button>
-            {extras.length > 0 && <p className="mt-1 text-[11px] text-muted">Same need-by date and settings for every item. Each item is sent to sellers as its own request.</p>}
+            {extras.length > 0 && <p className="mt-1 text-[11px] text-muted">Same need-by date and settings for every item. Each item goes to sellers as its own request, so a different seller can win each one. You'll see them together as one order.</p>}
           </div>
 
           <div>
@@ -323,17 +358,6 @@ export function NewRequestForm() {
               ))}
             </div>
           </div>
-
-          {/* GST policy: quotes are compared on one basis */}
-          <label className="flex items-start gap-2.5 text-[13px] cursor-pointer">
-            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-signal"
-              checked={gstClaimable ?? me?.profile?.buyer?.gst_claimable ?? true}
-              onChange={e => setGstClaimable(e.target.checked)} />
-            <span>
-              <span className="text-bone">We can claim GST back</span>
-              <span className="block text-[11px] text-muted">Quotes are compared without GST. Untick it and they are compared with GST included.</span>
-            </span>
-          </label>
 
           {/* Buyer Info (collapsible) */}
           <div className="grid grid-cols-2 gap-4">

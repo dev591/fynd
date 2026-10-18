@@ -23,13 +23,14 @@ export function AccountStep({ fullName, email, phone, password = "", onChange, o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmSent, setConfirmSent] = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
   const signedIn = !!session;
   const isNameValid = fullName.trim().length >= 2;
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const isPhoneValid = isValidIndianPhone(phone);
   const isPasswordValid = password.length >= 8;
-  const canProceed = isNameValid && isPhoneValid && (signedIn || (isEmailValid && isPasswordValid));
+  const canProceed = isNameValid && isPhoneValid && (signedIn || (isEmailValid && isPasswordValid && accepted));
 
   const handleContinue = async () => {
     if (signedIn) { onChange({ emailVerified: true, email: session!.user.email ?? email }); onNext(); return; }
@@ -127,6 +128,29 @@ export function AccountStep({ fullName, email, phone, password = "", onChange, o
             <p className="mt-1 text-[12px] text-error">Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.</p>
           )}
         </div>
+
+        {!signedIn && (
+          <div className="space-y-2">
+            <label className="flex cursor-pointer items-start gap-2.5 text-[13px] text-muted">
+              <input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-signal" />
+              <span>I agree to the <span className="text-bone">Terms &amp; Conditions</span> below and the way my details are used.</span>
+            </label>
+            <details className="rounded-lg border border-line/60 bg-raised/20 p-3 text-[12px] leading-relaxed text-muted">
+              <summary className="cursor-pointer text-bone">Read the Terms &amp; Conditions</summary>
+              <ol className="mt-2 list-decimal space-y-1.5 pl-4">
+                <li>Crossover is a prototype. Prices, sellers and history shown as demo data are fictional, and nothing here is a binding offer, contract or advice.</li>
+                <li>You are responsible for checking every quote, price, tax figure and delivery date with the seller before you order or pay. Crossover calculates and compares, and a person confirms each decision.</li>
+                <li>Sellers appear without names. A seller's contact details are shown only after you reveal them, and you agree to use them only for the order in question.</li>
+                <li>We use your name, email, phone, business details and pincode to run your account, match requests to sellers and estimate shipping. Other users never see your pincode.</li>
+                <li>Do not post false, misleading or unlawful requests or quotes. We may suspend an account that does.</li>
+                <li>The reveal-pack payment screen is a mock. Nothing is charged or stored.</li>
+                <li>Crossover is provided as is, without warranty. We are not liable for any loss arising from a deal made between buyer and seller.</li>
+                <li>You can stop using Crossover at any time. These terms may change, and we will show the new version here.</li>
+              </ol>
+            </details>
+          </div>
+        )}
 
         {error && (
           <p className="text-[13px] text-error">

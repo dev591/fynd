@@ -171,6 +171,8 @@ class RFQCreate(BaseModel):
     source: RequestSource = "form"
     gst_claimable: bool | None = None         # None = use the buyer's profile policy, else claimable
     window: Literal["15m", "today", "24h", "3d"] | None = None    # how long sellers have to quote; None = from priority
+    budget: float | None = Field(default=None, gt=0, le=1e10)      # the most the buyer wants to spend in total (landed, rupees); never shown to sellers
+    order_id: str | None = Field(default=None, pattern=r"^ord_[a-f0-9]{8,32}$")   # items asked together share one order
 
 
 class RFQ(BaseModel):
@@ -191,6 +193,8 @@ class RFQ(BaseModel):
     source: RequestSource = "form"
     owner_id: str | None = None   # the signed-in buyer who created it
     gst_claimable: bool = True    # compare ex-GST when true, GST-inclusive when false
+    budget: float | None = None   # buyer's own ceiling for this item; buyer-facing only
+    order_id: str | None = None   # requests asked together share this, so they can be viewed as one order
     window_key: str = "24h"       # 15m | today | 24h | 3d
     window_label: str = ""
     window_ends_at: str | None = None
@@ -481,6 +485,8 @@ class ConfirmIn(BaseModel):
     intake_id: str | None = None
     gst_claimable: bool | None = None
     window: Literal["15m", "today", "24h", "3d"] | None = None
+    budget: float | None = Field(default=None, gt=0, le=1e10)
+    order_id: str | None = Field(default=None, pattern=r"^ord_[a-f0-9]{8,32}$")
 
 
 class AutopilotSettings(BaseModel):

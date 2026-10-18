@@ -244,9 +244,11 @@ function Column({ row, rank, cheapest, fastest, ...p }: BoardProps & { row: Row;
 }
 
 /** One answer, in words a person on a factory floor reads in two seconds. */
-export function AnswerCard({ winner, rows, pool, mode, qty, needInDays, name, decided, waiting, onChoose }: {
+export function AnswerCard({ winner, rows, pool, mode, qty, needInDays, name, decided, waiting, onChoose, budget }: {
   winner: Row | null; rows: Row[]; pool: Row[]; mode: Mode; qty: number; needInDays: number;
   name?: string; decided: boolean; waiting: number; onChoose: () => void;
+  /** The buyer's own ceiling in rupees. A comparison only: it never changes which seller the engine picks. */
+  budget?: number | null;
 }) {
   if (!winner || winner.landed === null) {
     const n = rows.length;
@@ -267,6 +269,11 @@ export function AnswerCard({ winner, rows, pool, mode, qty, needInDays, name, de
   else if (mode === "balanced") reasons.push(`Quickest delivery within 5% of the cheapest price`);
   else reasons.push(runner?.landed != null ? `Lowest total cost: ${inr(runner.landed - winner.landed)} less than ${runner.quote.id}` : "Lowest total cost");
   reasons.push(spare > 0 ? `Arrives ${arriveOn(winner.quote.leadDays)}, ${spare} day${spare === 1 ? "" : "s"} before you need it` : `Arrives ${arriveOn(winner.quote.leadDays)}, on the day you need it`);
+  // Budget: say plainly whether the pick fits, and name the best option that does when it does not.
+  const fits = budget ? winner.landed <= budget : null;
+  const withinBudget = budget && !fits
+    ? pool.filter(r => r.landed !== null && r.landed <= budget).sort((a, b) => a.landed! - b.landed!)[0] ?? null
+    : null;
   reasons.push(winner.overbuy > 0 ? `Pays for ${winner.overbuy} extra unit${winner.overbuy === 1 ? "" : "s"} because of the pack size` : "No extra units to pay for");
 
   return (
@@ -289,6 +296,15 @@ export function AnswerCard({ winner, rows, pool, mode, qty, needInDays, name, de
           </button>
         )}
       </div>
+      {budget ? (
+        <p className={`mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl px-3 py-2 text-[13px] ${fits ? "bg-success/10 text-success" : "bg-warn/10 text-warn"}`}>
+          <strong className="num">{fits ? `${inr(budget - winner.landed)} under your ${inr(budget)} budget` : `${inr(winner.landed - budget)} over your ${inr(budget)} budget`}</strong>
+          <span className="text-muted">at {qty} units</span>
+          {!fits && (withinBudget
+            ? <span className="text-bone">· Within budget: <strong>{withinBudget.quote.id}</strong> at <span className="num">{inr(withinBudget.landed!)}</span></span>
+            : <span className="text-bone">· No quote fits the budget yet</span>)}
+        </p>
+      ) : null}
       <ul className="mt-4 grid gap-2 sm:grid-cols-3">
         {reasons.map(r => (
           <li key={r} className="flex items-start gap-2 rounded-xl bg-raised/50 px-3 py-2 text-[13px] text-bone">

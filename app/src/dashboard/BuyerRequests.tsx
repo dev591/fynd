@@ -34,16 +34,16 @@ export function BuyerRequests() {
       <Ambient />
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
           <Link to="/" className="flex items-center gap-1.5 rounded-full border border-line bg-surface/80 px-3 py-1.5 text-[12px] font-medium text-muted hover:text-bone">
             <span>Story</span>
           </Link>
-          <div>
+          <div className="min-w-0 text-center">
             <span className="display text-base font-semibold text-bone">Crossover Desk</span>
             <span className="label ml-2 text-signal">BUYER</span>
           </div>
           <div className="flex items-center gap-3">
-            <Link to="/supplier" className="rounded-full border border-line bg-raised px-3 py-1.5 text-[12px] font-medium text-bone hover:border-signal/50 hover:text-signal">
+            <Link to="/supplier" className="hidden rounded-full border border-line bg-raised px-3 py-1.5 sm:block text-[12px] font-medium text-bone hover:border-signal/50 hover:text-signal">
               Supplier Portal
             </Link>
             <NoticeBell />
@@ -120,7 +120,25 @@ export function BuyerRequests() {
         ) : (
           /* Requests as live cards: a ring fills as sellers reply */
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {rfqs.map((rfq, i) => (
+            {groupOrders(rfqs).map((g, i) => g.length > 1 ? (
+              <motion.div key={g[0].order_id} initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ type: "spring", stiffness: 240, damping: 26, delay: Math.min(i, 9) * 0.05 }}>
+                <Link to={`/app/order/${g[0].order_id}`}
+                  className="group relative flex h-full flex-col rounded-2xl border border-signal/40 bg-surface p-5 transition-all hover:-translate-y-1 hover:border-signal hover:shadow-[0_22px_40px_-28px_var(--signal)]">
+                  <p className="label text-signal">ORDER · {g.length} ITEMS</p>
+                  <ul className="mt-2 space-y-0.5 text-[14px] text-bone">
+                    {g.slice(0, 4).map(r => <li key={r.id} className="truncate">{r.item} <span className="num text-muted">× {r.qty}</span></li>)}
+                    {g.length > 4 && <li className="text-muted">+ {g.length - 4} more</li>}
+                  </ul>
+                  <p className="mt-2 text-[12px] text-muted">{g.filter(r => r.status === "Decided").length} of {g.length} decided</p>
+                  <div className="mt-auto flex items-center justify-end pt-4">
+                    <span className="flex items-center gap-1 text-[13px] font-medium text-signal">
+                      See the combined order <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
+                    </span>
+                  </div>
+                </Link>
+              </motion.div>
+            ) : (() => { const rfq = g[0]; return (
               <motion.div key={rfq.id} initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ type: "spring", stiffness: 240, damping: 26, delay: Math.min(i, 9) * 0.05 }}>
                 <Link to={`/app/compare/${rfq.id}`}
@@ -146,12 +164,25 @@ export function BuyerRequests() {
                   </div>
                 </Link>
               </motion.div>
-            ))}
+            ); })())}
           </div>
         )}
       </main>
     </div>
   );
+}
+
+/** Items asked together share an order id and show as one card. Everything else stays one card per request. */
+function groupOrders(rfqs: RFQDTO[]): RFQDTO[][] {
+  const groups: RFQDTO[][] = [];
+  const byOrder = new Map<string, RFQDTO[]>();
+  for (const r of rfqs) {
+    if (!r.order_id) { groups.push([r]); continue; }
+    const g = byOrder.get(r.order_id);
+    if (g) g.push(r);
+    else { const n = [r]; byOrder.set(r.order_id, n); groups.push(n); }
+  }
+  return groups;
 }
 
 /** Fills as sellers reply. Live requests breathe. */

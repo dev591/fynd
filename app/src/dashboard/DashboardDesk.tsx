@@ -267,7 +267,7 @@ export function DashboardDesk() {
       <LiveToasts toasts={toasts} />
       {/* Top Navigation */}
       <header className="sticky top-0 z-30 border-b border-line bg-ink/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <Link to="/app" className="flex items-center gap-1.5 rounded-full border border-line bg-surface/80 px-3 py-1.5 text-[12px] font-medium text-muted hover:text-bone">
               <ArrowLeft size={13} /><span>Requests</span>
@@ -279,7 +279,7 @@ export function DashboardDesk() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             {details?.plan && <PlanChip plan={details.plan} />}
             <NoticeBell />
             {liveDot && (
@@ -371,6 +371,7 @@ export function DashboardDesk() {
             ) : (
               <AnswerCard
                 winner={winner} rows={evaluation.rows} pool={evaluation.pool} mode={mode} qty={qty} needInDays={rfq.need_in_days}
+                budget={rfq.budget}
                 name={winner ? details?.revealed?.[winner.quote.id]?.business_name : undefined}
                 decided={isDecided}
                 waiting={details?.activity ? Math.max(0, details.activity.notified - details.activity.quoted - details.activity.declined) : 0}

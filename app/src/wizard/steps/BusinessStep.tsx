@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, Building2, MapPin, Tag, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, MapPin } from "lucide-react";
 import {
   INDIAN_STATES,
-  CATEGORIES,
   BUSINESS_TYPES,
 } from "../validators";
-import type { BusinessType, Category } from "../types";
+import type { BusinessType } from "../types";
 
 interface BusinessStepProps {
   company: string;
@@ -13,14 +12,12 @@ interface BusinessStepProps {
   state: string;
   city: string;
   pincode: string;
-  categories: Category[];
   onChange: (fields: Partial<{
     company: string;
     businessType: BusinessType;
     state: string;
     city: string;
     pincode: string;
-    categories: Category[];
   }>) => void;
   onNext: () => void;
   onBack: () => void;
@@ -32,7 +29,6 @@ export function BusinessStep({
   state,
   city,
   pincode,
-  categories,
   onChange,
   onNext,
   onBack,
@@ -43,17 +39,9 @@ export function BusinessStep({
   const isStateValid = state.trim().length > 0;
   const isCityValid = city.trim().length >= 2;
   const isPincodeValid = /^[1-9][0-9]{5}$/.test(pincode.trim());
-  const isCategoriesValid = categories.length > 0;
 
-  const canProceed = isCompanyValid && isStateValid && isCityValid && isPincodeValid && isCategoriesValid;
+  const canProceed = isCompanyValid && isStateValid && isCityValid && isPincodeValid;
 
-  const toggleCategory = (cat: Category) => {
-    if (categories.includes(cat)) {
-      onChange({ categories: categories.filter((c) => c !== cat) });
-    } else {
-      onChange({ categories: [...categories, cat] });
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -207,42 +195,6 @@ export function BusinessStep({
           </div>
         </div>
 
-        {/* Categories Multi-Select Chips */}
-        <div>
-          <label className="label mb-2 flex items-center justify-between text-muted">
-            <span className="flex items-center gap-1.5 text-bone">
-              <Tag size={14} className="text-muted" />
-              Primary Categories ({categories.length} selected)
-            </span>
-            <span className="text-[11px] text-muted">Select at least one</span>
-          </label>
-
-          <div className="flex flex-wrap gap-2">
-            {CATEGORIES.map((c) => {
-              const selected = categories.includes(c.id);
-              return (
-                <button
-                  type="button"
-                  key={c.id}
-                  onClick={() => toggleCategory(c.id)}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] transition-all ${
-                    selected
-                      ? "border-signal bg-signal/10 font-medium text-signal shadow-sm"
-                      : "border-line bg-surface text-muted hover:border-line/80 hover:text-bone"
-                  }`}
-                >
-                  {selected && <Check size={12} strokeWidth={2.5} />}
-                  <span>{c.label}</span>
-                </button>
-              );
-            })}
-          </div>
-          {touched.categories && !isCategoriesValid && (
-            <p className="mt-1.5 text-[12px] text-error">
-              Please choose at least one industrial category.
-            </p>
-          )}
-        </div>
       </div>
 
       {/* Nav actions */}

@@ -10,7 +10,6 @@ import {
   User,
   MapPin,
   TrendingUp,
-  Tag,
 } from "lucide-react";
 import { Magnetic } from "../../components/Magnetic";
 import type { Profile } from "../types";
@@ -82,11 +81,6 @@ export function SummaryStep({ profile }: SummaryStepProps) {
               </span>
             )}
 
-            {isBuyer && profile.buyer?.gst_claimable && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-bone/30 bg-raised px-3 py-1 text-[12px] font-medium text-bone">
-                <span>ITC Ex-GST Engine Rule</span>
-              </span>
-            )}
           </div>
         </div>
 
@@ -124,18 +118,6 @@ export function SummaryStep({ profile }: SummaryStepProps) {
             </div>
           </div>
 
-          {/* Categories */}
-          <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            <Tag size={12} className="text-muted mr-1" />
-            {profile.categories.map((c) => (
-              <span
-                key={c}
-                className="rounded border border-line bg-surface px-2 py-0.5 text-[11px] text-muted capitalize"
-              >
-                {c}
-              </span>
-            ))}
-          </div>
         </div>
 
         {saveError && <p className="text-center text-[12px] text-error">{saveError}</p>}

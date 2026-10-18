@@ -86,8 +86,7 @@ export function Dive() {
         )}
         <div ref={scene} className={reduced ? 'relative' : 'absolute inset-0'} style={{ transformStyle: 'preserve-3d' }}>
           <Scene z={0} reduced={reduced}>
-            <p className="label mx-auto text-signal">For small manufacturers</p>
-            <h1 className="display mt-3 text-[clamp(3rem,11vw,9rem)] leading-[0.92] tracking-tight">Stop chasing<br />quotes.</h1>
+            <h1 className="display text-[clamp(3rem,11vw,9rem)] leading-[0.92] tracking-tight">Stop chasing<br />quotes.</h1>
             <p className="mx-auto mt-5 max-w-[34ch] text-[clamp(1rem,1.8vw,1.25rem)] text-muted">
               Dive in. Watch one order go from a mess of messages to the right seller.
             </p>

@@ -152,6 +152,10 @@ export interface RFQCreatePayload {
   gst_claimable?: boolean;
   /** How long sellers have to quote. Blank = from your priority. */
   window?: WindowKey;
+  /** The most you want to spend on this item, delivered, in rupees. Sellers never see it. */
+  budget?: number;
+  /** Items asked together share one order id, so they can be viewed as one order. */
+  order_id?: string;
 }
 
 export type PriorityMode = "cheapest" | "fastest" | "balanced";
@@ -235,6 +239,8 @@ export interface RFQDTO {
   /** True when DEMO_WINDOW_MINUTES shortened the window for a demo. */
   demo_timing?: boolean;
   min_quotes?: number;
+  budget?: number | null;
+  order_id?: string | null;
 }
 
 export type WindowKey = "15m" | "today" | "24h" | "3d";

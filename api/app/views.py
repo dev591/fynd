@@ -68,6 +68,7 @@ def public_rfq(store, rfq) -> dict[str, Any]:
         "buyer_company": rfq.buyer_company, "buyer_name": rfq.buyer_name,
         "buyer_city": rfq.buyer_city, "buyer_state": rfq.buyer_state, "note": rfq.note,
         "created_at": rfq.created_at, "status": rfq.status, "decision": rfq.decision, "gst_claimable": rfq.gst_claimable,
+        "budget": rfq.budget, "order_id": rfq.order_id,
         "priority_mode": rfq.priority_mode, "source": rfq.source,
         "window_key": rfq.window_key, "window_label": rfq.window_label, "window_ends_at": rfq.window_ends_at,
         "window_closed": rfq.window_closed, "demo_timing": rfq.demo_timing, "min_quotes": rfq.min_quotes,

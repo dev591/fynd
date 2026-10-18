@@ -8,6 +8,33 @@ notifications), no CORS and no second server. Supabase Auth is already hosted, s
 2. Fill the secret values in the dashboard (names below). `VITE_*` values are public and only used at build time.
 3. Open the URL Render gives you. `/health` should say ok.
 
+## Option B: website on Vercel, API on Railway (two addresses)
+The website is static and the API is one process, so they can live on separate hosts. Both are https, which the microphone
+and browser notifications need. Because they are different origins, the API must be told which website may call it.
+
+**1. API on Railway** (deploy this first, you need its URL for step 2)
+1. New Project > Deploy from GitHub repo, pick this repo, and set **Root Directory** to `api`. Railway reads
+   `api/Dockerfile` and `api/railway.json` (health check `/health`).
+2. **Add a Volume** to the service, mount path `/data`. Without it SQLite is wiped on every redeploy.
+3. Variables: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `OPENAI_API_KEY`, `MODEL_FAST`, `ELEVENLABS_API_KEY`,
+   `ELEVENLABS_STT_MODEL=scribe_v2`, `DEMO_AUTOPILOT=off`, `DEMO_LOGINS=off`, `FREE_REVEALS=3`, and
+   `CORS_ORIGINS=https://<your-vercel-domain>` (set after step 2; no trailing slash, comma-separate extra domains).
+4. Settings > Networking > **Generate Domain**. Open `https://<railway-domain>/health`: it should say ok.
+5. Keep **one replica** (state is in memory with SQLite write-through).
+
+**2. Website on Vercel**
+1. Add New Project, import this repo, set **Root Directory** to `app`. Vercel reads `app/vercel.json` (Vite build, and every
+   route falls back to `index.html` so `/app`, `/supplier` and `/share/...` work on refresh).
+2. Environment variables (all public, baked in at build time): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+   `VITE_API_URL=https://<railway-domain>` (no trailing slash).
+3. Deploy, then put the Vercel domain into Railway's `CORS_ORIGINS` and redeploy the API. Preview URLs are different
+   origins, so add them to `CORS_ORIGINS` only if you need to test on them.
+
+**3. Supabase** > Authentication > URL Configuration: set Site URL to the Vercel domain. Turn off "Confirm email" for the demo.
+
+If the page loads but every call fails with a CORS error in the browser console, `CORS_ORIGINS` does not match the exact
+Vercel address. If requests go to the wrong host, `VITE_API_URL` was missing at build time: set it and redeploy.
+
 ## Any Docker host (Fly.io, Railway, a VPS)
 `docker build --build-arg VITE_SUPABASE_URL=... --build-arg VITE_SUPABASE_ANON_KEY=... -t crossover .`
 `docker run -p 8000:8000 --env-file api/.env -v crossover-data:/data crossover`
