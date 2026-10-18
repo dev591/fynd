@@ -569,7 +569,7 @@ export async function getFinePrint(rfqId: string): Promise<Record<string, FinePr
   return (await apiFetch<{ flags: Record<string, FinePrintFlagDTO[]> }>(`/api/rfqs/${rfqId}/fine-print`)).flags;
 }
 
-export interface PaymentProductDTO { id: "reveal_pack_10" | "pro_30d"; name: string; amount_rupees: number; blurb: string; reveals?: number; days?: number; per_reveal?: number }
+export interface PaymentProductDTO { id: string; name: string; amount_rupees: number; blurb: string; reveals?: number; days?: number; per_reveal?: number }
 export interface PaymentConfigDTO { enabled: boolean; mode: "test" | "live" | "off"; key_id: string | null; products: PaymentProductDTO[]; note: string | null }
 export interface PaymentOrderDTO { order_id: string; amount_paise: number; currency: string; key_id: string; name: string; description: string }
 export interface OrderPaymentDTO {
@@ -583,7 +583,7 @@ export async function getPaymentConfig(): Promise<PaymentConfigDTO> {
 }
 
 /** Start a Razorpay order for a reveal pack, Pro, or the 50% advance on a decided order. */
-export async function createPaymentOrder(product: "reveal_pack_10" | "pro_30d" | "order_advance", rfqId?: string): Promise<PaymentOrderDTO> {
+export async function createPaymentOrder(product: string, rfqId?: string): Promise<PaymentOrderDTO> {
   return apiFetch("/api/payments/order", { method: "POST", body: JSON.stringify({ product, rfq_id: rfqId }) });
 }
 

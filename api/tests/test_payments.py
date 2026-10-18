@@ -73,13 +73,13 @@ def as_user(uid):
 def test_payments_are_off_without_keys_and_the_config_says_so():
     c = client.get("/api/payments/config").json()
     assert c["enabled"] is False and c["mode"] == "off" and c["key_id"] is None
-    assert client.post("/api/payments/order", json={"product": "pro_30d"}).status_code == 503
+    assert client.post("/api/payments/order", json={"product": "reveals_10"}).status_code == 503
 
 
 def test_test_keys_turn_it_on_and_only_the_public_key_id_is_ever_returned(razor):
     c = client.get("/api/payments/config").json()
     assert c["enabled"] and c["mode"] == "test" and c["key_id"] == "rzp_test_abc123"
-    assert SECRET not in str(c) and {p["id"] for p in c["products"]} == {"reveal_pack_10", "pro_30d"}
+    assert SECRET not in str(c) and {p["id"] for p in c["products"]} == {"reveals_1", "reveals_5", "reveals_10", "reveals_20", "reveals_30", "reveals_50"}
 
 
 def test_live_keys_are_refused_unless_explicitly_allowed(monkeypatch):
@@ -90,40 +90,44 @@ def test_live_keys_are_refused_unless_explicitly_allowed(monkeypatch):
     assert client.get("/api/payments/config").json()["mode"] == "live"
 
 
-def test_the_prices_are_the_documented_ones():
-    ps = {p["id"]: p for p in client.get("/api/payments/config").json()["products"]}
-    assert ps["reveal_pack_10"]["amount_rupees"] == 499 and ps["reveal_pack_10"]["reveals"] == 10
-    assert ps["pro_30d"]["amount_rupees"] == 1499 and ps["pro_30d"]["days"] == 30
+def test_the_prices_are_the_pitch_deck_ladder():
+    ps = {p["reveals"]: p for p in client.get("/api/payments/config").json()["products"]}
+    assert {n: p["amount_rupees"] for n, p in ps.items()} == {1: 79, 5: 349, 10: 649, 20: 1199, 30: 1699, 50: 2699}
+    assert ps[10]["per_reveal"] == 64.9 and ps[50]["per_reveal"] == 53.98 and ps[30]["per_reveal"] == 56.63
 
 
-# ─── reveal packs and Pro ───────────────────────────────────────────────
+# ─── reveal bundles ───────────────────────────────────────────────
 
-def test_buying_a_reveal_pack_adds_ten_reveals(razor):
+def test_buying_a_bundle_adds_its_reveals(razor):
     as_user("rz-pack")
     before = store.reveals_left("rz-pack")
-    o = client.post("/api/payments/order", json={"product": "reveal_pack_10"}).json()
-    assert o["amount_paise"] == 49900 and o["key_id"] == "rzp_test_abc123" and razor.calls[-1][2] == ("rzp_test_abc123", SECRET)
+    o = client.post("/api/payments/order", json={"product": "reveals_10"}).json()
+    assert o["amount_paise"] == 64900 and o["key_id"] == "rzp_test_abc123" and razor.calls[-1][2] == ("rzp_test_abc123", SECRET)
     r = client.post("/api/payments/verify", json=pay(o["order_id"]))
     assert r.status_code == 200 and r.json()["status"] == "paid"
     assert store.reveals_left("rz-pack") == before + 10
 
 
-def test_pro_unlocks_unlimited_reveals_for_thirty_days_and_extends_when_bought_again(razor):
-    as_user("rz-pro")
-    for _ in range(2):
-        o = client.post("/api/payments/order", json={"product": "pro_30d"}).json()
-        assert o["amount_paise"] == 149900
+def test_every_bundle_adds_exactly_its_reveals_and_charges_its_price(razor):
+    for n, price in [(1, 79), (5, 349), (20, 1199), (30, 1699), (50, 2699)]:
+        uid = f"rz-b{n}"
+        as_user(uid)
+        before = store.reveals_left(uid)
+        o = client.post("/api/payments/order", json={"product": f"reveals_{n}"}).json()
+        assert o["amount_paise"] == price * 100
         assert client.post("/api/payments/verify", json=pay(o["order_id"])).status_code == 200
-    assert store.plan_of("rz-pro") == "pro" and store.reveals_left("rz-pro") is None
-    from datetime import datetime, timedelta
-    until = datetime.fromisoformat(store.pro_until["rz-pro"])
-    assert until - datetime.now() > timedelta(days=55)                       # two purchases stack
+        assert store.reveals_left(uid) == before + n
+
+
+def test_the_old_pro_subscription_is_no_longer_for_sale(razor):
+    as_user("rz-nopro")
+    assert client.post("/api/payments/order", json={"product": "pro_30d"}).status_code == 422
 
 
 def test_a_bad_signature_changes_nothing(razor):
     as_user("rz-bad")
     before = store.reveals_left("rz-bad")
-    o = client.post("/api/payments/order", json={"product": "reveal_pack_10"}).json()
+    o = client.post("/api/payments/order", json={"product": "reveals_10"}).json()
     r = client.post("/api/payments/verify", json=pay(o["order_id"], secret="wrong"))
     assert r.status_code == 400 and r.json()["detail"]["code"] == "bad_signature"
     assert store.reveals_left("rz-bad") == before
@@ -132,7 +136,7 @@ def test_a_bad_signature_changes_nothing(razor):
 def test_verifying_twice_applies_it_once(razor):
     as_user("rz-twice")
     before = store.reveals_left("rz-twice")
-    o = client.post("/api/payments/order", json={"product": "reveal_pack_10"}).json()
+    o = client.post("/api/payments/order", json={"product": "reveals_10"}).json()
     assert client.post("/api/payments/verify", json=pay(o["order_id"])).status_code == 200
     assert client.post("/api/payments/verify", json=pay(o["order_id"])).json()["status"] == "paid"
     assert store.reveals_left("rz-twice") == before + 10
@@ -140,7 +144,7 @@ def test_verifying_twice_applies_it_once(razor):
 
 def test_someone_else_cannot_claim_a_payment(razor):
     as_user("rz-owner")
-    o = client.post("/api/payments/order", json={"product": "reveal_pack_10"}).json()
+    o = client.post("/api/payments/order", json={"product": "reveals_10"}).json()
     as_user("rz-thief")
     assert client.post("/api/payments/verify", json=pay(o["order_id"])).status_code == 404
     assert client.post("/api/payments/verify", json=pay("order_unknown")).status_code == 404
@@ -150,14 +154,14 @@ def test_an_unknown_product_or_an_unreachable_razorpay_is_a_clean_error(razor):
     as_user("rz-err")
     assert client.post("/api/payments/order", json={"product": "free_money"}).status_code == 422
     razor.fail = True
-    r = client.post("/api/payments/order", json={"product": "pro_30d"})
+    r = client.post("/api/payments/order", json={"product": "reveals_10"})
     assert r.status_code == 502 and "try again" in r.json()["detail"].lower()
 
 
 def test_a_payment_razorpay_did_not_capture_is_not_applied(razor, monkeypatch):
     as_user("rz-nocap")
-    o = client.post("/api/payments/order", json={"product": "reveal_pack_10"}).json()
-    monkeypatch.setattr(rz, "fetch_payment", lambda pid: {"id": pid, "status": "failed", "amount": 49900, "order_id": o["order_id"]})
+    o = client.post("/api/payments/order", json={"product": "reveals_10"}).json()
+    monkeypatch.setattr(rz, "fetch_payment", lambda pid: {"id": pid, "status": "failed", "amount": 64900, "order_id": o["order_id"]})
     r = client.post("/api/payments/verify", json=pay(o["order_id"]))
     assert r.status_code == 402 and store.reveals_left("rz-nocap") == store.free_reveal_limit()
 

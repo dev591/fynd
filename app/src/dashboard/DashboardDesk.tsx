@@ -1020,8 +1020,9 @@ function PaywallModal({ plan, onClose, onUpgraded }: { plan?: PlanInfo; onClose:
           {plan ? ` You used ${plan.free_limit} of ${plan.free_limit}.` : ""} Sellers you have already unlocked stay unlocked.
         </p>
         <div className="space-y-2 rounded-xl border border-line bg-raised/40 p-3 text-[13px]">
-          <div className="flex justify-between"><span className="text-bone">Reveal pack</span><span className="num text-muted">₹ 499 for 10 reveals</span></div>
-          <div className="flex justify-between"><span className="text-bone">Monthly plan</span><span className="num text-muted">₹ 1,499 per month, unlimited</span></div>
+          <div className="flex justify-between"><span className="text-bone">1 reveal</span><span className="num text-muted">₹ 79</span></div>
+          <div className="flex justify-between"><span className="text-bone">10 reveals</span><span className="num text-muted">₹ 649 (₹ 64.90 each)</span></div>
+          <div className="flex justify-between"><span className="text-bone">50 reveals</span><span className="num text-muted">₹ 2,699 (₹ 53.98 each)</span></div>
           <p className="text-[11px] text-muted">Prices are assumptions for this demo, not results. Sellers pay nothing.</p>
         </div>
         {payCfg?.enabled ? (

@@ -8,7 +8,7 @@ from typing import List, Literal, Optional
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from .core import Ctx, Pipeline
 from .trace import bus
@@ -705,17 +705,26 @@ def request_fine_print(rfq_id: str, user: AuthUser = Depends(buyer_only)):
 
 # ─── Payments (Razorpay, test mode) ───
 
+# The pitch deck's price ladder. Assumptions to test, not results from customers.
+BUNDLES = [(1, 79), (5, 349), (10, 649), (20, 1199), (30, 1699), (50, 2699)]
 PRODUCTS = [
-    {"id": "reveal_pack_10", "name": "Reveal pack", "amount_rupees": 499, "reveals": 10, "per_reveal": 49.9,
-     "blurb": "10 reveals, about ₹50 each. A reveal unlocks one seller's name and contact so you can deal with them directly."},
-    {"id": "pro_30d", "name": "Pro, 30 days", "amount_rupees": 1499, "days": 30,
-     "blurb": "Unlimited reveals for 30 days. Cheaper than buying reveals one by one from the 31st."},
+    {"id": f"reveals_{n}", "name": f"{n} reveal{'s' if n > 1 else ''}", "amount_rupees": price, "reveals": n,
+     "per_reveal": round(price / n, 2),
+     "blurb": "A reveal unlocks one seller's name, contact and address so you can deal with them directly."}
+    for n, price in BUNDLES
 ]
 
 
 class PaymentOrderIn(BaseModel):
-    product: Literal["reveal_pack_10", "pro_30d", "order_advance"]
+    product: str = Field(max_length=40)
     rfq_id: Optional[str] = None
+
+    @field_validator("product")
+    @classmethod
+    def _known_product(cls, v: str) -> str:
+        if v != "order_advance" and v not in {p["id"] for p in PRODUCTS}:
+            raise ValueError("Unknown product.")
+        return v
 
 
 class PaymentVerifyIn(BaseModel):
@@ -781,12 +790,9 @@ def verify_payment(payload: PaymentVerifyIn, user: AuthUser = Depends(buyer_only
     if got.get("status") != "captured" or got.get("order_id") != rec["id"] or got.get("amount") != rec["amount_paise"]:
         raise HTTPException(status_code=402, detail={"code": "not_captured", "message": "Razorpay did not capture this payment, so nothing was applied."})
     rec.update(status="paid", payment_id=payload.razorpay_payment_id, paid_at=datetime.now().isoformat())
-    if rec["product"] == "reveal_pack_10":
-        store.credits[user.id] = store.credits.get(user.id, 0) + 10
-    elif rec["product"] == "pro_30d":
-        cur = store.pro_until.get(user.id)
-        base = max(datetime.now(), datetime.fromisoformat(cur)) if cur else datetime.now()
-        store.pro_until[user.id] = (base + timedelta(days=30)).isoformat()
+    bought = next((p for p in PRODUCTS if p["id"] == rec["product"]), None)
+    if bought:
+        store.credits[user.id] = store.credits.get(user.id, 0) + bought["reveals"]
     else:
         rfq = store.rfqs[rec["rfq_id"]]
         pay = store.set_payment(rfq.id, "split_50", "advance_paid", payment_id=payload.razorpay_payment_id,

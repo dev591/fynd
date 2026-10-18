@@ -127,7 +127,7 @@ Written with Claude Code (Anthropic), reviewed by the team. No backend or engine
   (`/Volumes/dev/razorpay`, which uses the official `razorpay` SDK): create an order with auto-capture, open Razorpay Checkout in the
   browser, verify the HMAC signature on the server, confirm the payment was captured, retry transport failures with backoff. It
   uses `httpx`, so no new package was added. Keys are read from the environment only; a live key is refused unless
-  `RAZORPAY_ALLOW_LIVE=true`. Prices (₹499 for 10 reveals, ₹1,499 for 30 days Pro) are our assumptions, with the reasoning on the
+  `RAZORPAY_ALLOW_LIVE=true`. Prices (six reveal bundles, ₹79 for 1 up to ₹2,699 for 50, from our pitch deck) are our assumptions, with the reasoning on the
   page. The server is tested against a faked Razorpay API with real signatures; **no real Razorpay call has been made from this
   codebase yet**, and checkout has not been clicked through in a browser (it needs the team's test keys).
 - A buyer who places an order is notified to choose cash on delivery or a 50% advance; a paid advance is shown to the seller on

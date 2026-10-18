@@ -62,7 +62,7 @@ real two-laptop demo), `FREE_REVEALS`, `DELHIVERY_TOKEN`. See `api/.env.example`
    `RAZORPAY_ALLOW_LIVE=true`.
 2. Redeploy. `/api/payments/config` should now say `"mode": "test"`.
 3. Test with card `4111 1111 1111 1111`, any future expiry and CVV, or UPI `success@razorpay`. No real money moves.
-4. What is paid for: reveal packs (₹499 for 10) and Pro (₹1,499 for 30 days) on `/app/pricing`, and an optional 50% advance on an
+4. What is paid for: reveal bundles (1 to 50 reveals, ₹79 to ₹2,699) on `/app/pricing`, and an optional 50% advance on an
    order at `/app/pay/<request id>`. Cash on delivery needs no Razorpay.
 
 ## Things to know
