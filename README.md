@@ -9,8 +9,8 @@ FyndHacks problem **C27, Supplier Quote Comparison Desk**.
 
 > **Honest status.** This is a tested prototype. There are no customers, no revenue and no pilot yet. The sellers in the
 > demo are fictional businesses we made up, and their prices and history are demo data. Prices for reveal packs
-> (₹499 for 10, ₹1,499 a month) and the 5% "balanced" tolerance are **assumptions**, not results. The payment screen is a
-> mock: nothing is charged or stored. The Delhivery freight estimate comes from our own demo rate card, not from Delhivery
+> (₹499 for 10, ₹1,499 a month) and the 5% "balanced" tolerance are **assumptions**, not results. Payments run in Razorpay
+> test mode: nothing real is charged. The Delhivery freight estimate comes from our own demo rate card, not from Delhivery
 > (we have no token), and says so on screen. Verification badges say exactly what was checked, and no badge is a live
 > government check.
 
@@ -25,6 +25,7 @@ costs ₹1,150, so B wins. Above 150 units A wins. Crossover treats a quote as a
 | Area | What you can do |
 |---|---|
 | **Compare** | Volume price tiers from a seller's catalog (the tier the order reaches sets the pack price, shown to the buyer and used by the quantity slider). Landed cost per seller, cost per usable unit, cash tied up in extra units, quantity slider (the winner can flip), spreadsheet mode (shows the naive pick and the rupee difference), winner under cheapest / fastest / balanced with a "what you give up" line |
+| **Payment** | After choosing a quote the buyer is notified to pick how to pay: cash on delivery, or 50% now through Razorpay test mode and 50% on delivery. When free reveals run out, a prices page sells a reveal pack (₹499 for 10) or Pro (₹1,499 for 30 days) through Razorpay test mode. The server checks the signature and that Razorpay really captured the money before anything is applied. Test mode only: no real money moves |
 | **Request details and history** | Each need opens its own page: all its details (editable while open, sellers are told to re-check their quotes), counts of who has replied, and a colour-coded timeline of everything that happened (created, sellers notified, each quote and revision, targets, reveals, approvals, edits, the order, delivery) |
 | **Order history** | Buyers see every order placed with the seller who receives it, the amount, who approved it and delivery status. Sellers get an Orders received tab with the buyer's contact and their amount |
 | **Fine print** | Terms hidden in a seller's notes (advance payment, a short price validity, extra charges, conditions, no returns) are flagged on the quote card, quoting the seller's own words |

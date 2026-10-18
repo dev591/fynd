@@ -1,9 +1,10 @@
-import asyncio, json, os
+import asyncio, json, os, uuid
+from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from .env import load_env
 
 load_env()  # reads api/.env before anything reads os.environ
-from typing import List, Optional
+from typing import List, Literal, Optional
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -52,7 +53,7 @@ from .models import (
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
 from .quote_text import draft_from_message
-from . import ai, ask_desk, fine_print, assistant, delhivery, demo_roster
+from . import ai, ask_desk, fine_print, razorpay_client as rz, assistant, delhivery, demo_roster
 from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
@@ -684,6 +685,117 @@ def orders_received(supplier_id: str, user: AuthUser = Depends(seller_only)):
 def request_fine_print(rfq_id: str, user: AuthUser = Depends(buyer_only)):
     """Terms hidden in each quote's notes, by alias. Warnings only; they never change a price or a winner."""
     return {"flags": fine_print.for_request(store, _rfq_for(user, rfq_id))}
+
+
+# ─── Payments (Razorpay, test mode) ───
+
+PRODUCTS = [
+    {"id": "reveal_pack_10", "name": "Reveal pack", "amount_rupees": 499, "reveals": 10, "per_reveal": 49.9,
+     "blurb": "10 reveals, about ₹50 each. A reveal unlocks one seller's name and contact so you can deal with them directly."},
+    {"id": "pro_30d", "name": "Pro, 30 days", "amount_rupees": 1499, "days": 30,
+     "blurb": "Unlimited reveals for 30 days. Cheaper than buying reveals one by one from the 31st."},
+]
+
+
+class PaymentOrderIn(BaseModel):
+    product: Literal["reveal_pack_10", "pro_30d", "order_advance"]
+    rfq_id: Optional[str] = None
+
+
+class PaymentVerifyIn(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+
+
+class PayMethodIn(BaseModel):
+    method: Literal["cod"]
+
+
+@app.get("/api/payments/config")
+def payments_config():
+    """Whether payments are on, the mode (test/live/off), the public key id and what is for sale. Never the secret."""
+    on = rz.enabled()
+    return {"enabled": on, "mode": rz.mode(), "key_id": rz.key_id() if on else None, "products": PRODUCTS,
+            "note": "Test mode: use a Razorpay test card or UPI. No real money moves." if rz.mode() == "test" else None}
+
+
+@app.post("/api/payments/order")
+def create_payment_order(payload: PaymentOrderIn, user: AuthUser = Depends(buyer_only)):
+    if not rz.enabled():
+        raise HTTPException(status_code=503, detail="Payments are not switched on for this server.")
+    rfq_id = None
+    if payload.product == "order_advance":
+        rfq = _rfq_for(user, payload.rfq_id or "")
+        pay = (rfq.decision or {}).get("payment")
+        if not rfq.decision or not pay:
+            raise HTTPException(status_code=409, detail="Place the order first.")
+        if pay.get("status") == "advance_paid":
+            raise HTTPException(status_code=409, detail="The advance for this order is already paid.")
+        if not pay.get("advance") or pay["advance"] < 1:
+            raise HTTPException(status_code=409, detail="This order is too small for an advance. Pay on delivery.")
+        amount, rfq_id, label = float(pay["advance"]), rfq.id, f"50% advance, {rfq.item}"
+    else:
+        prod = next(p for p in PRODUCTS if p["id"] == payload.product)
+        amount, label = float(prod["amount_rupees"]), prod["name"]
+    try:
+        order = rz.create_order(amount, f"{payload.product[:12]}-{uuid.uuid4().hex[:8]}", {"buyer": user.id, "product": payload.product, "rfq": rfq_id or ""})
+    except rz.PaymentError:
+        raise HTTPException(status_code=502, detail="Could not reach Razorpay. Please try again.")
+    store.payments[order["id"]] = {"id": order["id"], "buyer_id": user.id, "product": payload.product, "rfq_id": rfq_id,
+                                   "amount_paise": order["amount"], "status": "created", "created_at": datetime.now().isoformat()}
+    return {"order_id": order["id"], "amount_paise": order["amount"], "currency": "INR", "key_id": rz.key_id(),
+            "name": "Crossover", "description": label}
+
+
+@app.post("/api/payments/verify")
+def verify_payment(payload: PaymentVerifyIn, user: AuthUser = Depends(buyer_only)):
+    """Check the signature, confirm Razorpay really captured the money, then apply what was bought. Safe to repeat."""
+    rec = store.payments.get(payload.razorpay_order_id)
+    if not rec or rec["buyer_id"] != user.id:
+        raise HTTPException(status_code=404, detail="Payment not found.")
+    if rec["status"] == "paid":
+        return {"status": "paid", "product": rec["product"], "plan": views.plan_info(store, user.id)}
+    if not rz.verify_signature(payload.razorpay_order_id, payload.razorpay_payment_id, payload.razorpay_signature):
+        raise HTTPException(status_code=400, detail={"code": "bad_signature", "message": "The payment could not be verified, so nothing was applied."})
+    try:
+        got = rz.capture_payment(payload.razorpay_payment_id, rec["amount_paise"])
+    except rz.PaymentError:
+        raise HTTPException(status_code=502, detail="Could not confirm the payment with Razorpay. Nothing was lost: try again in a moment.")
+    if got.get("status") != "captured" or got.get("order_id") != rec["id"] or got.get("amount") != rec["amount_paise"]:
+        raise HTTPException(status_code=402, detail={"code": "not_captured", "message": "Razorpay did not capture this payment, so nothing was applied."})
+    rec.update(status="paid", payment_id=payload.razorpay_payment_id, paid_at=datetime.now().isoformat())
+    if rec["product"] == "reveal_pack_10":
+        store.credits[user.id] = store.credits.get(user.id, 0) + 10
+    elif rec["product"] == "pro_30d":
+        cur = store.pro_until.get(user.id)
+        base = max(datetime.now(), datetime.fromisoformat(cur)) if cur else datetime.now()
+        store.pro_until[user.id] = (base + timedelta(days=30)).isoformat()
+    else:
+        rfq = store.rfqs[rec["rfq_id"]]
+        pay = store.set_payment(rfq.id, "split_50", "advance_paid", payment_id=payload.razorpay_payment_id,
+                                razorpay_order_id=rec["id"], paid_at=rec["paid_at"])
+        store._notice(rfq, "payment_received", f"Advance of ₹{pay['advance']:,.0f} received (Razorpay test mode). ₹{pay['balance']:,.0f} is due on delivery.")
+    return {"status": "paid", "product": rec["product"], "plan": views.plan_info(store, user.id)}
+
+
+@app.get("/api/rfqs/{rfq_id}/payment")
+def order_payment(rfq_id: str, user: AuthUser = Depends(buyer_only)):
+    rfq = _rfq_for(user, rfq_id)
+    if not rfq.decision:
+        raise HTTPException(status_code=409, detail="Place the order first.")
+    return {**rfq.decision["payment"], "payment_note": rfq.decision.get("payment_note"), "item": rfq.item, "qty": rfq.qty,
+            "razorpay": {"enabled": rz.enabled(), "mode": rz.mode()}}
+
+
+@app.post("/api/rfqs/{rfq_id}/payment")
+def choose_cash_on_delivery(rfq_id: str, payload: PayMethodIn, user: AuthUser = Depends(buyer_only)):
+    rfq = _rfq_for(user, rfq_id)
+    if not rfq.decision:
+        raise HTTPException(status_code=409, detail="Place the order first.")
+    if rfq.decision["payment"].get("status") == "advance_paid":
+        raise HTTPException(status_code=409, detail="An advance is already paid for this order.")
+    return store.set_payment(rfq_id, "cod", "pay_on_delivery")
 
 
 @app.post("/api/rfqs/{rfq_id}/decision")

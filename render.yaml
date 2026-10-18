@@ -16,6 +16,8 @@ services:
       - {key: MODEL_FAST, sync: false}
       - {key: ELEVENLABS_API_KEY, sync: false}
       - {key: ELEVENLABS_STT_MODEL, value: scribe_v2}
+      - {key: RAZORPAY_KEY_ID, sync: false}          # rzp_test_... keys only: payments run in Razorpay test mode
+      - {key: RAZORPAY_KEY_SECRET, sync: false}
       - {key: DEMO_SELLER_PASSWORD, sync: false}
       - {key: DEMO_LOGINS, value: "off"}
       - {key: DEMO_AUTOPILOT, value: "off"}

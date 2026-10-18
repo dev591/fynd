@@ -274,6 +274,7 @@ export interface PlanInfo {
   free_limit: number;
   /** Null on the paid plan (unlimited). */
   reveals_left: number | null;
+  pro_until?: string | null;
 }
 
 export interface RFQDetailsDTO {
@@ -565,6 +566,37 @@ export async function getFinePrint(rfqId: string): Promise<Record<string, FinePr
   return (await apiFetch<{ flags: Record<string, FinePrintFlagDTO[]> }>(`/api/rfqs/${rfqId}/fine-print`)).flags;
 }
 
+export interface PaymentProductDTO { id: "reveal_pack_10" | "pro_30d"; name: string; amount_rupees: number; blurb: string; reveals?: number; days?: number; per_reveal?: number }
+export interface PaymentConfigDTO { enabled: boolean; mode: "test" | "live" | "off"; key_id: string | null; products: PaymentProductDTO[]; note: string | null }
+export interface PaymentOrderDTO { order_id: string; amount_paise: number; currency: string; key_id: string; name: string; description: string }
+export interface OrderPaymentDTO {
+  method: "cod" | "split_50" | null; status: "choose" | "pay_on_delivery" | "advance_paid";
+  total: number | null; advance: number | null; balance: number | null; payment_note: string; item: string; qty: number;
+  razorpay: { enabled: boolean; mode: "test" | "live" | "off" };
+}
+
+export async function getPaymentConfig(): Promise<PaymentConfigDTO> {
+  return apiFetch("/api/payments/config");
+}
+
+/** Start a Razorpay order for a reveal pack, Pro, or the 50% advance on a decided order. */
+export async function createPaymentOrder(product: "reveal_pack_10" | "pro_30d" | "order_advance", rfqId?: string): Promise<PaymentOrderDTO> {
+  return apiFetch("/api/payments/order", { method: "POST", body: JSON.stringify({ product, rfq_id: rfqId }) });
+}
+
+/** The server checks the signature and that Razorpay really captured the money before anything is applied. */
+export async function verifyPayment(r: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }): Promise<{ status: "paid"; plan: PlanInfo }> {
+  return apiFetch("/api/payments/verify", { method: "POST", body: JSON.stringify(r) });
+}
+
+export async function getOrderPayment(rfqId: string): Promise<OrderPaymentDTO> {
+  return apiFetch(`/api/rfqs/${rfqId}/payment`);
+}
+
+export async function chooseCashOnDelivery(rfqId: string): Promise<OrderPaymentDTO> {
+  return apiFetch(`/api/rfqs/${rfqId}/payment`, { method: "POST", body: JSON.stringify({ method: "cod" }) });
+}
+
 export interface LogEventDTO { id: string; at: string; kind: string; text: string }
 
 /** What happened on a request, oldest first. Sellers appear by alias until revealed. */
@@ -587,6 +619,7 @@ export async function editRequest(rfqId: string, edit: RequestEdit): Promise<RFQ
 export interface BuyerOrderDTO {
   rfq_id: string; item: string; qty: number; decided_at: string | null; total_landed: number | null;
   approver: string | null; reason: string | null; split: boolean; status: string;
+  payment?: { method: "cod" | "split_50" | null; status: string; advance: number | null; balance: number | null } | null; payment_note?: string | null;
   receivers: { alias: string; units: number; total: number | null; business_name?: string | null; contact_name?: string | null;
                phone?: string | null; email?: string | null; city?: string | null; state?: string | null }[];
 }
@@ -1047,7 +1080,7 @@ export async function getImportTemplate(): Promise<{ csv: string; json: string; 
 export interface BuyerNoticeDTO {
   id: string;
   rfq_id: string;
-  kind: "first_quote" | "enough_quotes" | "window_closed";
+  kind: "first_quote" | "enough_quotes" | "window_closed" | "order_placed" | "payment_received";
   message: string;
   created_at: string;
   read: boolean;

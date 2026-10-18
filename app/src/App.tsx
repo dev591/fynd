@@ -8,6 +8,8 @@ import { DashboardDesk } from './dashboard/DashboardDesk'
 import { DecisionOnePager } from './dashboard/DecisionOnePager'
 import { RequestDetails } from './dashboard/RequestDetails'
 import { OrderHistory } from './dashboard/OrderHistory'
+import { Pricing } from './dashboard/Pricing'
+import { PayForOrder } from './dashboard/PayForOrder'
 import { OrderView } from './dashboard/OrderView'
 import { SupplierDashboard } from './supplier/SupplierDashboard'
 import { SupplierQuotePage } from './supplier/SupplierQuotePage'
@@ -27,6 +29,8 @@ export default function App() {
         <Route path="/app" element={<RequireAuth role="buyer"><BuyerRequests /></RequireAuth>} />
         <Route path="/app/new" element={<RequireAuth role="buyer"><NewRequestForm /></RequireAuth>} />
         <Route path="/app/request/:rfqId" element={<RequireAuth role="buyer"><RequestDetails /></RequireAuth>} />
+        <Route path="/app/pricing" element={<RequireAuth role="buyer"><Pricing /></RequireAuth>} />
+        <Route path="/app/pay/:rfqId" element={<RequireAuth role="buyer"><PayForOrder /></RequireAuth>} />
         <Route path="/app/orders" element={<RequireAuth role="buyer"><OrderHistory /></RequireAuth>} />
         <Route path="/app/compare/:rfqId" element={<RequireAuth role="buyer"><DashboardDesk /></RequireAuth>} />
         <Route path="/app/order/:orderId" element={<RequireAuth role="buyer"><OrderView /></RequireAuth>} />

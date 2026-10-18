@@ -63,6 +63,10 @@ export function OrderHistory() {
                   </div>
                 ))}
               </div>
+              <p className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-raised/40 px-3 py-2 text-[12px] text-muted">
+                <span>{o.payment_note ?? "Payment not chosen yet"}</span>
+                <Link to={`/app/pay/${o.rfq_id}`} className="text-signal underline">{o.payment?.status === "choose" ? "Choose how to pay" : "Payment details"}</Link>
+              </p>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-muted">
                 <span>Approved by {o.approver}{o.reason ? ` · “${o.reason}”` : ""}</span>
                 <span className="flex gap-3"><Link to={`/app/request/${o.rfq_id}`} className="text-signal underline">History</Link>

@@ -165,7 +165,7 @@ def reveal(scene, alias):
 
 def test_reveal_unlocks_identity_and_consumes_exactly_one_free_reveal(scene):
     before = client.get("/api/me/plan").json()
-    assert before == {"plan": "free", "free_limit": 3, "reveals_left": 3}
+    assert before == {"plan": "free", "free_limit": 3, "reveals_left": 3, "pro_until": None}
     r = reveal(scene, "Seller 1")
     assert r.status_code == 200
     ident = r.json()["seller"]

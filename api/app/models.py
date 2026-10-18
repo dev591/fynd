@@ -525,7 +525,7 @@ class BuyerNotice(BaseModel):
     """The buyer's bell: the first quote, enough quotes, and the window closing with the best option."""
     id: str
     rfq_id: str
-    kind: Literal["first_quote", "enough_quotes", "window_closed"]
+    kind: Literal["first_quote", "enough_quotes", "window_closed", "order_placed", "payment_received"]
     message: str
     created_at: str
     read: bool = False

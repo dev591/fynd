@@ -85,6 +85,9 @@ class RFQStore:
         self.revealed: Dict[str, Dict[str, dict]] = {}    # rfq_id -> {supplier_id: {buyer_id, at, kind}}
         self.reveal_log: List[dict] = []                  # every first-time reveal: buyer, seller, request, free/paid/repeat
         self.events: Dict[str, List[Event]] = {}        # per request: what happened, oldest first
+        self.payments: Dict[str, dict] = {}      # Razorpay order id -> what was bought and whether it was paid
+        self.credits: Dict[str, int] = {}         # buyer_id -> extra reveals bought in packs
+        self.pro_until: Dict[str, str] = {}       # buyer_id -> ISO time their Pro plan runs to
         self.history: List[dict] = []                     # synthetic past orders, labelled as such
         self.media: Dict[str, dict] = {}                          # rfq -> delivery photo/video, kept apart from the record
         self.buyer_notices: Dict[str, List[BuyerNotice]] = {}   # buyer_id -> their bell
@@ -442,6 +445,9 @@ class RFQStore:
             return 3
 
     def plan_of(self, buyer_id: str) -> str:
+        until = self.pro_until.get(buyer_id)
+        if until and datetime.fromisoformat(until) > datetime.now():
+            return "pro"
         return self.plans.get(buyer_id, "free")
 
     def reveals_used(self, buyer_id: str) -> int:
@@ -450,7 +456,7 @@ class RFQStore:
     def reveals_left(self, buyer_id: str) -> Optional[int]:
         if self.plan_of(buyer_id) == "pro":
             return None
-        return max(0, self.free_reveal_limit() - self.reveals_used(buyer_id))
+        return max(0, self.free_reveal_limit() + self.credits.get(buyer_id, 0) - self.reveals_used(buyer_id))
 
     def _revealed_before(self, buyer_id: str, supplier_id: str) -> bool:
         return any(supplier_id in d and self.rfqs[r].owner_id == buyer_id for r, d in self.revealed.items() if r in self.rfqs)
@@ -464,7 +470,7 @@ class RFQStore:
             kind = "repeat"                       # a seller you already unlocked is free and uses no allowance
         elif self.plan_of(buyer_id) == "pro":
             kind = "paid"
-        elif self.reveals_used(buyer_id) < self.free_reveal_limit():
+        elif self.reveals_used(buyer_id) < self.free_reveal_limit() + self.credits.get(buyer_id, 0):
             kind = "free"
         else:
             return None
@@ -717,6 +723,38 @@ class RFQStore:
         self.events.setdefault(rfq_id, []).append(Event(
             id="evt_" + uuid.uuid4().hex[:8], at=self.clock().isoformat(), kind=kind, seller_id=seller_id, meta=meta))
 
+    def order_total(self, rfq_id: str) -> Optional[float]:
+        """What the decided order costs in rupees: the split total, or the winner's landed cost."""
+        rfq = self.rfqs.get(rfq_id)
+        d = (rfq.decision if rfq else None) or {}
+        if d.get("split"):
+            return float(d["split"]["total_landed"])
+        sid = self.supplier_for_alias(rfq_id, d.get("winner_id")) if d.get("winner_id") else None
+        latest = (self.quotes.get(rfq_id, {}).get(sid) or [None])[-1] if sid else None
+        return float(latest.landed_cost) if latest and latest.landed_cost is not None else None
+
+    def set_payment(self, rfq_id: str, method: str, status: str, **extra) -> dict:
+        """Record how the order will be paid (cash on delivery, or a 50% advance), and tell the sellers on the order."""
+        rfq = self.rfqs[rfq_id]
+        pay = {**rfq.decision["payment"], "method": method, "status": status, **extra}
+        rfq.decision["payment"] = pay
+        if method == "cod":
+            rfq.decision["payment_note"] = "Cash on delivery. The full amount is paid to the seller when the goods arrive."
+        else:
+            rfq.decision["payment_note"] = (f"50% (₹{pay['advance']:,.0f}) paid now in Razorpay test mode, no real money moved; "
+                                            f"₹{pay['balance']:,.0f} due on delivery.")
+        if self.decisions.get(rfq_id) is not None:
+            self.decisions[rfq_id] = rfq.decision
+        self.log_event(rfq_id, "payment", method=method, status=status, advance=pay.get("advance"))
+        parts = (rfq.decision.get("split") or {}).get("parts") or [{"quote_id": rfq.decision["winner_id"]}]
+        for p in parts:
+            sid = self.supplier_for_alias(rfq_id, p["quote_id"])
+            for n in self.notifications.get(sid, []):
+                if n.rfq_id == rfq_id:
+                    n.reminder = ("The buyer paid 50% in advance (test mode). The rest is due on delivery." if method == "split_50"
+                                  else "The buyer will pay cash on delivery.")
+        return pay
+
     def update_rfq(self, rfq_id: str, qty=None, need_in_days=None, note=None, priority_mode=None) -> RFQ:
         """The owner edits an open request. Every change is logged and each matched seller is told to check their quote."""
         rfq = self.rfqs[rfq_id]
@@ -938,6 +976,12 @@ class RFQStore:
         rfq.decision = decision
         self.decisions[rfq_id] = decision
         self.log_event(rfq_id, "decision", winner=winner_id, split=[p["quote_id"] for p in split["parts"]] if split else None)
+        total = self.order_total(rfq_id)
+        decision["payment"] = {"method": None, "status": "choose", "total": total,
+                               "advance": round(total * 0.5, 2) if total else None, "balance": round(total - round(total * 0.5, 2), 2) if total else None}
+        decision["payment_note"] = "Choose how to pay: cash on delivery, or 50% now and 50% on delivery."
+        self._notice(rfq, "order_placed", f"Order placed with {winner_id if not split else ' and '.join(p['quote_id'] for p in split['parts'])}. "
+                     "Choose how to pay: cash on delivery, or 50% now and 50% on delivery.")
         return decision
 
     def split_options(self, rfq_id: str) -> Optional[dict]:

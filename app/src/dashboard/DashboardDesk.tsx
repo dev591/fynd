@@ -21,7 +21,7 @@ import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
 import {
   getRFQDetails, sendTarget, lockDecision,
   getChatMessages, postChatMessage,
-  getSupplierProfileForBuyer, getSummary, getAiOpinion, type AiOpinionDTO, getSplitOptions, lockSplitDecision, type SplitPlanDTO, getFinePrint, type FinePrintFlagDTO, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, draftQuotesFromMessage, type ImportResult, type QuoteDraftRow,
+  getSupplierProfileForBuyer, getPaymentConfig, getSummary, getAiOpinion, type AiOpinionDTO, getSplitOptions, lockSplitDecision, type SplitPlanDTO, getFinePrint, type FinePrintFlagDTO, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, draftQuotesFromMessage, type ImportResult, type QuoteDraftRow,
   type DeliveryDTO, type RFQDetailsDTO, type ChatMessageDTO, type SellerPanelDTO, type SellerIdentity, type PlanInfo, type SummaryDTO,
 } from "../api/client";
 
@@ -356,7 +356,10 @@ export function DashboardDesk() {
                   {summary?.split && (
                     <p>Split order: <span className="text-bone">{summary.split.parts.map(p => `${p.quote_id} ${p.qty} units (${inr(p.landed)})`).join(" + ")}</span></p>
                   )}
-                  <p>Payment: <span className="text-bone">{(rfq.decision.payment_note as string) ?? "Cash on delivery. Crossover never holds money."}</span></p>
+                  <p>Payment: <span className="text-bone">{(rfq.decision.payment_note as string) ?? "Choose how to pay."}</span></p>
+                  <Link to={`/app/pay/${rfq.id}`} className="inline-block rounded-full bg-signal px-3.5 py-1 text-[12px] font-semibold text-ink">
+                    {(rfq.decision.payment as { status?: string } | undefined)?.status === "choose" ? "Choose how to pay" : "Payment details"}
+                  </Link>
                   <p>Reason: <span className="text-bone">{rfq.decision.reason as string}</span></p>
                   <p>Approver: <span className="text-bone">{rfq.decision.approver as string}</span></p>
                 </div>
@@ -987,10 +990,10 @@ function PlanLine({ plan }: { plan: PlanInfo }) {
 
 function PlanChip({ plan }: { plan: PlanInfo }) {
   return (
-    <span className="num rounded-full border border-line bg-surface px-2.5 py-1 text-[12px] text-muted"
-      title="Reveals unlock a seller's name and contact">
-      {plan.plan === "pro" ? "Reveals: unlimited (Pro)" : `${plan.reveals_left} of ${plan.free_limit} free reveals left`}
-    </span>
+    <Link to="/app/pricing" className="num rounded-full border border-line bg-surface px-2.5 py-1 text-[12px] text-muted hover:border-signal/60 hover:text-bone"
+      title="Reveals unlock a seller's name and contact. See prices.">
+      {plan.plan === "pro" ? "Reveals: unlimited (Pro)" : `${plan.reveals_left} reveals left`}
+    </Link>
   );
 }
 
@@ -998,6 +1001,7 @@ function PlanChip({ plan }: { plan: PlanInfo }) {
 function PaywallModal({ plan, onClose, onUpgraded }: { plan?: PlanInfo; onClose: () => void; onUpgraded: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { data: payCfg } = useApiOnce(() => getPaymentConfig().catch(() => null), []);
   const upgrade = async () => {
     setBusy(true); setError(null);
     try { await mockUpgrade(); onUpgraded(); }
@@ -1019,17 +1023,28 @@ function PaywallModal({ plan, onClose, onUpgraded }: { plan?: PlanInfo; onClose:
           <div className="flex justify-between"><span className="text-bone">Monthly plan</span><span className="num text-muted">₹ 1,499 per month, unlimited</span></div>
           <p className="text-[11px] text-muted">Prices are assumptions for this demo, not results. Sellers pay nothing.</p>
         </div>
-        <p className="rounded-lg border border-warn/40 bg-warn/10 p-2.5 text-[12px] text-warn">
-          Mock screen: no payment is taken. The button below only switches this demo account to unlimited reveals.
-        </p>
-        {error && <p className="text-[12px] text-error">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-full border border-line px-4 py-1.5 text-[13px] text-muted hover:text-bone">Not now</button>
-          <button onClick={upgrade} disabled={busy}
-            className="rounded-full bg-signal px-5 py-1.5 text-[13px] font-semibold text-ink disabled:opacity-40">
-            {busy ? "Switching…" : "Switch to the mock paid plan"}
-          </button>
-        </div>
+        {payCfg?.enabled ? (
+          <>
+            {payCfg.mode === "test" && <p className="rounded-lg border border-live/40 bg-live/10 p-2.5 text-[12px] text-live">Razorpay test mode: no real money moves.</p>}
+            <div className="flex justify-end gap-2">
+              <button onClick={onClose} className="rounded-full border border-line px-4 py-1.5 text-[13px] text-muted hover:text-bone">Not now</button>
+              <Link to="/app/pricing" className="rounded-full bg-signal px-5 py-1.5 text-[13px] font-semibold text-ink">See prices and pay</Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="rounded-lg border border-warn/40 bg-warn/10 p-2.5 text-[12px] text-warn">
+              Payments are not switched on for this server. The button below only switches this demo account to unlimited reveals, with no payment.
+            </p>
+            {error && <p className="text-[12px] text-error">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <button onClick={onClose} className="rounded-full border border-line px-4 py-1.5 text-[13px] text-muted hover:text-bone">Not now</button>
+              <button onClick={upgrade} disabled={busy} className="rounded-full bg-signal px-5 py-1.5 text-[13px] font-semibold text-ink disabled:opacity-40">
+                {busy ? "Switching…" : "Switch to the demo plan"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

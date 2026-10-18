@@ -123,7 +123,8 @@ def buyer_badges(store, rfq) -> dict[str, dict]:
 
 
 def plan_info(store, buyer_id: str) -> dict[str, Any]:
-    return {"plan": store.plan_of(buyer_id), "free_limit": store.free_reveal_limit(), "reveals_left": store.reveals_left(buyer_id)}
+    return {"plan": store.plan_of(buyer_id), "free_limit": store.free_reveal_limit(), "reveals_left": store.reveals_left(buyer_id),
+            "pro_until": store.pro_until.get(buyer_id) if store.plan_of(buyer_id) == "pro" else None}
 
 
 def buyer_details(store, rfq, buyer_id: str) -> dict[str, Any]:
@@ -284,6 +285,9 @@ def render_event(store, rfq, e, audience: str, viewer_sid: str | None = None) ->
             return f"You placed a split order with {' and '.join(parts)}" if parts else f"You placed the order with {m.get('winner')}"
         if e.kind == "delivery":
             return "You recorded the delivery" + (" (on time)" if m.get("on_time") else " (late)")
+        if e.kind == "payment":
+            return ("You chose cash on delivery" if m.get("method") == "cod"
+                    else f"You paid a 50% advance of {_money(m.get('advance'))} (Razorpay test mode)")
         return None
     # seller: only their own thread, plus what the buyer did to the request as a whole
     if e.kind == "created":
@@ -304,6 +308,8 @@ def render_event(store, rfq, e, audience: str, viewer_sid: str | None = None) ->
         return f"The buyer asked you to match a better offer: {scrub(m.get('message') or '')}"
     if e.kind == "reveal":
         return "The buyer unlocked your contact"
+    if e.kind == "payment":
+        return "The buyer chose cash on delivery" if m.get("method") == "cod" else "The buyer paid a 50% advance (test mode); the rest is due on delivery"
     if e.kind == "delivery":
         return "The buyer recorded the delivery"
     return None
@@ -347,7 +353,7 @@ def buyer_orders(store, buyer_id: str) -> list[dict]:
             "rfq_id": rfq.id, "item": rfq.item, "qty": rfq.qty, "decided_at": rfq.decision.get("decided_at"),
             "total_landed": (rfq.decision["split"]["total_landed"] if rfq.decision.get("split") else (parts[0][2] if parts else None)),
             "approver": rfq.decision.get("approver"), "reason": rfq.decision.get("reason"), "split": bool(rfq.decision.get("split")),
-            "status": _delivery_status(rfq.decision),
+            "status": _delivery_status(rfq.decision), "payment": rfq.decision.get("payment"), "payment_note": rfq.decision.get("payment_note"),
             "receivers": [{"alias": a, "units": u, "total": t, **{k: (revealed.get(a) or {}).get(k) for k in
                            ("business_name", "contact_name", "phone", "email", "city", "state")}} for a, u, t in parts],
         })
@@ -364,5 +370,6 @@ def seller_orders(store, supplier_id: str) -> list[dict]:
                 continue
             out.append({"rfq_id": rfq.id, "item": rfq.item, "qty": units, "total": total, "decided_at": rfq.decision.get("decided_at"),
                         "status": _delivery_status(rfq.decision), "buyer": buyer_contact(store, rfq),
-                        "payment": rfq.decision.get("payment_note"), "split": bool(rfq.decision.get("split"))})
+                        "payment": rfq.decision.get("payment_note"), "payment_status": (rfq.decision.get("payment") or {}).get("status"),
+                        "split": bool(rfq.decision.get("split"))})
     return sorted(out, key=lambda o: o["decided_at"] or "", reverse=True)

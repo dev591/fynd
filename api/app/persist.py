@@ -54,6 +54,9 @@ FIELDS: Dict[str, Any] = {
     "shares": Dict[str, str],
     "ai_log": List[dict],
     "events": Dict[str, List[Event]],
+    "payments": Dict[str, dict],
+    "credits": Dict[str, int],
+    "pro_until": Dict[str, str],
 }
 _ADAPTERS = {name: TypeAdapter(tp) for name, tp in FIELDS.items()}
 _lock = threading.Lock()

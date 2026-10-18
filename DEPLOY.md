@@ -54,6 +54,15 @@ real two-laptop demo), `FREE_REVEALS`, `DELHIVERY_TOKEN`. See `api/.env.example`
 4. To start over: on your laptop, with `PERSIST_BACKEND=supabase` and the service key in `api/.env`, run
    `python3 -m app.reset`. That empties the table; the next start seeds fresh demo data.
 
+## Payments (Razorpay test mode)
+1. In Render, set `RAZORPAY_KEY_ID` (starts `rzp_test_`) and `RAZORPAY_KEY_SECRET`; use the same test keys as the team's Razorpay
+   project. They go in Render only. The secret never reaches the browser, and a `rzp_live_` key is refused unless
+   `RAZORPAY_ALLOW_LIVE=true`.
+2. Redeploy. `/api/payments/config` should now say `"mode": "test"`.
+3. Test with card `4111 1111 1111 1111`, any future expiry and CVV, or UPI `success@razorpay`. No real money moves.
+4. What is paid for: reveal packs (₹499 for 10) and Pro (₹1,499 for 30 days) on `/app/pricing`, and an optional 50% advance on an
+   order at `/app/pay/<request id>`. Cash on delivery needs no Razorpay.
+
 ## Things to know
 - **Without the Supabase step, data lives in SQLite at `/data/app.db`,** and a free tier wipes it on every restart.
 - **Demo seller logins** (`DEMO_LOGINS=on`) hand a shared password to anyone who opens `/signin`. Turn it on only for the
