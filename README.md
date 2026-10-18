@@ -67,6 +67,8 @@ pasted messages read correctly.
 
 ## Run it
 
+Exact install, configure, build, test and deploy commands in one place: [`HANDOFF.md`](HANDOFF.md).
+
 Needs Python 3.13 and Node 20+.
 
 ```bash
@@ -119,7 +121,7 @@ notifications on both laptops). See `DEPLOY.md` and `render.yaml`.
 ## Test it
 
 ```bash
-cd api && python3 -m pytest -q          # 600 tests
+cd api && python3 -m pytest -q          # 601 tests
 cd app && npx tsc -b && npm run lint && npm run build
 cd api && python3 -m tests.golden.run_live   # real-model check of the 15 buyer sentences (needs keys)
 ```
@@ -143,7 +145,7 @@ worked example, import errors, windows with a fake clock, persistence across a r
 ```
 api/app/     engine.py (rules; landed cost + gates untouched), tax.py, views.py (what each audience may see),
              rfq_store.py, persist.py, auth.py, intake.py, quote_text.py, assistant.py, summary.py, importer.py
-api/tests/   320 tests + golden sets (15 buyer sentences, 8 seller cases)
+api/tests/   601 tests + golden sets (15 buyer sentences, 8 seller cases)
 api/supabase/state.sql    the table production saves to. schema.sql is an early, unused draft
 app/src/     landing story, wizard, buyer desk, seller desk, shared components
 AUDIT.md     what exists against the v2 brief, and the decisions made
@@ -167,5 +169,5 @@ AUDIT.md     what exists against the v2 brief, and the decisions made
 - Seller reliability is not scored.
 - One uvicorn process. SQLite and in-memory state are fine for a demo, not for scale.
 - Chat scrubs phone numbers and emails in common formats; it cannot catch a number spelled out in words.
-- Not built: a live talking voice agent (voice input and silent notifications exist), screenshot reading, a help desk, any real payment, a live Delhivery connection, split orders between two sellers, and joint optimisation of a multi-item basket (each item is compared on its own).
+- Not built: a live talking voice agent (voice input and silent notifications exist), screenshot reading, a help desk, any real payment, a live Delhivery connection, and joint optimisation of a multi-item basket (each item is compared on its own).
 - Written with Claude Code (see `app/DISCLOSURE.md`); the team reviews and can explain each part.
