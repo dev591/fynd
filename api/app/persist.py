@@ -68,6 +68,35 @@ _offline = False                # Supabase was unreachable at start: never save,
 _status: Dict[str, Any] = {"last_error": None, "last_ok": None, "saves": 0}
 
 
+_RETRY_EVERY_S = 30             # while offline, look at Supabase again at most this often
+_last_retry = 0.0
+
+
+def retry_if_offline(store) -> bool:
+    """Called on API traffic. A server that started before the table existed (or while Supabase was down) is offline and not
+    saving. If Supabase is now reachable and holds NO saved state, start saving what this process has. If it holds earlier
+    data, stay offline and say so: a restart loads it, and nothing is ever overwritten. Returns True when saving resumed."""
+    global _offline, _last_retry
+    if not _offline or backend() != "supabase":
+        return False
+    now = time.time()
+    if now - _last_retry < _RETRY_EVERY_S:
+        return False
+    _last_retry = now
+    try:
+        rows = _sb_read()
+    except Unreachable as e:
+        _status["last_error"] = str(e) if str(e).startswith("HTTP") else _status.get("last_error")
+        return False
+    if rows:
+        _status["last_error"] = "Supabase already holds saved data from an earlier run. Restart the server to load it; nothing was overwritten."
+        return False
+    _offline = False
+    _last.clear()
+    save(store)
+    return True
+
+
 def status() -> Dict[str, Any]:
     """What the saving layer last did, for /health. A reason in words, never any key."""
     return dict(_status)

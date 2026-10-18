@@ -49,7 +49,9 @@ real two-laptop demo), `FREE_REVEALS`, `DELHIVERY_TOKEN`. See `api/.env.example`
    on and no policies, so only the server can touch it.
 2. In Render, set `SUPABASE_SERVICE_ROLE_KEY` (Supabase -> Project Settings -> API -> service_role) and
    `PERSIST_BACKEND=supabase` (the blueprint already sets this). Never put the service_role key in the app or a browser.
-3. Redeploy. The log shows nothing special on success. If Supabase cannot be reached at start, the API says so in the log
+3. Redeploy. Check `/health`: `persistence.backend` should say `supabase` and `saves` should rise as you use the app. If you create the table
+   after the server started, it notices within about 30 seconds and starts saving (it never overwrites earlier saved data; in that case restart).
+   The log shows nothing special on success. If Supabase cannot be reached at start, the API says so in the log
    and runs WITHOUT saving, so it never overwrites saved data with the seed; fix it and restart.
 4. To start over: on your laptop, with `PERSIST_BACKEND=supabase` and the service key in `api/.env`, run
    `python3 -m app.reset`. That empties the table; the next start seeds fresh demo data.

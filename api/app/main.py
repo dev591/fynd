@@ -169,6 +169,7 @@ async def save_state_after_api_calls(request: Request, call_next):
     response = await call_next(request)
     if persist.enabled() and request.url.path.startswith("/api"):
         try:
+            await run_in_threadpool(persist.retry_if_offline, store)
             await run_in_threadpool(persist.save, store)
         except Exception:
             pass          # a failed save must never fail the request; the next call retries

@@ -162,3 +162,44 @@ def test_an_unreachable_start_records_the_reason(sb):
     from app.rfq_store import RFQStore
     assert persist.init(RFQStore()) == "offline"
     assert persist.status()["last_error"]
+
+
+def test_a_server_that_started_before_the_table_existed_starts_saving_once_it_does(sb, monkeypatch):
+    from app.rfq_store import RFQStore
+    persist._RETRY_EVERY_S = 0
+    sb.down = True                                              # the table was missing / unreachable at start
+    s = RFQStore()
+    assert persist.init(s) == "offline"
+    s.plans["someone"] = "pro"                                  # work done while offline
+    assert persist.save(s) == 0 and sb.rows == {}
+    sb.down = False                                             # the table now exists and is empty
+    assert persist.retry_if_offline(s) is True
+    assert "plans" in sb.rows and persist.save(s) == 0          # everything was written, nothing left over
+    s.plans["later"] = "pro"
+    assert persist.save(s) == 1
+
+
+def test_it_does_not_overwrite_saved_data_from_an_earlier_run_when_it_comes_back(sb):
+    from app.rfq_store import RFQStore
+    persist._RETRY_EVERY_S = 0
+    old, _ = _busy_store()
+    persist.save(old)
+    saved = dict(sb.rows)
+    persist._offline = True
+    fresh = RFQStore()
+    assert persist.retry_if_offline(fresh) is False             # the table holds earlier data: leave it alone
+    assert persist.save(fresh) == 0 and sb.rows == saved
+    assert "restart" in persist.status()["last_error"].lower()
+
+
+def test_retries_are_rate_limited(sb):
+    from app.rfq_store import RFQStore
+    persist._RETRY_EVERY_S = 3600
+    persist._offline = True
+    persist._last_retry = 0.0
+    sb.down = True
+    persist.retry_if_offline(RFQStore())
+    n = len(sb.calls)
+    persist.retry_if_offline(RFQStore())
+    assert len(sb.calls) == n
+    persist._RETRY_EVERY_S = 30
