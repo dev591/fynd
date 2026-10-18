@@ -216,3 +216,89 @@ def run(store, rfq, question: str) -> Dict[str, Any]:
     rows = [{"quote_id": x.quote_id, "landed": x.landed, "lead_days": x.lead_days, "status": x.status, "reason": x.reason} for x in res.rows]
     return {"understood": True, "scenario": sc.dump(), "baseline": b, "result": {**(r or {"winner": None, "landed": None, "lead_days": None}), "rows": rows},
             "changed": changed, "sentence": sentence}
+
+
+# ─── The desk speaks first ─────────────────────────────────────────────────────────────────────────────────────
+# Suggestions are worked out by scanning what-ifs through the engine. Every headline is built here from engine numbers,
+# and a suggestion that can be tried carries the exact question to ask, so a click shows the same answer as typing it.
+
+_QTY_STEPS = (1.25, 1.5, 2, 3, 5)
+_DAY_STEPS = (1, 2, 3, 5, 7, 10, 14)
+
+
+def _per_unit(w, qty: int) -> float:
+    return w.landed / max(qty, 1)
+
+
+def suggestions(store, rfq) -> List[Dict[str, Any]]:
+    quotes: List[Quote] = store.get_latest_quotes_as_engine_input(rfq.id)
+    if rfq.status != "Open" or len(quotes) < 2:
+        return []
+    exc = store.exceptions_by_alias(rfq.id)
+    need = Need(item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days)
+    base = evaluate(quotes, need, exc, rfq.priority_mode)
+    win = base.winner
+    if win is None or win.landed is None:
+        return []
+    out: List[Dict[str, Any]] = []
+
+    # 1. Wait a few more days: the smallest extra time after which a cheaper seller qualifies.
+    for d in _DAY_STEPS:
+        if rfq.need_in_days + d > 365:
+            break
+        r = evaluate(quotes, Need(item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days + d), exc, rfq.priority_mode).winner
+        if r and r.landed is not None and r.quote_id != win.quote_id and r.landed < win.landed:
+            saving = round(win.landed - r.landed)
+            out.append({"kind": "deadline", "saving": saving, "question": f"What if I need it in {rfq.need_in_days + d} days?",
+                        "headline": f"If you can wait {d} more day{'' if d == 1 else 's'}, {r.quote_id} qualifies and saves you {_inr(saving)}."})
+            break
+
+    # 2. Order more: the smallest larger quantity where a different seller wins at a lower cost per unit.
+    seen = set()
+    for step in _QTY_STEPS:
+        q2 = int(round(rfq.qty * step, -1)) or int(rfq.qty * step)
+        if q2 <= rfq.qty or q2 in seen or q2 > MAX_QTY:
+            continue
+        seen.add(q2)
+        res2 = evaluate(quotes, Need(item=rfq.item, qty=q2, need_in_days=rfq.need_in_days), exc, rfq.priority_mode)
+        r = res2.winner
+        old = next((x for x in res2.rows if x.quote_id == win.quote_id), None)
+        # strictly cheaper than today's winner at that quantity, so a tie never counts as a reason to order more
+        if r and r.landed is not None and r.quote_id != win.quote_id and _per_unit(r, q2) < _per_unit(win, rfq.qty) \
+                and (old is None or old.landed is None or r.landed < old.landed):
+            now, then = _per_unit(r, q2), _per_unit(win, rfq.qty)
+            out.append({"kind": "quantity", "saving": round((then - now) * q2), "question": f"What if I need {q2}?",
+                        "headline": f"Order {q2} instead of {rfq.qty}: {r.quote_id} becomes best at ₹{now:,.2f} a unit instead of ₹{then:,.2f}."})
+            break
+
+    # 3. A split between two sellers that beats the best single seller.
+    plan = store.split_options(rfq.id)
+    if plan and plan.get("saving"):
+        a, b = plan["parts"][0]["quote_id"], plan["parts"][1]["quote_id"]
+        out.append({"kind": "split", "saving": round(plan["saving"]), "question": None,
+                    "headline": f"Split the order between {a} and {b} and save {_inr(plan['saving'])}."})
+    elif plan and plan.get("reason") == "no_single_supplier_can_fill":
+        out.append({"kind": "split", "saving": None, "question": None,
+                    "headline": f"No single seller can cover {rfq.qty} units. A split between two sellers can."})
+
+    # 4. The seller closest behind the winner, and what they would have to concede.
+    behind = [r for r in base.pool if r.quote_id != win.quote_id and r.landed is not None]
+    if behind:
+        from .engine import negotiation
+        near = min(behind, key=lambda r: r.landed)
+        neg = negotiation(near, win)
+        if neg and neg.get("cut") is not None and neg["cut"] <= max(1, win.landed * 0.05):
+            how = f"cutting freight to {_inr(near.freight - neg['freight'])}" if neg.get("freight") is not None else f"{_inr(neg['per_unit'])} off per unit"
+            out.append({"kind": "negotiate", "saving": None, "question": None,
+                        "headline": f"{near.quote_id} is only {_inr(neg['cut'])} behind. Asking them for {how} would make them best."})
+
+    # 5. What speed costs.
+    fast = base.winners.get("fastest")
+    if fast and fast.landed is not None and fast.quote_id != win.quote_id and fast.lead_days < win.lead_days:
+        days, extra = win.lead_days - fast.lead_days, round(fast.landed - win.landed)
+        cost = f"{_inr(extra)} more" if extra > 0 else f"{_inr(-extra)} less"
+        out.append({"kind": "priority", "saving": None, "question": "What if I want the fastest?",
+                    "headline": f"{fast.quote_id} arrives {days} day{'' if days == 1 else 's'} sooner for {cost}."})
+
+    order = {"deadline": 0, "quantity": 1, "split": 2, "negotiate": 3, "priority": 4}
+    return sorted(out, key=lambda s: order[s["kind"]])[:4]

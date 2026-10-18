@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowRight, MessageCircleQuestion, Sparkles } from "lucide-react";
-import { askTheDesk, type AskDeskDTO } from "../api/client";
+import { ArrowRight, Lightbulb, MessageCircleQuestion, Sparkles } from "lucide-react";
+import { askTheDesk, getDeskSuggestions, type AskDeskDTO, type DeskSuggestionDTO } from "../api/client";
+import { useApiOnce } from "../lib/useApi";
 import { inr, type Mode } from "../landing/engine";
 import { arriveOn } from "./QuoteBoard";
 
 const EXAMPLES = ["What if I need 300?", "What if Seller 2 is out?", "What if I need it in 3 days?", "What if I want the fastest?"];
 
 /** Type a what-if. The engine recomputes and shows the answer beside today's. Nothing is saved or changed. */
-export function AskDesk({ rfqId, onApply }: { rfqId: string; onApply: (qty: number | null, mode: Mode | null) => void }) {
+export function AskDesk({ rfqId, quoteSig, onApply }: { rfqId: string; quoteSig: string; onApply: (qty: number | null, mode: Mode | null) => void }) {
+  const { data: tips } = useApiOnce<DeskSuggestionDTO[]>(() => getDeskSuggestions(rfqId).catch(() => []), [rfqId, quoteSig]);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [out, setOut] = useState<AskDeskDTO | null>(null);
@@ -39,8 +41,28 @@ export function AskDesk({ rfqId, onApply }: { rfqId: string; onApply: (qty: numb
         <button type="submit" disabled={!q.trim() || busy} aria-label="Ask"
           className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-signal text-ink disabled:opacity-40"><ArrowRight size={17} /></button>
       </form>
+      {tips && tips.length > 0 && (
+        <div className="mt-3 space-y-1.5" aria-label="Suggestions from the desk">
+          <p className="label flex items-center gap-1.5 text-signal"><Lightbulb size={13} />The desk suggests</p>
+          <AnimatePresence initial={false}>
+            {tips.map((t, i) => (
+              <motion.div key={t.headline} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
+                {t.question ? (
+                  <button type="button" onClick={() => ask(t.question!)}
+                    className="flex w-full items-start justify-between gap-3 rounded-xl border border-line bg-raised/50 px-3 py-2 text-left text-[13px] text-bone transition-colors hover:border-signal/60">
+                    <span>{t.headline}</span>
+                    <span className="flex shrink-0 items-center gap-1 text-[12px] font-medium text-signal">Try it <ArrowRight size={12} /></span>
+                  </button>
+                ) : (
+                  <p className="rounded-xl border border-dashed border-line px-3 py-2 text-[13px] text-bone">{t.headline}</p>
+                )}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {EXAMPLES.map(x => (
+        {(tips?.length ? EXAMPLES.slice(1, 2) : EXAMPLES).map(x => (
           <button key={x} type="button" onClick={() => ask(x)} className="rounded-full border border-line px-2.5 py-1 text-[12px] text-muted hover:border-signal/60 hover:text-bone">{x}</button>
         ))}
       </div>

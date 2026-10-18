@@ -486,7 +486,7 @@ export function DashboardDesk() {
         </div>
 
         {!isDecided && engineQuotes.length > 0 && (
-          <AskDesk rfqId={rfq.id} onApply={(q, m) => { if (q) setQty(q); if (m) setMode(m); }} />
+          <AskDesk rfqId={rfq.id} quoteSig={`${quoteSig}|${exceptionSig}`} onApply={(q, m) => { if (q) setQty(q); if (m) setMode(m); }} />
         )}
 
         {/* Every quote side by side, best first */}

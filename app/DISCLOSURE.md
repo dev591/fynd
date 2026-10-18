@@ -110,3 +110,8 @@ Written with Claude Code (Anthropic), reviewed by the team. No backend or engine
   nothing is a model asked, and each value it returns is kept only if it appears in the buyer's own words. The engine then
   recomputes and code writes the answer from engine numbers, so the model never states a price, date or winner. Nothing is
   saved and the stored request is never changed. Checked live against the real model on seven phrasings.
+- **The desk suggests** (`suggestions()` in `api/app/ask_desk.py`): when quotes arrive, the server scans what-ifs through the rules
+  engine (more days, larger quantity, a split, the nearest seller behind the winner, the cost of speed) and lists up to four. Every
+  headline is written in code from engine numbers; no model is involved, and a suggestion that can be tried carries the exact
+  question to ask. An "order more" idea must be strictly cheaper than today's winner at that quantity, never a tie. Also fixed:
+  the website catch-all route now sits last in `main.py`, so no API route added after it is hidden on a deployed server.

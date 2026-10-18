@@ -545,6 +545,19 @@ export async function askTheDesk(rfqId: string, question: string): Promise<AskDe
   return apiFetch(`/api/rfqs/${rfqId}/ask`, { method: "POST", body: JSON.stringify({ question }) });
 }
 
+export interface DeskSuggestionDTO {
+  kind: "deadline" | "quantity" | "split" | "negotiate" | "priority";
+  headline: string;
+  /** The what-if to run when the buyer clicks it. Null for ideas handled elsewhere on the page. */
+  question: string | null;
+  saving: number | null;
+}
+
+/** What the buyer could do for a better outcome, worked out by the engine. */
+export async function getDeskSuggestions(rfqId: string): Promise<DeskSuggestionDTO[]> {
+  return (await apiFetch<{ suggestions: DeskSuggestionDTO[] }>(`/api/rfqs/${rfqId}/suggestions`)).suggestions;
+}
+
 export interface AiOpinionDTO {
   pick: string;
   agrees: boolean;

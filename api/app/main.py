@@ -986,6 +986,25 @@ def demo_logins():
     return {"enabled": True, "password": os.environ["DEMO_SELLER_PASSWORD"], "sellers": demo_roster.public_listing()}
 
 
+
+
+class AskIn(BaseModel):
+    question: str
+
+
+@app.post("/api/rfqs/{rfq_id}/ask")
+def ask_the_desk(rfq_id: str, payload: AskIn, user: AuthUser = Depends(buyer_only)):
+    """A what-if question about this request's quotes. The engine recomputes; nothing is saved or changed."""
+    rfq = _rfq_for(user, rfq_id)
+    return ask_desk.run(store, rfq, payload.question[:300])
+
+
+@app.get("/api/rfqs/{rfq_id}/suggestions")
+def desk_suggestions(rfq_id: str, user: AuthUser = Depends(buyer_only)):
+    """What the buyer could do for a better outcome, worked out by the engine. Nothing is changed."""
+    return {"suggestions": ask_desk.suggestions(store, _rfq_for(user, rfq_id))}
+
+
 # ─── Serve the built website from the same address (one public URL, https from the host, no CORS) ───
 from pathlib import Path
 from fastapi.responses import FileResponse
@@ -1004,14 +1023,3 @@ if (_DIST / "index.html").is_file():
         if path and target.is_file() and _DIST.resolve() in target.parents:
             return FileResponse(target)
         return FileResponse(_DIST / "index.html")        # the app's own routes (/app, /supplier, /share/...)
-
-
-class AskIn(BaseModel):
-    question: str
-
-
-@app.post("/api/rfqs/{rfq_id}/ask")
-def ask_the_desk(rfq_id: str, payload: AskIn, user: AuthUser = Depends(buyer_only)):
-    """A what-if question about this request's quotes. The engine recomputes; nothing is saved or changed."""
-    rfq = _rfq_for(user, rfq_id)
-    return ask_desk.run(store, rfq, payload.question[:300])
