@@ -95,6 +95,7 @@ export function SupplierQuotePage() {
         moq: latestQuote?.moq ?? 1,
         maxQty: latestQuote?.max_qty,
         notes: `Revised to match buyer counter-offer: ${target.message}`,
+        priceBreaks: latestQuote?.price_breaks,
       };
     }
     if (latestQuote) {
@@ -105,6 +106,7 @@ export function SupplierQuotePage() {
         leadDays: latestQuote.lead_days,
         moq: latestQuote.moq,
         maxQty: latestQuote.max_qty,
+        priceBreaks: latestQuote.price_breaks,
         notes: latestQuote.notes,
       };
     }
@@ -118,6 +120,7 @@ export function SupplierQuotePage() {
         maxQty: draft.max_qty ?? undefined,
         taxRate: draft.tax_rate ?? undefined,
         priceIncludesTax: draft.price_includes_tax ?? undefined,
+        priceBreaks: draft.price_breaks,
         notes: assist?.message.text,
       };
     }
@@ -127,7 +130,7 @@ export function SupplierQuotePage() {
   const handleQuoteSubmit = async (data: {
     packPrice: number; packSize: number; freight: number; leadDays: number;
     moq?: number; maxQty?: number; taxRate?: number; priceIncludesTax?: boolean; notes?: string;
-    shipping?: "own" | "delhivery"; shippingBasis?: "delhivery" | "rate_card";
+    shipping?: "own" | "delhivery"; shippingBasis?: "delhivery" | "rate_card"; priceBreaks?: { min_qty: number; pack_price: number }[];
   }) => {
     setSubmitting(true);
     setSubmitError(null);
@@ -145,6 +148,7 @@ export function SupplierQuotePage() {
         price_includes_tax: data.priceIncludesTax,
         shipping: data.shipping,
         shipping_basis: data.shippingBasis,
+        price_breaks: data.priceBreaks,
       });
       setIsRevising(false);
       refetchMine();

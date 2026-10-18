@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { order } from "../../landing/engine";
 import { Money } from "./Money";
-import type { ShippingEstimate, SupplierProductDTO } from "../../api/client";
+import type { PriceBreakDTO, ShippingEstimate, SupplierProductDTO } from "../../api/client";
 
 interface QuoteFormProps {
   rfq: { item: string; qty: number; needInDays: number };
@@ -22,6 +22,7 @@ interface QuoteFormProps {
     packSize?: number;
     freight?: number;
     leadDays?: number;
+    priceBreaks?: PriceBreakDTO[];
     moq?: number;
     maxQty?: number;
     taxRate?: number;
@@ -40,6 +41,7 @@ interface QuoteFormProps {
     notes?: string;
     shipping?: "own" | "delhivery";
     shippingBasis?: "delhivery" | "rate_card";
+    priceBreaks?: PriceBreakDTO[];
   }) => void;
   /** Freight and delivery days from the pincodes saved at sign-up. Rejects when none can be worked out. */
   onEstimate?: (weightKg: number) => Promise<ShippingEstimate>;
@@ -78,6 +80,10 @@ export function QuoteForm({
     initialValues?.priceIncludesTax === undefined ? "unstated" : initialValues.priceIncludesTax ? "incl" : "excl");
   const [taxRate, setTaxRate] = useState<number | "">(initialValues?.taxRate ?? 18);
   const [notes, setNotes] = useState(initialValues?.notes ?? "");
+
+  // Volume pricing from the catalog travels with the quote. Typing a different price overrides it, so it is dropped.
+  const [tiers, setTiers] = useState<PriceBreakDTO[]>(initialValues?.priceBreaks ?? []);
+  const [tiersDropped, setTiersDropped] = useState(false);
 
   // Shipping: own shipment, or Delhivery. The estimate only reaches the quote when the seller presses "Use this".
   const [shipping, setShipping] = useState<"own" | "delhivery">("own");
@@ -140,6 +146,7 @@ export function QuoteForm({
         freight: numFreight,
         leadDays: typeof leadDays === "number" ? leadDays : 3,
         moq: numMoq,
+        priceBreaks: tiers.map(t => ({ minQty: t.min_qty, packPrice: t.pack_price })),
         raw: "",
         channel: "Portal",
       },
@@ -147,7 +154,7 @@ export function QuoteForm({
     );
 
     return res;
-  }, [packPrice, packSize, freight, moq, leadDays, rfq.item, rfq.qty]);
+  }, [packPrice, packSize, freight, moq, leadDays, rfq.item, rfq.qty, tiers]);
 
   const isValid =
     typeof packPrice === "number" &&
@@ -173,6 +180,7 @@ export function QuoteForm({
       taxRate: basis !== "unstated" && typeof taxRate === "number" ? taxRate : undefined,
       priceIncludesTax: basis === "unstated" || typeof taxRate !== "number" ? undefined : basis === "incl",
       notes: notes.trim() || undefined,
+      priceBreaks: tiers.length ? tiers : undefined,
       shipping,
       shippingBasis: shipping === "delhivery" && applied ? applied.basis : undefined,
     });
@@ -235,12 +243,18 @@ export function QuoteForm({
               step="any"
               required
               value={packPrice}
-              onChange={(e) => setPackPrice(e.target.value === "" ? "" : Number(e.target.value))}
+              onChange={(e) => { if (tiers.length) { setTiers([]); setTiersDropped(true); } setPackPrice(e.target.value === "" ? "" : Number(e.target.value)); }}
               placeholder="10"
               className="num w-full rounded-lg border border-line bg-surface pl-7 pr-3 py-2 text-[14px] text-bone placeholder:text-muted/40 focus:border-signal focus:outline-none"
             />
           </div>
           <span className="text-[11px] text-muted mt-1 block">Per package / piece</span>
+          {tiers.length > 1 && (
+            <span className="text-[11px] text-muted mt-1 block">
+              Volume pricing from your catalog: {tiers.map(t => `${t.min_qty}+ ₹${t.pack_price}`).join(" · ")}. Changing the price removes it.
+            </span>
+          )}
+          {tiersDropped && <span className="text-[11px] text-warn mt-1 block">Volume pricing removed because you changed the price.</span>}
         </div>
 
         {/* Units per pack */}

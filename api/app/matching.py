@@ -2,7 +2,7 @@
 import re
 from typing import Iterable, List
 
-from .models import DraftQuote, RFQ, SupplierProduct, Verdict
+from .models import DraftQuote, PriceBreak, RFQ, SupplierProduct, Verdict
 
 
 def normalise_item(name: str) -> str:
@@ -53,11 +53,12 @@ def draft_quote(rfq: RFQ, product: SupplierProduct) -> DraftQuote:
     for b in sorted(product.price_breaks, key=lambda b: b.min_qty):
         if rfq.qty >= b.min_qty:
             price, applied = b.pack_price, b.min_qty
+    tiers = [PriceBreak(min_qty=1, pack_price=product.pack_price), *sorted(product.price_breaks, key=lambda b: b.min_qty)] if product.price_breaks else []
     return DraftQuote(
         product_id=product.id, product_name=product.name,
         pack_price=price, pack_size=product.pack_size, freight=product.freight,
         lead_days=product.usual_lead_days, moq=product.moq,
         max_qty=product.stock if product.stock is not None else product.capacity_cap,
-        price_break_applied=applied, tax_rate=product.tax_rate, price_includes_tax=product.price_includes_tax,
+        price_break_applied=applied, price_breaks=tiers, tax_rate=product.tax_rate, price_includes_tax=product.price_includes_tax,
         verdict=verdict_for(rfq, product),
     )

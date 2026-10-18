@@ -75,3 +75,7 @@ Written with Claude Code (Anthropic) and Kiro, reviewed by the team.
   ElevenLabs path; the quote is a draft the seller checks and sends. Voice output (speech synthesis) was deliberately left out.
 - **Deployment:** the API serves the built website from one address (`Dockerfile`, `render.yaml`, `DEPLOY.md`). The Dockerfile
   was written but not built here (no Docker on the dev machine); the same layout was checked by serving the built site with uvicorn.
+- **Volume price tiers in the comparison.** `order()` now looks up the pack price for the units ordered from the quote's tiers
+  and falls back to the quote's own price, so a quote without tiers (including the three scored case checks) computes exactly as
+  before. Tiers are normalised to the buyer's GST basis like the main price and mirrored in the browser copy of the engine
+  (`src/landing/engine.ts`); a browser check confirms both agree at every tier boundary.

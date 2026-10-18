@@ -44,14 +44,24 @@ def give_up(winners: Dict[str, Optional[EvaluatedRow]]) -> Dict[str, dict]:
     return out
 
 
+def tier_price(q: Quote, units: int) -> float:
+    """Pack price for this many units: the highest volume tier reached, else the quote's own price. No tiers, no change."""
+    price = q.pack_price
+    for b in sorted(q.price_breaks, key=lambda b: b.min_qty):
+        if units >= b.min_qty:
+            price = b.pack_price
+    return price
+
+
 def order(q: Quote, qty: int) -> Optional[OrderCalc]:
     if not q.pack_size or q.pack_size <= 0:
         return None
     packs = math.ceil(max(qty, q.moq or 0) / q.pack_size)
     units = packs * q.pack_size
     overbuy = units - qty
-    landed = packs * q.pack_price + q.freight
-    return OrderCalc(packs=packs, units=units, overbuy=overbuy, landed=landed)
+    price = tier_price(q, units)
+    landed = packs * price + q.freight
+    return OrderCalc(packs=packs, units=units, overbuy=overbuy, landed=landed, pack_price=price)
 
 
 def is_valid_exception(e: Optional[ExceptionRecord]) -> bool:
@@ -154,7 +164,7 @@ def evaluate(
                 overbuy=o.overbuy,
                 landed=o.landed,
                 lead_days=q.lead_days,
-                pack_price=q.pack_price,
+                pack_price=o.pack_price if o.pack_price is not None else q.pack_price,
                 pack_size=q.pack_size,
                 freight=q.freight,
                 fill_qty=q.max_qty if short else None,

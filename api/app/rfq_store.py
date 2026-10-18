@@ -24,6 +24,8 @@ from .models import (
     ExceptionRecord,
     Activity,
     AutopilotSettings,
+    PriceBreak,
+    check_tiers,
 )
 from .engine import order
 from .intake import item_key
@@ -120,7 +122,7 @@ class RFQStore:
                 self.submit_quote(token=token, supplier_name=self._supplier_name(sid), pack_price=d.pack_price,
                                   pack_size=d.pack_size, freight=d.freight, lead_days=d.lead_days, moq=d.moq,
                                   max_qty=d.max_qty, notes="Sample quote (synthetic demo data).",
-                                  tax_rate=d.tax_rate, price_includes_tax=d.price_includes_tax)
+                                  tax_rate=d.tax_rate, price_includes_tax=d.price_includes_tax, price_breaks=d.price_breaks)
         return rfq
 
     def _seed_supplier_profiles(self):
@@ -598,7 +600,7 @@ class RFQStore:
             token=token, supplier_name=self._supplier_name(supplier_id), pack_price=draft.pack_price,
             pack_size=draft.pack_size, freight=draft.freight, lead_days=draft.lead_days, moq=draft.moq,
             max_qty=draft.max_qty, notes=template_message(rfq, draft), origin="auto",
-            tax_rate=draft.tax_rate, price_includes_tax=draft.price_includes_tax,
+            tax_rate=draft.tax_rate, price_includes_tax=draft.price_includes_tax, price_breaks=draft.price_breaks,
         )
         qv.origin = "auto"
         return qv
@@ -750,6 +752,7 @@ class RFQStore:
         price_includes_tax: Optional[bool] = None,
         shipping: Optional[str] = None,
         shipping_basis: Optional[str] = None,
+        price_breaks: Optional[list[PriceBreak]] = None,
     ) -> QuoteVersion:
         rfq_id = self.token_to_rfq_id.get(token)
         if not rfq_id or rfq_id not in self.rfqs:
@@ -771,10 +774,13 @@ class RFQStore:
 
         next_ver = len(supplier_history) + 1
         compare_price, tax_basis = normalise_price(pack_price, tax_rate, price_includes_tax, rfq.gst_claimable)
+        stated_breaks = check_tiers(list(price_breaks or []))
+        compare_breaks = [PriceBreak(min_qty=b.min_qty, pack_price=normalise_price(b.pack_price, tax_rate, price_includes_tax, rfq.gst_claimable)[0])
+                          for b in stated_breaks]
         q_obj = Quote(
             id=supplier_id, supplier=supplier_name, item=rfq.item,
             pack_price=compare_price, pack_size=pack_size, freight=freight,
-            lead_days=lead_days, moq=moq, max_qty=max_qty,
+            lead_days=lead_days, moq=moq, max_qty=max_qty, price_breaks=compare_breaks,
         )
         calc = order(q_obj, min(rfq.qty, max_qty) if max_qty else rfq.qty)
         landed = calc.landed if calc else compare_price * pack_size + freight
@@ -788,6 +794,7 @@ class RFQStore:
             tax_rate=tax_rate, price_includes_tax=price_includes_tax, compare_price=compare_price, tax_basis=tax_basis,
             landed_cost=landed, units=units, packs=packs,
             shipping=shipping, shipping_basis=shipping_basis if shipping == "delhivery" else None,
+            price_breaks=stated_breaks, compare_breaks=compare_breaks,
             submitted_at=datetime.now().strftime("%I:%M %p"),
         )
         issued = self.assists.get(token)
@@ -897,7 +904,8 @@ class RFQStore:
                 pack_price=latest.compare_price if latest.compare_price is not None else latest.pack_price,
                 pack_size=latest.pack_size,
                 freight=latest.freight, lead_days=latest.lead_days,
-                moq=latest.moq, max_qty=latest.max_qty, raw=f"v{latest.version}: ₹{latest.pack_price} + ₹{latest.freight}",
+                moq=latest.moq, max_qty=latest.max_qty, price_breaks=latest.compare_breaks,
+                raw=f"v{latest.version}: ₹{latest.pack_price} + ₹{latest.freight}",
             ))
         return res
 

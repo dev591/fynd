@@ -462,6 +462,11 @@ export function DashboardDesk() {
                               </button>
                             </p>
                           )}
+                          {(versions[latestVer - 1]?.price_breaks?.filter(b => b.min_qty > 1).length ?? 0) > 0 && (
+                            <p className="mt-1 text-[11px] text-muted">
+                              Volume pricing as quoted: {versions[latestVer - 1].price_breaks!.filter(b => b.min_qty > 1).map(b => `${b.min_qty}+ units ${inr(b.pack_price)} a pack`).join(" · ")}
+                            </p>
+                          )}
                           {versions[latestVer - 1]?.shipping && (
                             <p className="mt-1 text-[11px] text-muted">
                               {versions[latestVer - 1].shipping === "own"
@@ -1141,7 +1146,7 @@ type EngineRow = NonNullable<ReturnType<typeof evaluate>["winner"]>;
 /** Gates as pass/fail rows, then each number tagged observed, derived or assumed. Slider-aware. */
 function WhyCard({ row, qty, needInDays, mode }: { row: EngineRow; qty: number; needInDays: number; mode: Mode }) {
   const q = row.quote;
-  const unit = q.packPrice / (q.packSize ?? 1);
+  const unit = (row.packPrice ?? q.packPrice) / (q.packSize ?? 1);
   const gates: Array<{ label: string; pass: boolean; note?: string }> = [
     { label: "Same item as the request", pass: true },
     { label: "Pack size known", pass: q.packSize !== null },
@@ -1153,7 +1158,7 @@ function WhyCard({ row, qty, needInDays, mode }: { row: EngineRow; qty: number; 
       : { label: "Can supply the full quantity", pass: true },
   ];
   const facts: Array<{ label: string; value: string; tag: "observed" | "derived" | "assumed" }> = [
-    { label: "Pack price", value: inr(q.packPrice), tag: "observed" },
+    { label: "Pack price", value: inr(row.packPrice ?? q.packPrice), tag: "observed" },
     { label: "Freight", value: inr(q.freight), tag: "observed" },
     { label: "Lead time", value: `${q.leadDays} days`, tag: "observed" },
     { label: "Packs ordered", value: String(row.packs), tag: "derived" },

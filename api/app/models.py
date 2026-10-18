@@ -64,6 +64,27 @@ class Profile(BaseModel):
 
 
 # Crossover Engine Models
+class PriceBreak(BaseModel):
+    min_qty: int = Field(ge=1)
+    pack_price: float = Field(gt=0)
+
+
+MAX_TIERS = 8
+
+
+def check_tiers(tiers: list["PriceBreak"]) -> list["PriceBreak"]:
+    """Volume tiers must be sorted, distinct, few, and a bigger order must never cost more per pack."""
+    if len(tiers) > MAX_TIERS:
+        raise ValueError(f"At most {MAX_TIERS} price tiers.")
+    tiers = sorted(tiers, key=lambda t: t.min_qty)
+    for a, b in zip(tiers, tiers[1:]):
+        if a.min_qty == b.min_qty:
+            raise ValueError("Two price tiers start at the same quantity.")
+        if b.pack_price > a.pack_price:
+            raise ValueError("A bigger order cannot cost more per pack than a smaller one.")
+    return tiers
+
+
 class Quote(BaseModel):
     id: str
     supplier: str
@@ -74,6 +95,7 @@ class Quote(BaseModel):
     lead_days: int
     moq: int | None = None
     max_qty: int | None = None  # stock / capacity cap; None = unlimited
+    price_breaks: list[PriceBreak] = Field(default_factory=list)   # volume tiers on the compare basis; empty = flat price
     raw: str = ""
     channel: str = "Portal"
 
@@ -94,6 +116,7 @@ class OrderCalc(BaseModel):
     units: int
     overbuy: int
     landed: float
+    pack_price: float | None = None        # the price per pack actually applied (a volume tier, or the quote's own price)
 
 
 class EvaluatedRow(BaseModel):
@@ -188,6 +211,12 @@ class QuoteSubmitIn(BaseModel):
     price_includes_tax: bool | None = None                          # whether the pack price already includes GST
     shipping: Literal["own", "delhivery"] | None = None             # how the seller will ship; shown to the buyer
     shipping_basis: Literal["delhivery", "rate_card"] | None = None  # where an applied freight/lead estimate came from
+    price_breaks: list[PriceBreak] = Field(default_factory=list)    # volume tiers, on the same GST basis as pack_price
+
+    @field_validator("price_breaks")
+    @classmethod
+    def _tiers_are_sane(cls, v):
+        return check_tiers(v)
 
 
 class QuoteVersion(BaseModel):
@@ -214,6 +243,8 @@ class QuoteVersion(BaseModel):
     imported: bool = False                    # brought in by the buyer from a file; the seller has no portal
     shipping: Literal["own", "delhivery"] | None = None
     shipping_basis: Literal["delhivery", "rate_card"] | None = None
+    price_breaks: list[PriceBreak] = Field(default_factory=list)      # as the seller stated them
+    compare_breaks: list[PriceBreak] = Field(default_factory=list)    # the same tiers on the buyer's GST basis
 
 
 class NegotiationTargetIn(BaseModel):
@@ -254,11 +285,6 @@ class DecisionIn(BaseModel):
 
 # ─── Supplier Profile & Products ───────────────────────────────────────────
 
-class PriceBreak(BaseModel):
-    min_qty: int
-    pack_price: float
-
-
 class SupplierProductIn(BaseModel):
     name: str
     category: str = "general"
@@ -274,6 +300,11 @@ class SupplierProductIn(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     tax_rate: float | None = Field(default=None, ge=0, le=100)     # GST % the seller states for this item
     price_includes_tax: bool | None = None                          # whether the pack price already includes it  # alternative names used for matching
+
+    @field_validator("price_breaks")
+    @classmethod
+    def _tiers_are_sane(cls, v):
+        return check_tiers(v)
 
 
 class SupplierProduct(BaseModel):
@@ -398,6 +429,7 @@ class DraftQuote(BaseModel):
     moq: int
     max_qty: int | None = None
     price_break_applied: int | None = None  # min_qty of the break used, if any
+    price_breaks: list[PriceBreak] = Field(default_factory=list)   # whole tier list (base tier first) when the item has breaks
     tax_rate: float | None = None
     price_includes_tax: bool | None = None
     verdict: Verdict

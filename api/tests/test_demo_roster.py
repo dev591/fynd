@@ -73,3 +73,11 @@ def test_seeding_all_ten_through_the_api_notifies_every_seller_for_the_shared_it
         as_user(uid, demo_roster.email_of(s))
         inbox = client.get(f"/api/supplier/{uid}/notifications").json()
         assert any(n["rfq_id"] == rid for n in inbox), uid
+
+
+def test_some_demo_sellers_have_volume_tiers_so_the_quantity_slider_can_flip_the_winner():
+    tiered = [p for s in demo_roster.ROSTER for p in s["products"] if p["price_breaks"]]
+    assert len(tiered) >= 3
+    for p in tiered:
+        SupplierProductIn(**p)                                              # tiers pass the same validation as any catalog entry
+        assert all(b["pack_price"] < p["pack_price"] for b in p["price_breaks"])

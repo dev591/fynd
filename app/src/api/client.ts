@@ -156,6 +156,11 @@ export interface RFQCreatePayload {
 
 export type PriorityMode = "cheapest" | "fastest" | "balanced";
 
+export interface PriceBreakDTO {
+  min_qty: number;
+  pack_price: number;
+}
+
 export interface QuoteVersionDTO {
   version: number;
   supplier_id: string;
@@ -178,6 +183,8 @@ export interface QuoteVersionDTO {
   tax_basis?: "stated" | "assumed_exclusive";
   shipping?: "own" | "delhivery" | null;
   shipping_basis?: "delhivery" | "rate_card" | null;
+  price_breaks?: PriceBreakDTO[];
+  compare_breaks?: PriceBreakDTO[];
   landed_cost: number | null;
   units: number;
   packs: number;
@@ -588,6 +595,7 @@ export interface QuoteSubmitPayload {
   price_includes_tax?: boolean;
   shipping?: "own" | "delhivery";
   shipping_basis?: "delhivery" | "rate_card";
+  price_breaks?: PriceBreakDTO[];
 }
 
 export interface ShippingEstimate {
@@ -621,6 +629,7 @@ export interface DraftQuoteDTO {
   moq: number;
   max_qty?: number | null;
   price_break_applied?: number | null;
+  price_breaks?: PriceBreakDTO[];
   tax_rate?: number | null;
   price_includes_tax?: boolean | null;
   verdict: VerdictDTO;

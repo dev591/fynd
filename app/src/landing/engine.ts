@@ -19,6 +19,8 @@ export type Quote = {
   moq?: number
   /** Stock / capacity cap. Undefined = unlimited. */
   maxQty?: number
+  /** Volume tiers on the buyer's GST basis. Empty or missing = a flat price. */
+  priceBreaks?: { minQty: number; packPrice: number }[]
   /** The quote as it arrived, for the messy card. */
   raw: string
   channel: string
@@ -42,15 +44,27 @@ export type Row = {
   units: number
   overbuy: number
   landed: number | null
+  /** The pack price applied at this quantity (a volume tier, or the quote's own price). */
+  packPrice?: number
   /** Units the seller can cover when stock is below the need. */
   fillQty?: number
+}
+
+/** Pack price for this many units: the highest volume tier reached, else the quote's own price. Mirrors the server. */
+export function tierPrice(q: Quote, units: number): number {
+  let price = q.packPrice
+  for (const b of [...(q.priceBreaks ?? [])].sort((a, c) => a.minQty - c.minQty)) {
+    if (units >= b.minQty) price = b.packPrice
+  }
+  return price
 }
 
 export function order(q: Quote, qty: number) {
   if (!q.packSize) return null
   const packs = Math.ceil(Math.max(qty, q.moq ?? 0) / q.packSize)
   const units = packs * q.packSize
-  return { packs, units, overbuy: units - qty, landed: packs * q.packPrice + q.freight }
+  const packPrice = tierPrice(q, units)
+  return { packs, units, overbuy: units - qty, landed: packs * packPrice + q.freight, packPrice }
 }
 
 export const landed = (q: Quote, qty: number) => order(q, qty)?.landed ?? null

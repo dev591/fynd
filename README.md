@@ -24,7 +24,7 @@ costs ₹1,150, so B wins. Above 150 units A wins. Crossover treats a quote as a
 
 | Area | What you can do |
 |---|---|
-| **Compare** | Landed cost per seller, cost per usable unit, cash tied up in extra units, quantity slider (the winner can flip), spreadsheet mode (shows the naive pick and the rupee difference), winner under cheapest / fastest / balanced with a "what you give up" line |
+| **Compare** | Volume price tiers from a seller's catalog (the tier the order reaches sets the pack price, shown to the buyer and used by the quantity slider). Landed cost per seller, cost per usable unit, cash tied up in extra units, quantity slider (the winner can flip), spreadsheet mode (shows the naive pick and the rupee difference), winner under cheapest / fastest / balanced with a "what you give up" line |
 | **Gates** | Different item, unknown pack size (blocked), late delivery or short stock (needs a **written reason and a named approver**; a blank reason is refused), cheaper-but-excluded list |
 | **Tax** | Quotes are put on one GST basis (ex-GST if you can claim it back). A basis the seller did not state is treated as exclusive and flagged |
 | **Anonymous quotes** | Sellers appear as "Seller 1/2…". Name, contact, city and products unlock per seller with **Reveal** (3 free, then a mock paywall) |
@@ -109,7 +109,7 @@ notifications on both laptops). See `DEPLOY.md` and `render.yaml`.
 ## Test it
 
 ```bash
-cd api && python3 -m pytest -q          # 301 tests
+cd api && python3 -m pytest -q          # 320 tests
 cd app && npx tsc -b && npm run lint && npm run build
 cd api && python3 -m tests.golden.run_live   # real-model check of the 15 buyer sentences (needs keys)
 ```
@@ -133,7 +133,7 @@ worked example, import errors, windows with a fake clock, persistence across a r
 ```
 api/app/     engine.py (rules; landed cost + gates untouched), tax.py, views.py (what each audience may see),
              rfq_store.py, persist.py, auth.py, intake.py, quote_text.py, assistant.py, summary.py, importer.py
-api/tests/   301 tests + golden sets (15 buyer sentences, 8 seller cases)
+api/tests/   320 tests + golden sets (15 buyer sentences, 8 seller cases)
 api/supabase/schema.sql   an early Postgres draft with row-level security. NOT used and NOT kept in sync: the live API uses SQLite
 app/src/     landing story, wizard, buyer desk, seller desk, shared components
 AUDIT.md     what exists against the v2 brief, and the decisions made
@@ -153,7 +153,7 @@ AUDIT.md     what exists against the v2 brief, and the decisions made
 
 - Item matching is by exact name or alias only. No spec, grade or brand comparison.
 - A partial fill is an exception that needs sign-off; a two-seller split order is not built.
-- Price breaks are stored and used for the seller's draft, but not modelled as a full curve in the compare.
+- Freight is one flat amount per quote: no per-unit or weight-based freight and no free-freight-above-X rule. Volume price tiers are modelled (see Compare).
 - Seller reliability is not scored.
 - One uvicorn process. SQLite and in-memory state are fine for a demo, not for scale.
 - Chat scrubs phone numbers and emails in common formats; it cannot catch a number spelled out in words.
