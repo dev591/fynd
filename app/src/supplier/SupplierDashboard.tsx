@@ -4,6 +4,7 @@ import {
   ArrowLeft, Building2, Package, Plus, ArrowRight,
   Store, AlertTriangle, Bell,
 } from "lucide-react";
+import { useNotificationAlerts } from "./hooks/useVoiceAlerts";
 import { VerifiedBadge } from "./components/VerifiedBadge";
 import { StatusChip } from "./components/StatusChip";
 import { useApiPoll, useApiOnce } from "../lib/useApi";
@@ -58,6 +59,9 @@ export function SupplierDashboard() {
     }
   };
   const unread = (inbox || []).filter(n => n.status === "new" || !!n.reminder).length;
+
+  // OS notification alert — fires automatically, no toggle needed
+  useNotificationAlerts(inbox ?? null);
 
   // Product form state
   const [showAddProduct, setShowAddProduct] = useState(false);

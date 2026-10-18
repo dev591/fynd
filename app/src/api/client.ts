@@ -350,6 +350,51 @@ export async function transcribeAudio(blob: Blob): Promise<string | null> {
   }
 }
 
+/** Seller-side STT: same ElevenLabs pipeline, separate endpoint that requires the seller role. */
+export async function transcribeSellerAudio(blob: Blob): Promise<string | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/supplier/transcribe`, {
+      method: "POST", headers: { "Content-Type": blob.type || "audio/webm", ...(await authHeader()) }, body: blob,
+    });
+    if (!res.ok) return null;
+    const out = await res.json();
+    return out.text ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export interface VoiceQuoteDraftRow {
+  pack_price: number | null;
+  pack_size: number | null;
+  freight: number | null;
+  lead_days: number | null;
+  moq: number | null;
+  max_qty: number | null;
+  tax_rate: number | null;
+  price_includes_tax: boolean | null;
+  notes: string | null;
+}
+
+export interface VoiceQuoteDraftResult {
+  rows: VoiceQuoteDraftRow[];
+  warnings: string[];
+  fallback: boolean;
+}
+
+/**
+ * Parse a seller's spoken sentence into quote fields.
+ * Every number is cross-checked against the source text; invented values are dropped.
+ * Returns the first row (single quote sentence) or null on failure.
+ */
+export async function draftQuoteFromVoice(text: string): Promise<VoiceQuoteDraftResult | null> {
+  try {
+    return await apiFetch("/api/quote-voice/draft", { method: "POST", body: JSON.stringify({ text }) });
+  } catch {
+    return null;
+  }
+}
+
 export interface ConfirmPayload {
   item: string;
   qty: number;

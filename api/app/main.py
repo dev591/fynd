@@ -426,6 +426,27 @@ def read_notification(supplier_id: str, notification_id: str, user: AuthUser = D
     return n
 
 
+@app.post("/api/supplier/transcribe")
+async def seller_transcribe(request: Request, user: AuthUser = Depends(seller_only)):
+    """Seller-side speech-to-text. Same ElevenLabs pipeline as buyer intake. Returns text or fallback=true."""
+    audio = await request.body()
+    text = ai.transcribe(audio, request.headers.get("content-type", "audio/webm"))
+    rid = "stxr_" + os.urandom(4).hex()
+    store.log_ai("seller_transcribe", rid, {"bytes": len(audio)}, {"text": text})
+    return {"text": text, "fallback": text is None, "request_id": rid}
+
+
+@app.post("/api/quote-voice/draft")
+def quote_voice_draft(payload: QuoteTextIn, user: AuthUser = Depends(seller_only)):
+    """Parse a seller's spoken or typed quote sentence into draft quote fields.
+    Every number is cross-checked against the source text; invented values are dropped, never guessed.
+    Returns the same row shape as the message-import draft so the quote form can apply it directly."""
+    result = draft_from_message(payload.text.strip())
+    rid = "qvdr_" + os.urandom(4).hex()
+    store.log_ai("quote_voice_draft", rid, {"text": payload.text}, result)
+    return result
+
+
 @app.get("/api/rfqs")
 def list_rfqs(user: AuthUser = Depends(buyer_only)):
     """Only this buyer's requests."""
