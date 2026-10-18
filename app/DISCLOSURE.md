@@ -105,3 +105,8 @@ Written with Claude Code (Anthropic), reviewed by the team. No backend or engine
 - Redesigned request list, voice-first new request, seller inbox, split-screen sign-in, plainer wizard copy, ambient backdrop.
 - **21st.dev:** no component was copied. Every effect here was written for this project, so there is no third-party component
   licence to record.
+- **Ask the desk** (`api/app/ask_desk.py`, `src/dashboard/AskDesk.tsx`): a buyer's what-if question is read into engine inputs
+  (quantity, deadline, priority, sellers who drop out). Rules read it first and work with no AI key. Only when the rules find
+  nothing is a model asked, and each value it returns is kept only if it appears in the buyer's own words. The engine then
+  recomputes and code writes the answer from engine numbers, so the model never states a price, date or winner. Nothing is
+  saved and the stored request is never changed. Checked live against the real model on seven phrasings.

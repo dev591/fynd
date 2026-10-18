@@ -25,6 +25,7 @@ costs ₹1,150, so B wins. Above 150 units A wins. Crossover treats a quote as a
 | Area | What you can do |
 |---|---|
 | **Compare** | Volume price tiers from a seller's catalog (the tier the order reaches sets the pack price, shown to the buyer and used by the quantity slider). Landed cost per seller, cost per usable unit, cash tied up in extra units, quantity slider (the winner can flip), spreadsheet mode (shows the naive pick and the rupee difference), winner under cheapest / fastest / balanced with a "what you give up" line |
+| **Ask the desk** | Type a what-if ("what if I need 300?", "what if Seller 2 is out?", "what if I need it in 3 days?"). The engine recomputes and shows the new best beside today's. Nothing is saved or changed |
 | **Split order** | When no single seller can cover the quantity, or two together are cheaper, the best two-seller split is shown beside the normal pick with each seller's share, the total and the saving. Ordering it needs both sellers revealed; the quantities are the server's, not editable |
 | **Multi-item orders and budget** | Add several items to one request. Each is compared on its own, so a different seller can win each item, and a combined order page shows the best pick per item with one total. An optional budget per item is shown against the best quote (under or over, and the best quote that fits). It is a comparison only, never changes the engine's pick, and sellers never see it |
 | **Gates** | Different item, unknown pack size (blocked), late delivery or short stock (needs a **written reason and a named approver**; a blank reason is refused), cheaper-but-excluded list |
@@ -50,6 +51,7 @@ level or date that is not in the data.
 | Pasted supplier message | Read it into quote rows | Same checks; unstated pack size/freight/lead time stay blank and flagged; "free delivery" needs those words |
 | Seller note | Word a short message | Every number must exist in the data and offers/promises are rejected, else a template is used |
 | Seller voice quote | Turn a spoken quote into draft fields | Same number checks as pasted messages; unstated fields stay blank; the seller edits and presses Send |
+| Ask the desk | Read a what-if into engine inputs (quantity, deadline, priority, sellers out) | Rules read it first and need no key; a model is tried only when the rules find nothing, and every value it returns must appear in the buyer's own words. The engine computes and code writes the answer sentence |
 | Second opinion | Read the buyer's note for a deadline or cash concern and choose among options the engine allowed | The model only picks a seller and a concern and quotes the buyer's own words; code checks the quote and that the pick serves the concern, then writes the sentence from engine numbers. Engine pick unchanged |
 | Item-match, "why this supplier" | Warn / explain | Warn only; the explanation can never pick or change the winner |
 

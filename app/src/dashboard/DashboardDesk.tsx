@@ -14,6 +14,7 @@ import { closesAt, timeLeft, useNow } from "../lib/windowTime";
 import { evaluate, giveUp, inr, naivePick, negotiation, type Mode, type Quote } from "../landing/engine";
 import { CostChart } from "../landing/CostChart";
 import { AnswerCard, PriorityControl, QtyStepper, QuoteBoard, arriveOn } from "./QuoteBoard";
+import { AskDesk } from "./AskDesk";
 import { SupplierChat } from "../supplier/components/SupplierChat";
 import { useApiPoll, useApiOnce } from "../lib/useApi";
 import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
@@ -483,6 +484,10 @@ export function DashboardDesk() {
               )}
 
         </div>
+
+        {!isDecided && engineQuotes.length > 0 && (
+          <AskDesk rfqId={rfq.id} onApply={(q, m) => { if (q) setQty(q); if (m) setMode(m); }} />
+        )}
 
         {/* Every quote side by side, best first */}
         <section aria-label="All quotes">

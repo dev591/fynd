@@ -51,7 +51,7 @@ from .models import (
 from .validators import cross_check_tax, mask_pan
 from .intake import draft_from_text
 from .quote_text import draft_from_message
-from . import ai, assistant, delhivery, demo_roster
+from . import ai, ask_desk, assistant, delhivery, demo_roster
 from .summary import build_summary, savings_total
 from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
@@ -1004,3 +1004,14 @@ if (_DIST / "index.html").is_file():
         if path and target.is_file() and _DIST.resolve() in target.parents:
             return FileResponse(target)
         return FileResponse(_DIST / "index.html")        # the app's own routes (/app, /supplier, /share/...)
+
+
+class AskIn(BaseModel):
+    question: str
+
+
+@app.post("/api/rfqs/{rfq_id}/ask")
+def ask_the_desk(rfq_id: str, payload: AskIn, user: AuthUser = Depends(buyer_only)):
+    """A what-if question about this request's quotes. The engine recomputes; nothing is saved or changed."""
+    rfq = _rfq_for(user, rfq_id)
+    return ask_desk.run(store, rfq, payload.question[:300])

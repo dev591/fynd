@@ -530,6 +530,21 @@ export async function lockSplitDecision(rfqId: string, primaryAlias: string, rea
   });
 }
 
+export interface AskDeskDTO {
+  understood: boolean;
+  scenario: { qty: number | null; need_in_days: number | null; priority: PriorityMode | null; exclude: string[] };
+  baseline: { winner: string; landed: number; lead_days: number } | null;
+  result: { winner: string | null; landed: number | null; lead_days: number | null;
+            rows: { quote_id: string; landed: number | null; lead_days: number; status: string; reason: string | null }[] } | null;
+  changed: boolean;
+  sentence: string;
+}
+
+/** A what-if question about this request's quotes. The engine recomputes; nothing is saved. */
+export async function askTheDesk(rfqId: string, question: string): Promise<AskDeskDTO> {
+  return apiFetch(`/api/rfqs/${rfqId}/ask`, { method: "POST", body: JSON.stringify({ question }) });
+}
+
 export interface AiOpinionDTO {
   pick: string;
   agrees: boolean;
