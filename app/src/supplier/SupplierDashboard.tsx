@@ -315,7 +315,11 @@ export function SupplierDashboard() {
             ) : inboxError ? (
               <div className="rounded-2xl border border-error/40 bg-error/10 p-6 text-center space-y-2">
                 <AlertTriangle size={24} className="mx-auto text-error" />
-                <p className="text-[13px] text-muted">Cannot reach server. Make sure the backend is running.</p>
+                {/403/.test(String(inboxError)) ? (
+                  <p className="text-[13px] text-muted">The server no longer has a seller profile for this account, which happens when the server restarts without saving. <Link to="/login" className="text-signal underline">Finish setup again</Link> to continue.</p>
+                ) : (
+                  <p className="text-[13px] text-muted">Cannot reach server. Make sure the backend is running.</p>
+                )}
               </div>
             ) : !inbox || inbox.length === 0 ? (
               <div className="rounded-2xl border border-line bg-surface/80 p-8 text-center space-y-3">

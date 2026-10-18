@@ -182,11 +182,26 @@ class RunIn(BaseModel):
     meta: dict = {}
 
 
+def _persistence_report() -> dict:
+    """Where data is saved, and a plain warning when a restart would lose it. Never any key material."""
+    backend = persist.backend() if persist.enabled() else "off"
+    out = {"state": PERSIST_STATE, "backend": backend}
+    if PERSIST_STATE == "offline":
+        out["warning"] = "Supabase could not be reached at start, so this server is NOT saving. Fix the connection and restart."
+    elif backend == "off":
+        out["warning"] = "Saving is switched off: everything is lost when the server restarts."
+    elif backend == "sqlite" and os.environ.get("RENDER"):
+        out["warning"] = ("Data is saved to a file on this hosted server and will be lost on restart or redeploy. "
+                          "Set PERSIST_BACKEND=supabase and SUPABASE_SERVICE_ROLE_KEY, and create the table (api/supabase/state.sql).")
+    return out
+
+
 @app.get("/health")
 def health():
     return {
         "ok": True,
         "service": "crossover-api",
+        "persistence": _persistence_report(),
         "layers": [l.name for l in pipeline.layers],
     }
 
