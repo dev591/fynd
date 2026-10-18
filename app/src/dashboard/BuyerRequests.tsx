@@ -42,7 +42,13 @@ export function BuyerRequests() {
             <span className="display text-base font-semibold text-bone">Crossover Desk</span>
             <span className="label ml-2 text-signal">BUYER</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link to="/app/pricing" className="rounded-full bg-signal px-3 py-1.5 text-[12px] font-semibold text-ink hover:opacity-90">
+              Buy reveals
+            </Link>
+            <Link to="/app/orders" className="rounded-full border border-line bg-raised px-3 py-1.5 text-[12px] font-medium text-bone hover:border-signal/50 hover:text-signal">
+              Orders
+            </Link>
             <Link to="/supplier" className="hidden rounded-full border border-line bg-raised px-3 py-1.5 sm:block text-[12px] font-medium text-bone hover:border-signal/50 hover:text-signal">
               Supplier Portal
             </Link>
