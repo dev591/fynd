@@ -1,0 +1,20 @@
+# Render blueprint: one Docker web service that serves the API and the website. Fill the secret values in the dashboard.
+services:
+  - type: web
+    name: crossover
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - {key: VITE_SUPABASE_URL, sync: false}        # public value, used at build time
+      - {key: VITE_SUPABASE_ANON_KEY, sync: false}   # public value, used at build time
+      - {key: SUPABASE_URL, sync: false}
+      - {key: SUPABASE_ANON_KEY, sync: false}
+      - {key: OPENAI_API_KEY, sync: false}
+      - {key: MODEL_FAST, sync: false}
+      - {key: ELEVENLABS_API_KEY, sync: false}
+      - {key: ELEVENLABS_STT_MODEL, value: scribe_v2}
+      - {key: DEMO_SELLER_PASSWORD, sync: false}
+      - {key: DEMO_LOGINS, value: "off"}
+      - {key: DEMO_AUTOPILOT, value: "off"}
+      - {key: FREE_REVEALS, value: "3"}

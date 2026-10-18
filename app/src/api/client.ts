@@ -1,9 +1,11 @@
 /**
  * Crossover API Client — all calls hit the real backend. No localStorage fallback.
- * Backend: http://localhost:8000
+ * Backend: same origin in production, port 8000 in dev.
  */
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Production: the API serves this site, so calls go to the same address. Dev: the API on port 8000 of whichever host
+// opened the page, so a second laptop on the network works too. VITE_API_URL overrides both.
+const BASE_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? "" : `http://${window.location.hostname}:8000`);
 
 import { getAccessToken, signOut } from "../lib/auth";
 

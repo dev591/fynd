@@ -936,3 +936,23 @@ def demo_logins():
     if not demo_roster.logins_enabled():
         return {"enabled": False, "sellers": []}
     return {"enabled": True, "password": os.environ["DEMO_SELLER_PASSWORD"], "sellers": demo_roster.public_listing()}
+
+
+# ─── Serve the built website from the same address (one public URL, https from the host, no CORS) ───
+from pathlib import Path
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+_DIST = Path(os.environ.get("WEB_DIST") or Path(__file__).resolve().parents[2] / "app" / "dist")
+if (_DIST / "index.html").is_file():
+    if (_DIST / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def web(path: str):
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found.")
+        target = (_DIST / path).resolve()
+        if path and target.is_file() and _DIST.resolve() in target.parents:
+            return FileResponse(target)
+        return FileResponse(_DIST / "index.html")        # the app's own routes (/app, /supplier, /share/...)
