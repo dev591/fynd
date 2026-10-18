@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { WizardHeader } from "./Header";
 import { useSession } from "../lib/useSession";
+import { Ambient } from "../components/Ambient";
 import { RoleStep } from "./steps/RoleStep";
 import { AccountStep } from "./steps/AccountStep";
 import { BusinessStep } from "./steps/BusinessStep";
@@ -164,7 +165,8 @@ export function LoginWizard() {
   };
 
   return (
-    <div className="landing grain min-h-screen bg-ink text-bone">
+    <div className="landing grain isolate min-h-screen bg-ink text-bone">
+      <Ambient />
       <WizardHeader
         currentStep={draft.step}
         totalSteps={6}

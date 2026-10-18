@@ -11,13 +11,12 @@ export function RoleStep({ selectedRole, onSelect, onNext }: RoleStepProps) {
   return (
     <div className="space-y-8">
       <div className="text-center">
-        <p className="label text-muted">Screen 00 · Choose your role</p>
+        <p className="label text-muted">Step 1 · Who are you?</p>
         <h1 className="display mt-1 text-[clamp(1.75rem,3.5vw,2.75rem)] text-bone">
           How will you use Crossover?
         </h1>
         <p className="mx-auto mt-2 max-w-[50ch] text-[15px] text-muted">
-          Your role configures the calculation engine and skips irrelevant setup fields.
-          Every option changes how decisions are evaluated.
+          Pick one now. You can add the other later from your account menu.
         </p>
       </div>
 
@@ -30,7 +29,7 @@ export function RoleStep({ selectedRole, onSelect, onNext }: RoleStepProps) {
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") onSelect("buyer");
           }}
-          className={`group relative flex cursor-pointer flex-col justify-between rounded-2xl border p-6 text-left transition-all duration-200 outline-none ${
+          className={`group relative flex cursor-pointer flex-col justify-between rounded-2xl border p-6 text-left transition-all duration-200 outline-none hover:-translate-y-1 hover:shadow-[0_24px_50px_-30px_var(--signal)] ${
             selectedRole === "buyer"
               ? "border-signal bg-raised/70 shadow-lg ring-1 ring-signal/50"
               : "border-line bg-surface/70 hover:border-line/80 hover:bg-raised/40"
@@ -52,29 +51,29 @@ export function RoleStep({ selectedRole, onSelect, onNext }: RoleStepProps) {
               I'm buying
             </h2>
             <p className="mt-2 text-[14px] leading-relaxed text-muted">
-              You receive mismatched quotes across WhatsApp, email, and phone calls.
-              You want to uncover true landed costs, freight, and pack-rounding gaps.
+              Get quotes from every seller who stocks it,
+              and see the best one in plain words.
             </p>
 
             <ul className="mt-5 space-y-2 text-[13px] text-muted">
               <li className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-signal" />
-                <span>Ramesh's workflow (plant purchase desk)</span>
+                <span>Say or type what you need</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-signal" />
-                <span>GST-claimable vs ex-GST tax calculations</span>
+                <span>Freight, packs and GST counted for you</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-signal" />
-                <span>Lead time & delivery deadline gates</span>
+                <span>Names hidden until you choose</span>
               </li>
             </ul>
           </div>
 
           <div className="mt-6 border-t border-line/60 pt-4">
             <span className="label text-muted group-hover:text-bone">
-              Best for: Manufacturers, EPC, and plant managers →
+              For factories and purchase teams →
             </span>
           </div>
         </div>
@@ -87,7 +86,7 @@ export function RoleStep({ selectedRole, onSelect, onNext }: RoleStepProps) {
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") onSelect("supplier");
           }}
-          className={`group relative flex cursor-pointer flex-col justify-between rounded-2xl border p-6 text-left transition-all duration-200 outline-none ${
+          className={`group relative flex cursor-pointer flex-col justify-between rounded-2xl border p-6 text-left transition-all duration-200 outline-none hover:-translate-y-1 hover:shadow-[0_24px_50px_-30px_var(--signal)] ${
             selectedRole === "supplier"
               ? "border-signal bg-raised/70 shadow-lg ring-1 ring-signal/50"
               : "border-line bg-surface/70 hover:border-line/80 hover:bg-raised/40"
@@ -109,29 +108,29 @@ export function RoleStep({ selectedRole, onSelect, onNext }: RoleStepProps) {
               I'm quoting
             </h2>
             <p className="mt-2 text-[14px] leading-relaxed text-muted">
-              You supply industrial parts, raw materials, or fasteners. You want buyers
-              to see the true value of your low freight and bulk pack pricing.
-            </p>
+              Get requests only for what you stock,
+              and quote in one tap. Free.
+              </p>
 
             <ul className="mt-5 space-y-2 text-[13px] text-muted">
               <li className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-bone/60" />
-                <span>Standardize pack sizes & MOQ thresholds</span>
+                <span>Your catalog fills the quote</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-bone/60" />
-                <span>Provide freight bands by radius or state</span>
+                <span>No listing fee, no commission</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-bone/60" />
-                <span>Win on total order economy, not lowest unit price</span>
+                <span>Win on total cost, not just unit price</span>
               </li>
             </ul>
           </div>
 
           <div className="mt-6 border-t border-line/60 pt-4">
             <span className="label text-muted group-hover:text-bone">
-              Best for: Industrial traders, stockists & distributors →
+              For traders, stockists and makers →
             </span>
           </div>
         </div>

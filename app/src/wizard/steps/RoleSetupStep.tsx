@@ -45,7 +45,7 @@ export function RoleSetupStep({
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <p className="label text-muted">Screen 04 · {role.toUpperCase()} configuration</p>
+        <p className="label text-muted">Step 5 · Your preferences</p>
         <h1 className="display mt-1 text-[clamp(1.75rem,3.5vw,2.5rem)] text-bone">
           {role === "buyer" ? "Set purchase policies" : "Set default quote terms"}
         </h1>

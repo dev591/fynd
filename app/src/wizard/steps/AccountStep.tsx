@@ -53,7 +53,7 @@ export function AccountStep({ fullName, email, phone, password = "", onChange, o
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <p className="label text-muted">Screen 01 · Account setup</p>
+        <p className="label text-muted">Step 2 · Your account</p>
         <h1 className="display mt-1 text-[clamp(1.75rem,3.5vw,2.5rem)] text-bone">Who is using this desk?</h1>
         <p className="mx-auto mt-2 max-w-[46ch] text-[15px] text-muted">
           Your name appears on purchase orders, quote audits, and negotiation drafts.

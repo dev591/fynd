@@ -80,7 +80,7 @@ export function TaxStep({
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <p className="label text-muted">Screen 03 · Tax & verification (Optional)</p>
+        <p className="label text-muted">Step 4 · Tax IDs (optional)</p>
         <h1 className="display mt-1 text-[clamp(1.75rem,3.5vw,2.5rem)] text-bone">
           Verify business identity
         </h1>
