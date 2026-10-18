@@ -23,6 +23,8 @@ export type Quote = {
   priceBreaks?: { minQty: number; packPrice: number }[]
   /** Goods value (buyer's GST basis) at or above which delivery is free. Missing = freight always applies. */
   freeFreightAbove?: number
+  /** Per-unit freight component (buyer's GST basis). Total freight = flat + perUnitFreight × units. Missing = flat only. */
+  perUnitFreight?: number
   /** The quote as it arrived, for the messy card. */
   raw: string
   channel: string
@@ -69,7 +71,8 @@ export function order(q: Quote, qty: number) {
   const units = packs * q.packSize
   const packPrice = tierPrice(q, units)
   const goods = packs * packPrice
-  const freight = q.freeFreightAbove !== undefined && goods >= q.freeFreightAbove ? 0 : q.freight
+  const flat = q.freeFreightAbove !== undefined && goods >= q.freeFreightAbove ? 0 : q.freight
+  const freight = flat + (q.perUnitFreight ?? 0) * units
   return { packs, units, overbuy: units - qty, landed: goods + freight, packPrice, freight }
 }
 

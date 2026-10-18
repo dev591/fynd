@@ -238,12 +238,15 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
 
     naive = naive_pick(quotes, need)
     naive_calc = order(naive, rfq.qty) if naive else None
+    split = (decision or {}).get("split")
     savings = None
     if decided_row and decided_row.landed is not None and naive and naive_calc:
+        done = split["total_landed"] if split else decided_row.landed
         savings = {
             "spreadsheet_pick": naive.supplier, "spreadsheet_landed": naive_calc.landed,
-            "crossover_pick": decided_row.supplier, "crossover_landed": decided_row.landed,
-            "difference": naive_calc.landed - decided_row.landed,
+            "crossover_pick": " + ".join(p["quote_id"] for p in split["parts"]) if split else decided_row.supplier,
+            "crossover_landed": done,
+            "difference": naive_calc.landed - done,
             "label": "on demo data",
         }
 
@@ -294,7 +297,8 @@ def build_summary(store, rfq_id: str, with_explainer: bool = True, audience: str
             unstated=sum(1 for v in store.quotes.get(rfq_id, {}).values() if v and v[-1].tax_basis == "assumed_exclusive"),
             total=sum(1 for v in store.quotes.get(rfq_id, {}).values() if v)),
         "engine_winner": _row(ev.winner, rfq.qty) if ev.winner else None,
-        "overrode_engine": bool(decided_row and ev.winner and decided_row.quote_id != ev.winner.quote_id),
+        "overrode_engine": bool(decided_row and ev.winner and decided_row.quote_id != ev.winner.quote_id and not split),
+        "split": split,
         "winners_by_mode": {m: (_row(w, rfq.qty) if w else None) for m, w in ev.winners.items()},
         "tradeoffs": ev.tradeoffs,
         "rows": [_row(r, rfq.qty) for r in ev.rows],

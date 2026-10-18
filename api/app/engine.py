@@ -61,7 +61,9 @@ def order(q: Quote, qty: int) -> Optional[OrderCalc]:
     overbuy = units - qty
     price = tier_price(q, units)
     goods = packs * price
-    freight = 0.0 if q.free_freight_above is not None and goods >= q.free_freight_above else q.freight
+    flat = 0.0 if q.free_freight_above is not None and goods >= q.free_freight_above else q.freight
+    per_unit = (q.per_unit_freight or 0.0) * units
+    freight = flat + per_unit
     return OrderCalc(packs=packs, units=units, overbuy=overbuy, landed=goods + freight, pack_price=price, freight=freight)
 
 
@@ -275,3 +277,104 @@ def run_case_checks() -> list[dict]:
         {"name": "Late supplier", "points": 10, "pass": pass2, "detail": "7-day supplier never recommended. Blank reason rejected; signed reason unlocks it."},
         {"name": "Unknown pack", "points": 5, "pass": pass3, "detail": "No pack size → blocked. Never wins, even priced at ₹1."},
     ]
+
+
+# ─── Split orders: buy part from one seller and part from another ─────────────────────────────────────────────
+# Additive: nothing above changes. It reuses the same cost rules as order() (whole packs, minimum order, volume tiers,
+# free-delivery threshold, per-unit freight, stock caps) and is only ever offered next to the normal pick, never in place of it.
+
+POOL = 6                       # sellers considered: the cheapest per unit at the needed quantity
+EXHAUSTIVE_LIMIT = 20000       # up to this many split points per pair every point is tried; beyond it, candidate points
+
+
+def _cost(q: Quote, units: int) -> Optional[tuple]:
+    """(landed, units, packs) for ordering `units` from q, or None if impossible. Mirrors order() with no model objects."""
+    if units <= 0:
+        return (0.0, 0, 0)
+    if not q.pack_size or q.pack_size <= 0:
+        return None
+    packs = math.ceil(max(units, q.moq or 0) / q.pack_size)
+    got = packs * q.pack_size
+    if q.max_qty is not None and got > q.max_qty:
+        return None
+    price = tier_price(q, got)
+    goods = packs * price
+    flat = 0.0 if q.free_freight_above is not None and goods >= q.free_freight_above else q.freight
+    return (goods + flat + (q.per_unit_freight or 0.0) * got, got, packs)
+
+
+def _candidate_points(a: Quote, b: Quote, qty: int, lo: int, hi: int) -> set:
+    """Where a pair's total cost can change shape: pack boundaries of either seller, tiers, thresholds, caps, minimums."""
+    pts = {lo, hi, lo + 1, hi - 1}
+    for first, other in ((a, b), (b, a)):
+        step = first.pack_size or 1
+        marks = list(range(step, qty, step)) if step > 1 else []
+        marks += [t.min_qty for t in first.price_breaks] + [first.moq or 0, first.max_qty or 0]
+        marks += [t.min_qty * step for t in first.price_breaks if False]
+        if first.free_freight_above is not None and first.pack_price > 0:
+            marks += [math.ceil(first.free_freight_above / first.pack_price)] + [math.ceil(first.free_freight_above / t.pack_price) for t in first.price_breaks]
+        for m in marks:
+            if m <= 0:
+                continue
+            for d in (-1, 0, 1):
+                x = m + d if first is a else qty - (m + d)
+                pts.add(x)
+    return {x for x in pts if lo <= x <= hi}
+
+
+def best_split(quotes: List[Quote], need: Need, exceptions: Optional[Dict[str, ExceptionRecord]] = None,
+               exhaustive_limit: int = EXHAUSTIVE_LIMIT) -> Optional[dict]:
+    """The cheapest way to cover the whole quantity from two sellers, if that beats every single seller (or no single
+    seller can cover it). None otherwise. Deterministic: ties go to the lower total, then less extra stock, then id order."""
+    exceptions = exceptions or {}
+    qty = need.qty
+    usable = [x for x in quotes if x.item == need.item and x.pack_size and x.pack_size > 0
+              and (x.lead_days <= need.need_in_days or is_valid_exception(exceptions.get(x.id)))]
+    if qty < 2 or len(usable) < 2:
+        return None
+
+    singles = []
+    for x in usable:
+        c = _cost(x, qty)
+        if c is not None:
+            singles.append((c[0], x.id))
+    best_single = min(singles) if singles else None
+
+    def per_unit(x: Quote) -> float:
+        n = min(qty, x.max_qty) if x.max_qty else qty
+        c = _cost(x, n) or _cost(x, max(n, x.moq or 0))
+        return (c[0] / max(n, 1)) if c else float("inf")
+
+    pool = sorted(usable, key=lambda x: (per_unit(x), x.id))[:POOL]
+    best = None            # (total, extra_units, ids..., k, a, b, ca, cb)
+    for i, a in enumerate(pool):
+        for b in pool[i + 1:]:
+            lo = max(1, qty - b.max_qty) if b.max_qty is not None else 1
+            hi = min(qty - 1, a.max_qty) if a.max_qty is not None else qty - 1
+            if lo > hi:
+                continue
+            ks = range(lo, hi + 1) if hi - lo + 1 <= exhaustive_limit else sorted(_candidate_points(a, b, qty, lo, hi))
+            for k in ks:
+                ca, cb = _cost(a, k), _cost(b, qty - k)
+                if ca is None or cb is None:
+                    continue
+                key = (round(ca[0] + cb[0], 6), ca[1] + cb[1] - qty, tuple(sorted((a.id, b.id))), k if a.id < b.id else qty - k)
+                if best is None or key < best[0]:
+                    best = (key, a, b, k, ca, cb)
+    if best is None:
+        return None
+    key, a, b, k, ca, cb = best
+    total = ca[0] + cb[0]
+    if best_single is not None and not total < best_single[0] - 0.005:
+        return None
+    rows = sorted([(a, k, ca), (b, qty - k, cb)], key=lambda r: (-r[1], r[0].id))
+    return {
+        "parts": [{"quote_id": x.id, "qty": n, "packs": c[2], "units": c[1], "landed": c[0], "lead_days": x.lead_days} for x, n, c in rows],
+        "total_landed": total,
+        "lead_days": max(x.lead_days for x, _, _ in rows),
+        "units": ca[1] + cb[1],
+        "overbuy": ca[1] + cb[1] - qty,
+        "best_single": {"quote_id": best_single[1], "landed": best_single[0]} if best_single else None,
+        "saving": round(best_single[0] - total, 2) if best_single else None,
+        "reason": "cheaper_than_best_single" if best_single else "no_single_supplier_can_fill",
+    }

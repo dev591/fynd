@@ -92,11 +92,12 @@ class Quote(BaseModel):
     pack_price: float
     pack_size: int | None = None
     freight: float = 0.0
+    per_unit_freight: float | None = None                          # added per-unit component: total freight = flat + per_unit * units
     lead_days: int
     moq: int | None = None
     max_qty: int | None = None  # stock / capacity cap; None = unlimited
     price_breaks: list[PriceBreak] = Field(default_factory=list)   # volume tiers on the compare basis; empty = flat price
-    free_freight_above: float | None = None                        # goods value (compare basis) at or above which delivery is free
+    free_freight_above: float | None = None                        # goods value (compare basis) at or above which flat delivery is free
     raw: str = ""
     channel: str = "Portal"
 
@@ -215,6 +216,7 @@ class QuoteSubmitIn(BaseModel):
     shipping_basis: Literal["delhivery", "rate_card"] | None = None  # where an applied freight/lead estimate came from
     price_breaks: list[PriceBreak] = Field(default_factory=list)    # volume tiers, on the same GST basis as pack_price
     free_freight_above: float | None = Field(default=None, gt=0)    # free delivery when goods are worth at least this, on the same GST basis as pack_price
+    per_unit_freight: float | None = Field(default=None, gt=0)      # per-unit freight component; total freight = flat + per_unit * units
 
     @field_validator("price_breaks")
     @classmethod
@@ -250,6 +252,8 @@ class QuoteVersion(BaseModel):
     compare_breaks: list[PriceBreak] = Field(default_factory=list)    # the same tiers on the buyer's GST basis
     free_freight_above: float | None = None
     compare_free_freight_above: float | None = None                   # the threshold on the buyer's GST basis
+    per_unit_freight: float | None = None                             # per-unit freight as stated by the seller
+    compare_per_unit_freight: float | None = None                     # per-unit freight on the buyer's GST basis
 
 
 class NegotiationTargetIn(BaseModel):
@@ -286,6 +290,7 @@ class DecisionIn(BaseModel):
     winner_id: str
     reason: str
     approver: str
+    split: bool = False     # true = order the server's own best two-seller split; quantities are never taken from the client
 
 
 # ─── Supplier Profile & Products ───────────────────────────────────────────
@@ -301,6 +306,7 @@ class SupplierProductIn(BaseModel):
     unit: str = "pc"
     stock: int | None = None  # snapshot, not reserved; None = not tracked
     freight: float = 0.0
+    per_unit_freight: float | None = Field(default=None, gt=0)      # per-unit freight component
     price_breaks: list[PriceBreak] = Field(default_factory=list)
     free_freight_above: float | None = Field(default=None, gt=0)    # free delivery when goods are worth at least this
     aliases: list[str] = Field(default_factory=list)
@@ -325,6 +331,7 @@ class SupplierProduct(BaseModel):
     unit: str = "pc"
     stock: int | None = None  # snapshot, not reserved; None = not tracked
     freight: float = 0.0
+    per_unit_freight: float | None = Field(default=None, gt=0)      # per-unit freight component
     price_breaks: list[PriceBreak] = Field(default_factory=list)
     free_freight_above: float | None = Field(default=None, gt=0)    # free delivery when goods are worth at least this
     aliases: list[str] = Field(default_factory=list)
@@ -438,6 +445,7 @@ class DraftQuote(BaseModel):
     price_break_applied: int | None = None  # min_qty of the break used, if any
     price_breaks: list[PriceBreak] = Field(default_factory=list)   # whole tier list (base tier first) when the item has breaks
     free_freight_above: float | None = None
+    per_unit_freight: float | None = None                          # per-unit freight component, copied from catalog
     tax_rate: float | None = None
     price_includes_tax: bool | None = None
     verdict: Verdict

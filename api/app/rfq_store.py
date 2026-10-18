@@ -27,7 +27,7 @@ from .models import (
     PriceBreak,
     check_tiers,
 )
-from .engine import order
+from .engine import best_split, order
 from .intake import item_key
 from .engine import evaluate
 from .tax import normalise_price
@@ -252,8 +252,10 @@ class RFQStore:
             sid = self.supplier_for_alias(r.id, alias)
             latest = (self.quotes.get(r.id, {}).get(sid) or [None])[-1] if sid else None
             if latest:
+                sp = r.decision.get("split")
                 return {"source": "your_last_order", "label": "Your last order", "date": r.decision["decided_at"][:10],
-                        "qty": r.qty, "landed": latest.landed_cost, "lead_days": latest.lead_days}
+                        "qty": r.qty, "landed": sp["total_landed"] if sp else latest.landed_cost,
+                        "lead_days": sp["lead_days"] if sp else latest.lead_days}
         hist = [h for h in self.history if h["item_key"] == key]
         if hist:
             h = max(hist, key=lambda h: h["date"])
@@ -756,6 +758,7 @@ class RFQStore:
         shipping_basis: Optional[str] = None,
         price_breaks: Optional[list[PriceBreak]] = None,
         free_freight_above: Optional[float] = None,
+        per_unit_freight: Optional[float] = None,
     ) -> QuoteVersion:
         rfq_id = self.token_to_rfq_id.get(token)
         if not rfq_id or rfq_id not in self.rfqs:
@@ -782,10 +785,13 @@ class RFQStore:
                           for b in stated_breaks]
         # the threshold is a goods value, so it moves to the buyer's GST basis by the same factor as the price
         compare_ffa = free_freight_above * (compare_price / pack_price) if free_freight_above and pack_price else None
+        # per_unit_freight is a price-like value: same GST normalisation as pack_price
+        compare_puf = per_unit_freight * (compare_price / pack_price) if per_unit_freight and pack_price else None
         q_obj = Quote(
             id=supplier_id, supplier=supplier_name, item=rfq.item,
             pack_price=compare_price, pack_size=pack_size, freight=freight,
             lead_days=lead_days, moq=moq, max_qty=max_qty, price_breaks=compare_breaks, free_freight_above=compare_ffa,
+            per_unit_freight=compare_puf,
         )
         calc = order(q_obj, min(rfq.qty, max_qty) if max_qty else rfq.qty)
         landed = calc.landed if calc else compare_price * pack_size + freight
@@ -801,6 +807,7 @@ class RFQStore:
             shipping=shipping, shipping_basis=shipping_basis if shipping == "delhivery" else None,
             price_breaks=stated_breaks, compare_breaks=compare_breaks,
             free_freight_above=free_freight_above, compare_free_freight_above=compare_ffa,
+            per_unit_freight=per_unit_freight, compare_per_unit_freight=compare_puf,
             submitted_at=datetime.now().strftime("%I:%M %p"),
         )
         issued = self.assists.get(token)
@@ -872,7 +879,7 @@ class RFQStore:
 
         return target
 
-    def save_decision(self, rfq_id: str, winner_id: str, reason: str, approver: str) -> dict:
+    def save_decision(self, rfq_id: str, winner_id: str, reason: str, approver: str, split: Optional[dict] = None) -> dict:
         rfq = self.rfqs.get(rfq_id)
         if not rfq:
             raise ValueError(f"RFQ {rfq_id} not found.")
@@ -890,9 +897,19 @@ class RFQStore:
             # Every gate a person chose to break on this request, with their written reason.
             "exceptions": {a: r.model_dump() for a, r in self.exceptions_by_alias(rfq_id).items()},
         }
+        if split:
+            decision["split"] = split          # two sellers, each with their own quantity; winner_id is the larger share
         rfq.decision = decision
         self.decisions[rfq_id] = decision
         return decision
+
+    def split_options(self, rfq_id: str) -> Optional[dict]:
+        """The best two-seller split for this request, or None when one seller already wins alone."""
+        rfq = self.rfqs.get(rfq_id)
+        if not rfq:
+            return None
+        return best_split(self.get_latest_quotes_as_engine_input(rfq_id),
+                          Need(item=rfq.item, qty=rfq.qty, need_in_days=rfq.need_in_days), self.exceptions_by_alias(rfq_id))
 
     def get_latest_quotes_as_engine_input(self, rfq_id: str) -> List[Quote]:
         rfq = self.rfqs.get(rfq_id)
@@ -911,6 +928,7 @@ class RFQStore:
                 pack_size=latest.pack_size,
                 freight=latest.freight, lead_days=latest.lead_days,
                 moq=latest.moq, max_qty=latest.max_qty, price_breaks=latest.compare_breaks, free_freight_above=latest.compare_free_freight_above,
+                per_unit_freight=latest.compare_per_unit_freight,
                 raw=f"v{latest.version}: ₹{latest.pack_price} + ₹{latest.freight}",
             ))
         return res

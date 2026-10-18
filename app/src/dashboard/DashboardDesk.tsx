@@ -18,7 +18,7 @@ import { quotesFromRFQDetails, needFromRFQ } from "../lib/convert";
 import {
   getRFQDetails, sendTarget, lockDecision,
   getChatMessages, postChatMessage,
-  getSupplierProfileForBuyer, getSummary, getAiOpinion, type AiOpinionDTO, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, draftQuotesFromMessage, type ImportResult, type QuoteDraftRow,
+  getSupplierProfileForBuyer, getSummary, getAiOpinion, type AiOpinionDTO, getSplitOptions, lockSplitDecision, type SplitPlanDTO, revealSeller, mockUpgrade, RevealsExhausted, recordException, withdrawException, importQuotes, getImportTemplate, draftQuotesFromMessage, type ImportResult, type QuoteDraftRow,
   type DeliveryDTO, type RFQDetailsDTO, type ChatMessageDTO, type SellerPanelDTO, type SellerIdentity, type PlanInfo, type SummaryDTO,
 } from "../api/client";
 
@@ -106,6 +106,25 @@ export function DashboardDesk() {
     () => !decidedNow && quoteSig ? getAiOpinion(rfqId ?? "").catch(() => null) : Promise.resolve(null),
     [decidedNow, rfqId, quoteSig],
   );
+
+  // Best two-seller split, offered next to the normal pick. Refreshed when quotes or signed exceptions change.
+  const exceptionSig = Object.keys(details?.exceptions ?? {}).join(",");
+  const { data: splitPlan } = useApiOnce<SplitPlanDTO | null>(
+    () => !decidedNow && quoteSig ? getSplitOptions(rfqId ?? "").catch(() => null) : Promise.resolve(null),
+    [decidedNow, rfqId, quoteSig, exceptionSig],
+  );
+  const [showSplitModal, setShowSplitModal] = useState(false);
+  const handleSaveSplit = async (reason: string, approver: string) => {
+    if (!splitPlan) return;
+    try {
+      await lockSplitDecision(rfqId ?? "", splitPlan.parts[0].quote_id, reason, approver);
+      setDecisionSaved(true);
+      setShowSplitModal(false);
+      refetch();
+    } catch (e) {
+      console.error("Failed to save the split order:", e);
+    }
+  };
 
   // Supplier profile (click-through)
   const { data: supplierProfile, refetch: refetchPanel } = useApiOnce<SellerPanelDTO | null>(
@@ -469,7 +488,16 @@ export function DashboardDesk() {
                           )}
                           {versions[latestVer - 1]?.free_freight_above != null && (
                             <p className="mt-1 text-[11px] text-muted">
-                              Free delivery when goods reach {inr(versions[latestVer - 1].free_freight_above as number)} (as quoted)
+                              Free delivery when goods reach{" "}
+                              {inr(versions[latestVer - 1].compare_free_freight_above ?? versions[latestVer - 1].free_freight_above as number)}{" "}
+                              {versions[latestVer - 1].compare_free_freight_above != null ? "(on your GST basis)" : "(as quoted)"}
+                            </p>
+                          )}
+                          {versions[latestVer - 1]?.per_unit_freight != null && (
+                            <p className="mt-1 text-[11px] text-muted">
+                              Per-unit freight:{" "}
+                              {inr(versions[latestVer - 1].compare_per_unit_freight ?? versions[latestVer - 1].per_unit_freight as number)}/unit{" "}
+                              {versions[latestVer - 1].compare_per_unit_freight != null ? "(on your GST basis)" : "(as quoted)"}
                             </p>
                           )}
                           {versions[latestVer - 1]?.shipping && (
@@ -613,6 +641,39 @@ export function DashboardDesk() {
                 <CostChart qty={qty} winnerId={winner?.quote.id} quotes={engineQuotes} late={evaluation.rows.filter(r => r.status === "exception").map(r => r.quote.id)} />
               </div>
             </div>
+
+            {splitPlan && !decidedNow && (
+              <div className="space-y-3 rounded-2xl border border-signal/40 bg-signal/5 p-4 text-[13px]" aria-label="Split order option">
+                <div>
+                  <p className="label text-signal">SPLIT ORDER OPTION</p>
+                  <p className="mt-1 text-bone">
+                    {splitPlan.reason === "no_single_supplier_can_fill"
+                      ? `No single seller can cover ${rfq.qty} units. Buying from two sellers does.`
+                      : `Buying from two sellers costs ${inr(splitPlan.saving ?? 0)} less than the best single seller.`}
+                  </p>
+                </div>
+                <ul className="divide-y divide-line rounded-xl border border-line bg-surface/80">
+                  {splitPlan.parts.map(p => (
+                    <li key={p.quote_id} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <span className="text-bone"><strong>{p.quote_id}</strong> <span className="text-muted">· {p.qty} units ({p.packs} pack{p.packs === 1 ? "" : "s"}) · {p.lead_days} days</span></span>
+                      <span className="num font-medium text-bone">{inr(p.landed)}</span>
+                    </li>
+                  ))}
+                  <li className="flex items-center justify-between gap-3 px-3 py-2">
+                    <span className="text-muted">Total landed · arrives in {splitPlan.lead_days} days{splitPlan.overbuy > 0 ? ` · ${splitPlan.overbuy} extra unit${splitPlan.overbuy === 1 ? "" : "s"}` : ""}</span>
+                    <span className="num text-[15px] font-semibold text-bone">{inr(splitPlan.total_landed)}</span>
+                  </li>
+                </ul>
+                {splitPlan.best_single && (
+                  <p className="text-[12px] text-muted">Best single seller: {splitPlan.best_single.quote_id} at {inr(splitPlan.best_single.landed)}.</p>
+                )}
+                <button type="button" onClick={() => setShowSplitModal(true)}
+                  className="rounded-full bg-signal px-4 py-1.5 text-[13px] font-semibold text-ink hover:opacity-95">
+                  Order this split
+                </button>
+                <p className="text-[11px] text-muted">Two orders, two sellers, two reveals. You review everything before it is saved.</p>
+              </div>
+            )}
 
             {opinion && !decidedNow && (
               <div className={`rounded-2xl border p-4 text-[13px] ${opinion.agrees ? "border-line bg-surface/80" : "border-warn/50 bg-warn/5"}`}>
@@ -768,6 +829,9 @@ export function DashboardDesk() {
                       {details.revealed[rfq.decision.winner_id as string].contact_name} · {details.revealed[rfq.decision.winner_id as string].phone} · {details.revealed[rfq.decision.winner_id as string].email}
                     </span></p>
                   )}
+                  {summary?.split && (
+                    <p>Split order: <span className="text-bone">{summary.split.parts.map(p => `${p.quote_id} ${p.qty} units (${inr(p.landed)})`).join(" + ")}</span></p>
+                  )}
                   <p>Payment: <span className="text-bone">{(rfq.decision.payment_note as string) ?? "Cash on delivery. Crossover never holds money."}</span></p>
                   <p>Reason: <span className="text-bone">{rfq.decision.reason as string}</span></p>
                   <p>Approver: <span className="text-bone">{rfq.decision.approver as string}</span></p>
@@ -881,6 +945,18 @@ export function DashboardDesk() {
           onReveal={handleReveal}
           onSave={handleSaveDecision}
           onClose={() => setShowDecisionModal(false)}
+        />
+      )}
+
+      {showSplitModal && splitPlan && (
+        <SplitOrderModal
+          plan={splitPlan}
+          revealed={details?.revealed ?? {}}
+          revealing={revealingAlias !== null}
+          defaultApprover={rfq.buyer_name}
+          onReveal={handleReveal}
+          onSave={handleSaveSplit}
+          onClose={() => setShowSplitModal(false)}
         />
       )}
 
@@ -1025,6 +1101,74 @@ function SaveDecisionModal({
   );
 }
 
+
+// ─── Split order ───────────────────────────────────────────────────────────
+
+/** Order the engine's two-seller split. Both sellers must be revealed first; the quantities are the server's, not editable. */
+function SplitOrderModal({ plan, revealed, revealing, defaultApprover, onReveal, onSave, onClose }: {
+  plan: SplitPlanDTO;
+  revealed: Record<string, unknown>;
+  revealing: boolean;
+  defaultApprover: string;
+  onReveal: (alias: string) => void;
+  onSave: (reason: string, approver: string) => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState(
+    plan.reason === "no_single_supplier_can_fill"
+      ? "No single seller could cover the quantity, so the order is split."
+      : "Splitting the order is cheaper than any single seller.");
+  const [approver, setApprover] = useState(defaultApprover);
+  const hidden = plan.parts.filter(p => !revealed[p.quote_id]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-4 backdrop-blur-md" role="dialog" aria-label="Order the split">
+      <div className="w-full max-w-md space-y-4 rounded-2xl border border-line bg-surface p-6 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="display text-xl text-bone">Order the split</h3>
+          <button onClick={onClose} className="text-muted hover:text-bone" aria-label="Close"><X size={18} /></button>
+        </div>
+        <p className="text-[13px] text-muted">This places two orders and locks the request. Payment is cash on delivery; Crossover never holds money.</p>
+        <ul className="space-y-1 text-[13px]">
+          {plan.parts.map(p => (
+            <li key={p.quote_id} className="flex items-center justify-between rounded-lg border border-line bg-raised/40 px-3 py-2">
+              <span className="text-bone">{p.quote_id}: {p.qty} units · <span className="num">{inr(p.landed)}</span></span>
+              <span className={revealed[p.quote_id] ? "text-success" : "text-muted"}>{revealed[p.quote_id] ? "Revealed" : "Hidden"}</span>
+            </li>
+          ))}
+        </ul>
+        <div>
+          <label className="label mb-1.5 block text-bone">Reason</label>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2}
+            className="w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-bone" />
+        </div>
+        <div>
+          <label className="label mb-1.5 block text-bone">Approver</label>
+          <input type="text" value={approver} onChange={e => setApprover(e.target.value)}
+            className="w-full rounded-lg border border-line bg-raised px-3 py-2 text-[14px] text-bone" />
+        </div>
+        {hidden.length > 0 && (
+          <p className="rounded-lg border border-line bg-raised/40 p-2.5 text-[12px] text-muted">
+            You need both sellers' contacts to place the order. Revealing uses one free reveal each, unless you have unlocked them before.
+          </p>
+        )}
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
+          <button onClick={onClose} className="rounded-full border border-line px-4 py-1.5 text-[13px] text-muted hover:text-bone">Cancel</button>
+          {hidden.length > 0 ? hidden.map(p => (
+            <button key={p.quote_id} onClick={() => onReveal(p.quote_id)} disabled={revealing}
+              className="flex items-center gap-1.5 rounded-full bg-signal px-4 py-1.5 text-[13px] font-medium text-ink hover:opacity-90 disabled:opacity-40">
+              <Unlock size={14} /><span>{revealing ? "Revealing…" : `Reveal ${p.quote_id}`}</span>
+            </button>
+          )) : (
+            <button onClick={() => onSave(reason, approver)} disabled={!reason.trim() || !approver.trim()}
+              className="flex items-center gap-1.5 rounded-full bg-signal px-5 py-1.5 text-[13px] font-medium text-ink hover:opacity-90 disabled:opacity-40">
+              <Save size={14} /><span>Place split order & lock</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Reveals left, and the mock paywall ────────────────────────────────────
 

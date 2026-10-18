@@ -73,6 +73,7 @@ export function SupplierDashboard() {
   const [newProdStock, setNewProdStock] = useState<number | "">("");
   const [newProdFreight, setNewProdFreight] = useState<number | "">("");
   const [newProdFreeAbove, setNewProdFreeAbove] = useState<number | "">("");
+  const [newProdPerUnitFreight, setNewProdPerUnitFreight] = useState<number | "">("");
   const [newProdGst, setNewProdGst] = useState<number | "">(18);
   const [newProdGstIncl, setNewProdGstIncl] = useState<"excl" | "incl" | "unstated">("excl");
   const [newProdTiers, setNewProdTiers] = useState<{ min: number | ""; price: number | "" }[]>([]);
@@ -93,6 +94,7 @@ export function SupplierDashboard() {
         stock: typeof newProdStock === "number" ? newProdStock : null,
         freight: typeof newProdFreight === "number" ? newProdFreight : 0,
         free_freight_above: typeof newProdFreeAbove === "number" && newProdFreeAbove > 0 ? newProdFreeAbove : null,
+        per_unit_freight: typeof newProdPerUnitFreight === "number" && newProdPerUnitFreight > 0 ? newProdPerUnitFreight : null,
         tax_rate: newProdGstIncl !== "unstated" && typeof newProdGst === "number" ? newProdGst : null,
         price_includes_tax: newProdGstIncl === "unstated" ? null : newProdGstIncl === "incl",
         price_breaks: newProdTiers
@@ -103,7 +105,7 @@ export function SupplierDashboard() {
       setShowAddProduct(false);
       setNewProdName("");
       setNewProdStock("");
-      setNewProdFreight(""); setNewProdFreeAbove(""); setNewProdTiers([]);
+      setNewProdFreight(""); setNewProdFreeAbove(""); setNewProdPerUnitFreight(""); setNewProdTiers([]);
       setAddError(null);
     } catch (e) {
       setAddError(/422/.test(String(e)) ? "Check the price tiers: a bigger order cannot cost more per pack, and each tier needs its own quantity." : "Could not add the product.");
@@ -455,6 +457,12 @@ export function SupplierDashboard() {
                         <label className="label mb-1 block text-bone">Free delivery above (₹)</label>
                         <input type="number" min="1" value={newProdFreeAbove} placeholder="optional"
                           onChange={e => setNewProdFreeAbove(e.target.value === "" ? "" : Number(e.target.value))}
+                          className="num w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-bone" />
+                      </div>
+                      <div>
+                        <label className="label mb-1 block text-bone">Per-unit freight (₹/unit)</label>
+                        <input type="number" min="0.01" step="any" value={newProdPerUnitFreight} placeholder="optional"
+                          onChange={e => setNewProdPerUnitFreight(e.target.value === "" ? "" : Number(e.target.value))}
                           className="num w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-bone" />
                       </div>
                     </div>

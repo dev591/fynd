@@ -59,6 +59,9 @@ def draft_quote(rfq: RFQ, product: SupplierProduct) -> DraftQuote:
         pack_price=price, pack_size=product.pack_size, freight=product.freight,
         lead_days=product.usual_lead_days, moq=product.moq,
         max_qty=product.stock if product.stock is not None else product.capacity_cap,
-        price_break_applied=applied, price_breaks=tiers, free_freight_above=product.free_freight_above, tax_rate=product.tax_rate, price_includes_tax=product.price_includes_tax,
+        price_break_applied=applied, price_breaks=tiers,
+        free_freight_above=product.free_freight_above,
+        per_unit_freight=product.per_unit_freight,
+        tax_rate=product.tax_rate, price_includes_tax=product.price_includes_tax,
         verdict=verdict_for(rfq, product),
     )

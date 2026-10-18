@@ -24,6 +24,7 @@ interface QuoteFormProps {
     leadDays?: number;
     priceBreaks?: PriceBreakDTO[];
     freeFreightAbove?: number;
+    perUnitFreight?: number;
     moq?: number;
     maxQty?: number;
     taxRate?: number;
@@ -44,6 +45,7 @@ interface QuoteFormProps {
     shippingBasis?: "delhivery" | "rate_card";
     priceBreaks?: PriceBreakDTO[];
     freeFreightAbove?: number;
+    perUnitFreight?: number;
   }) => void;
   /** Freight and delivery days from the pincodes saved at sign-up. Rejects when none can be worked out. */
   onEstimate?: (weightKg: number) => Promise<ShippingEstimate>;
@@ -72,8 +74,10 @@ export function QuoteForm({
   const [freight, setFreight] = useState<number | "">(initialValues?.freight ?? 150);
   const [leadDays, setLeadDays] = useState<number | "">(initialValues?.leadDays ?? 3);
 
-  // Folded optional fields
-  const [showOptional, setShowOptional] = useState(!!initialValues?.notes);
+  // Folded optional fields — open automatically when prefilled data lives there
+  const [showOptional, setShowOptional] = useState(
+    !!initialValues?.notes || !!initialValues?.freeFreightAbove || !!initialValues?.perUnitFreight || (initialValues?.priceBreaks ?? []).length > 0,
+  );
   const [moq, setMoq] = useState<number | "">(initialValues?.moq ?? 1);
   const [maxQty, setMaxQty] = useState<number | "">(initialValues?.maxQty ?? "");
   // GST basis: never assumed for the seller. "Not stated" is sent as nothing, and the buyer sees it flagged.
@@ -87,6 +91,7 @@ export function QuoteForm({
   const [tiers, setTiers] = useState<PriceBreakDTO[]>(initialValues?.priceBreaks ?? []);
   const [tiersDropped, setTiersDropped] = useState(false);
   const [freeAbove, setFreeAbove] = useState<number | "">(initialValues?.freeFreightAbove ?? "");
+  const [perUnitFreight, setPerUnitFreight] = useState<number | "">(initialValues?.perUnitFreight ?? "");
 
   // Shipping: own shipment, or Delhivery. The estimate only reaches the quote when the seller presses "Use this".
   const [shipping, setShipping] = useState<"own" | "delhivery">("own");
@@ -151,6 +156,7 @@ export function QuoteForm({
         moq: numMoq,
         priceBreaks: tiers.map(t => ({ minQty: t.min_qty, packPrice: t.pack_price })),
         freeFreightAbove: typeof freeAbove === "number" && freeAbove > 0 ? freeAbove : undefined,
+        perUnitFreight: typeof perUnitFreight === "number" && perUnitFreight > 0 ? perUnitFreight : undefined,
         raw: "",
         channel: "Portal",
       },
@@ -158,7 +164,7 @@ export function QuoteForm({
     );
 
     return res;
-  }, [packPrice, packSize, freight, moq, leadDays, rfq.item, rfq.qty, tiers, freeAbove]);
+  }, [packPrice, packSize, freight, moq, leadDays, rfq.item, rfq.qty, tiers, freeAbove, perUnitFreight]);
 
   const isValid =
     typeof packPrice === "number" &&
@@ -186,6 +192,7 @@ export function QuoteForm({
       notes: notes.trim() || undefined,
       priceBreaks: tiers.length ? tiers : undefined,
       freeFreightAbove: typeof freeAbove === "number" && freeAbove > 0 ? freeAbove : undefined,
+      perUnitFreight: typeof perUnitFreight === "number" && perUnitFreight > 0 ? perUnitFreight : undefined,
       shipping,
       shippingBasis: shipping === "delhivery" && applied ? applied.basis : undefined,
     });
@@ -416,6 +423,21 @@ export function QuoteForm({
                   className="num w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-bone"
                 />
                 <span className="mt-1 block text-[11px] text-muted">Same GST basis as your price. Freight is waived when the order reaches it.</span>
+              </div>
+
+              {/* Per-unit freight */}
+              <div>
+                <label className="label mb-1 block text-muted">Per-unit freight (₹/unit, optional)</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  value={perUnitFreight}
+                  onChange={(e) => setPerUnitFreight(e.target.value === "" ? "" : Number(e.target.value))}
+                  placeholder="e.g. 2"
+                  className="num w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-bone"
+                />
+                <span className="mt-1 block text-[11px] text-muted">Added to flat freight: total freight = flat + this × units dispatched.</span>
               </div>
             </div>
 

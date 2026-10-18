@@ -25,6 +25,7 @@ costs ₹1,150, so B wins. Above 150 units A wins. Crossover treats a quote as a
 | Area | What you can do |
 |---|---|
 | **Compare** | Volume price tiers from a seller's catalog (the tier the order reaches sets the pack price, shown to the buyer and used by the quantity slider). Landed cost per seller, cost per usable unit, cash tied up in extra units, quantity slider (the winner can flip), spreadsheet mode (shows the naive pick and the rupee difference), winner under cheapest / fastest / balanced with a "what you give up" line |
+| **Split order** | When no single seller can cover the quantity, or two together are cheaper, the best two-seller split is shown beside the normal pick with each seller's share, the total and the saving. Ordering it needs both sellers revealed; the quantities are the server's, not editable |
 | **Gates** | Different item, unknown pack size (blocked), late delivery or short stock (needs a **written reason and a named approver**; a blank reason is refused), cheaper-but-excluded list |
 | **Tax** | Quotes are put on one GST basis (ex-GST if you can claim it back). A basis the seller did not state is treated as exclusive and flagged |
 | **Anonymous quotes** | Sellers appear as "Seller 1/2…". Name, contact, city and products unlock per seller with **Reveal** (3 free, then a mock paywall) |
@@ -109,7 +110,7 @@ notifications on both laptops). See `DEPLOY.md` and `render.yaml`.
 ## Test it
 
 ```bash
-cd api && python3 -m pytest -q          # 320 tests
+cd api && python3 -m pytest -q          # 436 tests
 cd app && npx tsc -b && npm run lint && npm run build
 cd api && python3 -m tests.golden.run_live   # real-model check of the 15 buyer sentences (needs keys)
 ```
@@ -152,8 +153,8 @@ AUDIT.md     what exists against the v2 brief, and the decisions made
 ## Known limits, stated plainly
 
 - Item matching is by exact name or alias only. No spec, grade or brand comparison.
-- A partial fill is an exception that needs sign-off; a two-seller split order is not built.
-- Freight is one flat amount per quote: no per-unit or weight-based freight and no free-freight-above-X rule. Volume price tiers are modelled (see Compare).
+- A partial fill is an exception that needs sign-off. A split order covers the quantity from up to two sellers (never three), is offered next to the normal pick, and needs both sellers revealed.
+- Freight is one flat amount per quote: volume price tiers, a free-delivery-above threshold, and a per-unit freight component (total freight = flat + per_unit × units dispatched) are now modelled. Per-kg freight is not.
 - Seller reliability is not scored.
 - One uvicorn process. SQLite and in-memory state are fine for a demo, not for scale.
 - Chat scrubs phone numbers and emails in common formats; it cannot catch a number spelled out in words.

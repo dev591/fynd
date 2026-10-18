@@ -640,16 +640,34 @@ def sample_request(user: AuthUser = Depends(buyer_only)):
     return _rfq_response(rfq)
 
 
+@app.get("/api/rfqs/{rfq_id}/split-options")
+def split_options(rfq_id: str, user: AuthUser = Depends(buyer_only)):
+    """The best two-seller split for this request, with aliases only. `plan` is null when one seller already wins alone."""
+    _rfq_for(user, rfq_id)
+    return {"plan": store.split_options(rfq_id)}
+
+
 @app.post("/api/rfqs/{rfq_id}/decision")
 def record_decision(rfq_id: str, payload: DecisionIn, user: AuthUser = Depends(buyer_only)):
     """Order handoff. The chosen seller must have been revealed first, so the buyer can actually contact them."""
     _rfq_for(user, rfq_id)
-    sid = _seller_by_alias(rfq_id, payload.winner_id)
-    if not store.is_revealed(rfq_id, sid):
-        raise HTTPException(status_code=409, detail={"code": "reveal_required",
-                            "message": "Reveal this seller before saving the order."})
+    plan = None
+    if payload.split:
+        plan = store.split_options(rfq_id)
+        if not plan:
+            raise HTTPException(status_code=409, detail={"code": "no_split", "message": "No split order is available for this request."})
+        for part in plan["parts"]:
+            if not store.is_revealed(rfq_id, _seller_by_alias(rfq_id, part["quote_id"])):
+                raise HTTPException(status_code=409, detail={"code": "reveal_required",
+                                    "message": f"Reveal {part['quote_id']} before saving the split order."})
+        payload.winner_id = plan["parts"][0]["quote_id"]
+    else:
+        sid = _seller_by_alias(rfq_id, payload.winner_id)
+        if not store.is_revealed(rfq_id, sid):
+            raise HTTPException(status_code=409, detail={"code": "reveal_required",
+                                "message": "Reveal this seller before saving the order."})
     try:
-        return store.save_decision(rfq_id=rfq_id, winner_id=payload.winner_id, reason=payload.reason, approver=payload.approver)
+        return store.save_decision(rfq_id=rfq_id, winner_id=payload.winner_id, reason=payload.reason, approver=payload.approver, split=plan)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -684,6 +702,7 @@ def submit_supplier_quote(token: str, payload: QuoteSubmitIn):
             tax_rate=payload.tax_rate, price_includes_tax=payload.price_includes_tax,
             shipping=payload.shipping, shipping_basis=payload.shipping_basis,
             price_breaks=payload.price_breaks, free_freight_above=payload.free_freight_above,
+            per_unit_freight=payload.per_unit_freight,
         )   # origin is decided by the server, never taken from the client
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

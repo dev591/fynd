@@ -97,6 +97,7 @@ export function SupplierQuotePage() {
         notes: `Revised to match buyer counter-offer: ${target.message}`,
         priceBreaks: latestQuote?.price_breaks,
         freeFreightAbove: latestQuote?.free_freight_above ?? undefined,
+        perUnitFreight: latestQuote?.per_unit_freight ?? undefined,
       };
     }
     if (latestQuote) {
@@ -109,6 +110,7 @@ export function SupplierQuotePage() {
         maxQty: latestQuote.max_qty,
         priceBreaks: latestQuote.price_breaks,
         freeFreightAbove: latestQuote.free_freight_above ?? undefined,
+        perUnitFreight: latestQuote.per_unit_freight ?? undefined,
         notes: latestQuote.notes,
       };
     }
@@ -124,6 +126,7 @@ export function SupplierQuotePage() {
         priceIncludesTax: draft.price_includes_tax ?? undefined,
         priceBreaks: draft.price_breaks,
         freeFreightAbove: draft.free_freight_above ?? undefined,
+        perUnitFreight: draft.per_unit_freight ?? undefined,
         notes: assist?.message.text,
       };
     }
@@ -133,7 +136,7 @@ export function SupplierQuotePage() {
   const handleQuoteSubmit = async (data: {
     packPrice: number; packSize: number; freight: number; leadDays: number;
     moq?: number; maxQty?: number; taxRate?: number; priceIncludesTax?: boolean; notes?: string;
-    shipping?: "own" | "delhivery"; shippingBasis?: "delhivery" | "rate_card"; priceBreaks?: { min_qty: number; pack_price: number }[]; freeFreightAbove?: number;
+    shipping?: "own" | "delhivery"; shippingBasis?: "delhivery" | "rate_card"; priceBreaks?: { min_qty: number; pack_price: number }[]; freeFreightAbove?: number; perUnitFreight?: number;
   }) => {
     setSubmitting(true);
     setSubmitError(null);
@@ -153,6 +156,7 @@ export function SupplierQuotePage() {
         shipping_basis: data.shippingBasis,
         price_breaks: data.priceBreaks,
         free_freight_above: data.freeFreightAbove,
+        per_unit_freight: data.perUnitFreight,
       });
       setIsRevising(false);
       refetchMine();
@@ -400,6 +404,9 @@ export function SupplierQuotePage() {
                   {latestQuote.notes && (
                     <div className="mt-3 text-[12px] text-muted"><strong>Terms:</strong> {latestQuote.notes}</div>
                   )}
+                  {latestQuote.per_unit_freight != null && (
+                    <div className="mt-2 text-[12px] text-muted">Per-unit freight: ₹{latestQuote.per_unit_freight}/unit (added to flat freight)</div>
+                  )}
 
                   <div className="mt-4 flex items-center justify-between border-t border-line/60 pt-3 text-[12px]">
                     <span className="text-muted flex items-center gap-1">
@@ -428,11 +435,11 @@ export function SupplierQuotePage() {
                     </span>
                     <div className="space-y-2">
                       {quotes.map(q => (
-                        <div key={q.version} className="flex items-center justify-between text-[12px] border-b border-line/40 py-1.5 last:border-0">
+                        <div key={q.version} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] border-b border-line/40 py-1.5 last:border-0">
                           <span className="font-semibold text-bone">v{q.version}</span>
                           <span className="text-muted">₹{q.pack_price}/pack · ₹{q.freight} freight</span>
                           <Money amount={q.landed_cost} className="font-mono text-bone" />
-                          <span className="text-muted">{q.submitted_at}</span>
+                          <span className="text-muted hidden sm:inline">{q.submitted_at}</span>
                         </div>
                       ))}
                     </div>

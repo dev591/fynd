@@ -18,6 +18,7 @@ export function toEngineQuote(qv: QuoteVersionDTO, item: string): Quote {
     moq: qv.moq,
     maxQty: qv.max_qty ?? undefined,
     freeFreightAbove: qv.compare_free_freight_above ?? undefined,
+    perUnitFreight: qv.compare_per_unit_freight ?? undefined,
     priceBreaks: (qv.compare_breaks ?? []).map(b => ({ minQty: b.min_qty, packPrice: b.pack_price })),
     raw: `v${qv.version}: ₹${qv.pack_price}/${qv.pack_size === null ? "pack of unknown size" : qv.pack_size > 1 ? qv.pack_size + "pcs" : "pc"} + ₹${qv.freight} freight`,
     channel: "Portal",

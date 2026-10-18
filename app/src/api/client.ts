@@ -187,6 +187,8 @@ export interface QuoteVersionDTO {
   compare_breaks?: PriceBreakDTO[];
   free_freight_above?: number | null;
   compare_free_freight_above?: number | null;
+  per_unit_freight?: number | null;
+  compare_per_unit_freight?: number | null;
   landed_cost: number | null;
   units: number;
   packs: number;
@@ -475,6 +477,7 @@ export interface SummaryDTO {
   exceptions: Record<string, { reason: string; approver: string }>;
   explainer: { text: string; source: "ai" | "engine"; discarded_reason: string | null } | null;
   ai_opinion?: AiOpinionDTO | null;
+  split?: SplitPlanDTO | null;
   savings: {
     spreadsheet_pick: string; spreadsheet_landed: number; crossover_pick: string;
     crossover_landed: number; difference: number; label: string;
@@ -486,6 +489,39 @@ export interface SummaryDTO {
   /** Sellers this buyer has unlocked. Always empty on a shared link. */
   revealed: Record<string, SellerIdentity>;
   synthetic_note: string;
+}
+
+export interface SplitPartDTO {
+  quote_id: string;
+  qty: number;
+  packs: number;
+  units: number;
+  landed: number;
+  lead_days: number;
+}
+
+export interface SplitPlanDTO {
+  parts: SplitPartDTO[];
+  total_landed: number;
+  lead_days: number;
+  units: number;
+  overbuy: number;
+  best_single: { quote_id: string; landed: number } | null;
+  saving: number | null;
+  reason: "cheaper_than_best_single" | "no_single_supplier_can_fill";
+}
+
+/** The best two-seller split, or null when one seller already wins alone. Aliases only. */
+export async function getSplitOptions(rfqId: string): Promise<SplitPlanDTO | null> {
+  return (await apiFetch<{ plan: SplitPlanDTO | null }>(`/api/rfqs/${rfqId}/split-options`)).plan;
+}
+
+/** Order the server's own split. Quantities are never sent: the server uses its plan, and both sellers must be revealed. */
+export async function lockSplitDecision(rfqId: string, primaryAlias: string, reason: string, approver: string): Promise<Record<string, unknown>> {
+  return apiFetch(`/api/rfqs/${rfqId}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ winner_id: primaryAlias, reason, approver, split: true }),
+  });
 }
 
 export interface AiOpinionDTO {
@@ -599,6 +635,7 @@ export interface QuoteSubmitPayload {
   shipping_basis?: "delhivery" | "rate_card";
   price_breaks?: PriceBreakDTO[];
   free_freight_above?: number;
+  per_unit_freight?: number;
 }
 
 export interface ShippingEstimate {
@@ -634,6 +671,7 @@ export interface DraftQuoteDTO {
   price_break_applied?: number | null;
   price_breaks?: PriceBreakDTO[];
   free_freight_above?: number | null;
+  per_unit_freight?: number | null;
   tax_rate?: number | null;
   price_includes_tax?: boolean | null;
   verdict: VerdictDTO;
@@ -726,6 +764,7 @@ export interface SupplierProductDTO {
   stock?: number | null;
   freight?: number;
   free_freight_above?: number | null;
+  per_unit_freight?: number | null;
   tax_rate?: number | null;
   price_includes_tax?: boolean | null;
   price_breaks?: Array<{ min_qty: number; pack_price: number }>;

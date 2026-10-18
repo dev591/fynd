@@ -106,14 +106,26 @@ export function DecisionOnePager({ shared = false }: { shared?: boolean }) {
           {s.decided && s.decision ? (
             <>
               <p className="label text-success">DECIDED</p>
-              <h2 className="display text-2xl">{pick?.supplier} · <span className="num">{pick?.landed != null ? inr(pick.landed) : "—"}</span> landed</h2>
+              <h2 className="display text-2xl">
+                {s.split ? s.split.parts.map(p => p.quote_id).join(" + ") : pick?.supplier} · <span className="num">{s.split ? inr(s.split.total_landed) : pick?.landed != null ? inr(pick.landed) : "—"}</span> landed
+              </h2>
+              {s.split && (
+                <ul className="divide-y divide-line rounded-xl border border-line bg-raised/40 text-[13px]" aria-label="Split order">
+                  {s.split.parts.map(p => (
+                    <li key={p.quote_id} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <span>{p.quote_id}: {p.qty} units, {p.lead_days} days</span>
+                      <span className="num">{inr(p.landed)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               <p className="text-muted">Reason: {s.decision.reason}</p>
               <p className="text-muted">Approved by {s.decision.approver} on {new Date(s.decision.decided_at).toLocaleString()}</p>
-              {s.revealed[s.decision.winner_id] && (
-                <p className="num text-muted">
-                  Seller: {s.revealed[s.decision.winner_id].business_name} · {s.revealed[s.decision.winner_id].phone} · {s.revealed[s.decision.winner_id].email}
+              {(s.split ? s.split.parts.map(p => p.quote_id) : [s.decision.winner_id]).map(alias => s.revealed[alias] && (
+                <p key={alias} className="num text-muted">
+                  Seller: {s.revealed[alias].business_name} · {s.revealed[alias].phone} · {s.revealed[alias].email}
                 </p>
-              )}
+              ))}
               <p className="text-muted">{s.decision.payment_note ?? "Cash on delivery. Crossover never holds money."}</p>
               {s.overrode_engine && s.engine_winner && (
                 <p className="text-warn">The approver chose a different supplier than the engine's pick ({s.engine_winner.supplier}).</p>

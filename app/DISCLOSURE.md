@@ -75,6 +75,18 @@ Written with Claude Code (Anthropic) and Kiro, reviewed by the team.
   ElevenLabs path; the quote is a draft the seller checks and sends. Voice output (speech synthesis) was deliberately left out.
 - **Deployment:** the API serves the built website from one address (`Dockerfile`, `render.yaml`, `DEPLOY.md`). The Dockerfile
   was written but not built here (no Docker on the dev machine); the same layout was checked by serving the built site with uvicorn.
+- **Free delivery above a goods value.** A quote can say delivery is free once the goods are worth at least a stated amount. The
+  threshold is on the seller's stated GST basis and is normalised like the pack price; the buyer sees the normalised value
+  (`compare_free_freight_above`). Quotes without it compute exactly as before. Found by code review and fixed before this
+  note: a folded form section hid the prefilled threshold, the compare screen showed the raw number, and a phone row overflowed.
+- **Per-unit freight** (built with Kiro). A second freight component, `per_unit_freight` (₹ per unit), is added to the flat freight
+  after the free-delivery waiver: `total freight = flat + per_unit × units`. Normalised to the buyer's GST basis like the pack
+  price. A quote without it computes exactly as before. Tested with 15 backend tests against fakes.
+- **Split orders.** `best_split` in `api/app/engine.py` finds the cheapest way to cover the whole quantity from two sellers, and
+  offers it only when it beats every single seller or when no single seller can cover the quantity (for example, stock caps). It
+  uses the same cost rules as `order()` (packs, minimum order, tiers, free delivery, per-unit freight, stock caps) and never
+  replaces the normal pick. It is checked against an exhaustive search on random markets. Ordering a split needs both sellers
+  revealed, and the quantities always come from the server's own plan, never from the browser. Up to two sellers only.
 - **Volume price tiers in the comparison.** `order()` now looks up the pack price for the units ordered from the quote's tiers
   and falls back to the quote's own price, so a quote without tiers (including the three scored case checks) computes exactly as
   before. Tiers are normalised to the buyer's GST basis like the main price and mirrored in the browser copy of the engine
