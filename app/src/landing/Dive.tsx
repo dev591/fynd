@@ -80,7 +80,7 @@ export function Dive() {
       <div className={reduced ? 'space-y-24 py-24' : 'sticky top-0 h-screen overflow-hidden'} style={reduced ? undefined : { perspective: '1000px' }}>
         <div ref={glow} aria-hidden className="pointer-events-none absolute inset-0" />
         {!reduced && (
-          <div aria-hidden className="absolute right-5 top-1/2 h-40 w-px -translate-y-1/2 bg-line">
+          <div aria-hidden className="absolute right-5 top-1/2 hidden h-40 w-px -translate-y-1/2 bg-line md:block">
             <div ref={rail} className="h-full w-px origin-top bg-signal" style={{ transform: 'scaleY(0)' }} />
           </div>
         )}
@@ -129,10 +129,10 @@ export function Dive() {
           </Scene>
 
           <Scene z={4700} reduced={reduced} wide>
-            <div className="grid items-center gap-8 text-left md:grid-cols-[1fr_1.1fr]">
+            <div className="grid items-center gap-5 text-left max-md:origin-center max-md:scale-[0.82] md:grid-cols-[1fr_1.1fr] md:gap-8">
               <div>
                 <h2 className="display text-[clamp(2rem,5vw,4rem)] leading-tight">Quotes land side by side.</h2>
-                <p className="mt-3 max-w-[34ch] text-muted">Names stay hidden, so sellers compete on the offer. Freight, packs and GST are already counted.</p>
+                <p className="mt-3 hidden max-w-[34ch] text-muted md:block">Names stay hidden, so sellers compete on the offer. Freight, packs and GST are already counted.</p>
               </div>
               <LiveFeed />
             </div>

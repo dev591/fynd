@@ -21,8 +21,9 @@ Onboarding Login Wizard (`src/wizard/`): role-selection, account verification, b
 | react, react-dom, react-router-dom | UI / routing | MIT |
 | vite, typescript | build | MIT / Apache-2.0 |
 | tailwindcss, @tailwindcss/vite | styling | MIT |
-| gsap | cursor trail and small effects | GSAP standard license (free) |
-| motion | dashboard micro-interactions | MIT |
+| gsap (+ScrollTrigger) | landing 3D dive, cursor trail | GSAP standard license (free) |
+| lenis | landing smooth scroll | MIT |
+| motion | app motion: board reorder, toasts, rings, mic | MIT |
 | lucide-react | icons (1.5px stroke) | ISC |
 | @fontsource-variable/{fraunces,geist,geist-mono} | fonts | OFL-1.1 |
 
@@ -91,3 +92,16 @@ Written with Claude Code (Anthropic) and Kiro, reviewed by the team.
   and falls back to the quote's own price, so a quote without tiers (including the three scored case checks) computes exactly as
   before. Tiers are normalised to the buyer's GST basis like the main price and mirrored in the browser copy of the engine
   (`src/landing/engine.ts`); a browser check confirms both agree at every tier boundary.
+
+## UI redesign (Sun 18 Oct, morning)
+Written with Claude Code (Anthropic), reviewed by the team. No backend or engine changes.
+- **Landing dive** (`src/landing/Dive.tsx`): a pinned 3D stage; scrolling moves a camera through depth layers (the messy
+  quote messages, the request broadcast, the live board, the answer). GSAP ScrollTrigger drives it, Lenis smooths the scroll.
+  With reduced motion it renders as plain stacked sections.
+- **Quote board** (`src/dashboard/QuoteBoard.tsx`): one answer card in plain words, then every quote side by side with yes/no
+  checks, best first; the order animates when quotes arrive or the priority changes. The cost chart moved behind "How Crossover
+  worked this out".
+- **Live toasts** (`src/components/LiveToasts.tsx`): a new or revised quote, a new best, and a new request on the seller inbox.
+- Redesigned request list, voice-first new request, seller inbox, split-screen sign-in, plainer wizard copy, ambient backdrop.
+- **21st.dev:** no component was copied. Every effect here was written for this project, so there is no third-party component
+  licence to record.
