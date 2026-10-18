@@ -7,10 +7,11 @@ handles the talking, and a person confirms every step.
 
 FyndHacks problem **C27, Supplier Quote Comparison Desk**.
 
-> **Honest status.** This is a tested prototype running on **synthetic** data. There are no customers, no revenue and no
-> pilot yet. Every seller, price and history entry in the demo is synthetic and labelled so. Prices for reveal packs
+> **Honest status.** This is a tested prototype. There are no customers, no revenue and no pilot yet. The sellers in the
+> demo are fictional businesses we made up, and their prices and history are demo data. Prices for reveal packs
 > (₹499 for 10, ₹1,499 a month) and the 5% "balanced" tolerance are **assumptions**, not results. The payment screen is a
-> mock: nothing is charged or stored. Verification badges say exactly what was checked, and no badge is a live
+> mock: nothing is charged or stored. The Delhivery freight estimate comes from our own demo rate card, not from Delhivery
+> (we have no token), and says so on screen. Verification badges say exactly what was checked, and no badge is a live
 > government check.
 
 ## The problem in one line
@@ -30,6 +31,8 @@ costs ₹1,150, so B wins. Above 150 units A wins. Crossover treats a quote as a
 | **Negotiation (human)** | The engine computes the concession ("A wins if freight drops by ₹51"); a named person reviews and sends it; the seller revises by hand. No AI or autopilot answers a target |
 | **Intake** | Type or speak a request (English or Hinglish) → confirm card the buyer must check → request. The manual form always works |
 | **Import** | CSV or JSON, or paste a supplier's WhatsApp message. Bad rows are reported by row number and good rows still load. Nothing is guessed |
+| **Shipping** | Each seller says whether they ship themselves or by Delhivery. A labelled estimate (demo rate card until a real token is set) can fill freight and lead time, only when the seller presses "Use this". Pincodes are asked once at sign-up and never shown to the other side |
+| **AI second opinion** | Beside the engine's pick, a model may suggest a different allowed option for the buyer's note and priority. Numbers are checked in code, the engine's pick never changes, and the call is logged with the decision |
 | **Seller side** | Inbox with a rules-based "can you fulfil" verdict, a quote drafted from your own catalog (numbers copied by code), stock/price breaks, decline, optional autopilot |
 | **Windows** | A request closes after 15 min / today / 24 h / 3 days; the buyer is told at the first quote, at enough quotes, and at close with the best option; silent sellers are reminded |
 | **Record** | Saved decision with input fingerprint, every number tagged observed / derived / assumed, printable one-pager, JSON download, read-only share link, delivery record |
@@ -44,6 +47,8 @@ level or date that is not in the data.
 | Buyer intake (chat, voice) | Extract item, quantity, deadline wording | Strict JSON schema; code checks every value against what the buyer said and drops the rest; deadlines like "Friday" are resolved in code; confirm card; 8 s timeout falls back to the manual form |
 | Pasted supplier message | Read it into quote rows | Same checks; unstated pack size/freight/lead time stay blank and flagged; "free delivery" needs those words |
 | Seller note | Word a short message | Every number must exist in the data and offers/promises are rejected, else a template is used |
+| Seller voice quote | Turn a spoken quote into draft fields | Same number checks as pasted messages; unstated fields stay blank; the seller edits and presses Send |
+| Second opinion | Suggest an option from those the engine allowed | Must name one allowed seller; numbers and promises checked; engine pick unchanged |
 | Item-match, "why this supplier" | Warn / explain | Warn only; the explanation can never pick or change the winner |
 
 Voice uses ElevenLabs speech-to-text; text understanding uses OpenAI. Keys stay on the server. With no keys, every AI
@@ -96,10 +101,15 @@ catalog through the normal API (safe to run again; "Confirm email" must be off, 
 script only). Then set `DEMO_LOGINS=on` and restart the API: `/signin` shows the ten sellers as one-click logins. This hands
 out a shared password, so never turn it on for a public deployment.
 
+### One public address
+
+The API serves the built website, so a deployment is a single URL with https (needed for the microphone and browser
+notifications on both laptops). See `DEPLOY.md` and `render.yaml`.
+
 ## Test it
 
 ```bash
-cd api && python3 -m pytest -q          # 291 tests
+cd api && python3 -m pytest -q          # 294 tests
 cd app && npx tsc -b && npm run lint && npm run build
 cd api && python3 -m tests.golden.run_live   # real-model check of the 15 buyer sentences (needs keys)
 ```
@@ -123,7 +133,7 @@ worked example, import errors, windows with a fake clock, persistence across a r
 ```
 api/app/     engine.py (rules; landed cost + gates untouched), tax.py, views.py (what each audience may see),
              rfq_store.py, persist.py, auth.py, intake.py, quote_text.py, assistant.py, summary.py, importer.py
-api/tests/   291 tests + golden sets (15 buyer sentences, 8 seller cases)
+api/tests/   294 tests + golden sets (15 buyer sentences, 8 seller cases)
 api/supabase/schema.sql   an early Postgres draft with row-level security. NOT used and NOT kept in sync: the live API uses SQLite
 app/src/     landing story, wizard, buyer desk, seller desk, shared components
 AUDIT.md     what exists against the v2 brief, and the decisions made
@@ -147,5 +157,5 @@ AUDIT.md     what exists against the v2 brief, and the decisions made
 - Seller reliability is not scored.
 - One uvicorn process. SQLite and in-memory state are fine for a demo, not for scale.
 - Chat scrubs phone numbers and emails in common formats; it cannot catch a number spelled out in words.
-- Not built: a live voice agent, screenshot reading, a help desk, any real payment.
+- Not built: a live talking voice agent (voice input and silent notifications exist), screenshot reading, a help desk, any real payment, a live Delhivery connection, split orders between two sellers, and joint optimisation of a multi-item basket (each item is compared on its own).
 - Written with Claude Code (see `app/DISCLOSURE.md`); the team reviews and can explain each part.

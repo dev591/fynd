@@ -21,10 +21,8 @@ Onboarding Login Wizard (`src/wizard/`): role-selection, account verification, b
 | react, react-dom, react-router-dom | UI / routing | MIT |
 | vite, typescript | build | MIT / Apache-2.0 |
 | tailwindcss, @tailwindcss/vite | styling | MIT |
-| gsap (+ScrollTrigger, SplitText) | landing scroll story | GSAP standard license (free) |
-| lenis | landing smooth scroll | MIT |
+| gsap | cursor trail and small effects | GSAP standard license (free) |
 | motion | dashboard micro-interactions | MIT |
-| three, @react-three/fiber, @react-three/drei | optional 3D protagonist | MIT |
 | lucide-react | icons (1.5px stroke) | ISC |
 | @fontsource-variable/{fraunces,geist,geist-mono} | fonts | OFL-1.1 |
 
@@ -53,5 +51,26 @@ AI and external services (all called from the server; keys never reach the brows
 Python packages: unchanged from the pre-hackathon list (fastapi, uvicorn, pydantic, httpx, pytest). The OpenAI and ElevenLabs calls use
 `httpx`; there is no vendor SDK. SQLite comes from the standard library.
 
-Data: every seller, product, price and history entry is synthetic and labelled so. No claim of customers, revenue or a pilot is made
+Data: the seeded demo sellers, products, prices and history are synthetic and labelled so on the sample-request path. No claim of customers, revenue or a pilot is made
 anywhere in the product.
+
+## Built on Sun 18 Oct, later in the day
+Written with Claude Code (Anthropic) and Kiro, reviewed by the team.
+
+- **Landing page rebuilt** as one short page (`src/landing/Landing.tsx`): a live quote feed driven by the in-browser rules copy,
+  buyer and seller benefits, how it works, and the spreadsheet-vs-Crossover example from the C27 brief. The six pinned scroll
+  chapters, `DiveStage`, `PinnedChapter`, `ScrollProgress`, `SkipToApp` and the Lenis wiring were deleted. The packages
+  `lenis`, `three`, `@react-three/fiber` and `@react-three/drei` were uninstalled because nothing imports them.
+- **AI second opinion** (`api/app/summary.py`): a model reads the engine's output and the buyer's note and may suggest a different
+  option. It can only pick an option the engine allowed, every number must exist in the engine output, and the engine's pick never
+  changes. The call is logged with the decision.
+- **Shipping choice and estimate.** The seller picks own shipment or Delhivery. Without a Delhivery token the estimate comes from
+  a zone rate card we wrote (`api/app/delhivery.py`), labelled "demo rate card, not a Delhivery quote". The Delhivery client
+  is written against the pasted API examples and tested only with fake replies; no live Delhivery call has succeeded, because we
+  have no token. Pincodes are asked once at sign-up and never shown to the other side.
+- **Ten demo seller accounts** (`api/app/demo_roster.py`, `api/scripts/seed_demo_sellers.py`): fictional businesses created in
+  Supabase by a script the team runs. The one-click panel on `/signin` is off unless `DEMO_LOGINS=on`.
+- **Seller voice quote bar and silent OS notifications** for new requests (built with Kiro): speech to text reuses the
+  ElevenLabs path; the quote is a draft the seller checks and sends. Voice output (speech synthesis) was deliberately left out.
+- **Deployment:** the API serves the built website from one address (`Dockerfile`, `render.yaml`, `DEPLOY.md`). The Dockerfile
+  was written but not built here (no Docker on the dev machine); the same layout was checked by serving the built site with uvicorn.
