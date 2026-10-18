@@ -6,7 +6,7 @@ os.environ["PERSIST"] = "off"
 
 import pytest
 
-from app.auth import AuthUser, get_current_user
+from app.auth import AuthUser, get_current_user, optional_user
 from app.main import app, store
 from app.models import Profile
 
@@ -24,15 +24,21 @@ def _no_real_provider_keys(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     # General tests share one user across the suite, so give them a generous allowance. Quota tests set their own.
     monkeypatch.setenv("FREE_REVEALS", "1000")
+    # Most tests drive the synthetic demo sellers A, B, C directly. Isolation tests switch this off themselves.
+    monkeypatch.setenv("ALLOW_DEMO_SELLERS", "true")
 
 
 @pytest.fixture(autouse=True)
 def _signed_in_as_test_user():
     """Every test acts as one signed-in user, so nothing here calls Supabase. test_auth.py removes this on purpose."""
     app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    # Token routes read an optional login: follow whoever the test is signed in as, or nobody once it signs out.
+    app.dependency_overrides[optional_user] = lambda: app.dependency_overrides[get_current_user]() \
+        if get_current_user in app.dependency_overrides else None
     store.profiles.setdefault(TEST_USER.id, Profile(
         id=TEST_USER.id, role="buyer", full_name="Test User", email=TEST_USER.email, phone="9820144556",
         company="Test Co", business_type="manufacturer", state="Telangana", city="Hyderabad",
         roles=["buyer", "seller"]))
     yield
     app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(optional_user, None)

@@ -226,6 +226,7 @@ def test_chat_buyer_and_token_routes():
     rid = new_request()["id"]
     quote(client, rid, "A")
     tok = tokens_of(rid)["A"]
+    client.post(f"/api/rfqs/{rid}/quotes/Seller 1/reveal")                    # chat opens after the reveal
     res = client.post(f"/api/rfqs/{rid}/threads/Seller 1/messages", json={
         "sender": "buyer", "sender_name": "Ramesh Sharma", "text": "Can you reduce freight?"})
     assert res.status_code == 201 and res.json()["text"] == "Can you reduce freight?"
@@ -240,11 +241,11 @@ def test_chat_buyer_and_token_routes():
     res = client.get(f"/api/rfq-by-token/{tok}/messages")
     assert res.status_code == 200 and len(res.json()) >= 2
     seller_sees = {m["sender"]: m["sender_name"] for m in res.json()}
-    assert seller_sees["buyer"] == "Buyer"                       # the buyer's name waits for the reveal
+    assert seller_sees["buyer"] == "Ramesh Sharma"               # revealed: both sides know who they are talking to
 
     # the buyer sees the seller's message under the alias, not the name the seller typed
     buyer_sees = client.get(f"/api/rfqs/{rid}/threads/Seller 1/messages").json()
-    assert [m["sender_name"] for m in buyer_sees if m["sender"] == "supplier"] == ["Seller 1"]
+    assert [m["sender_name"] for m in buyer_sees if m["sender"] == "supplier"] == ["Supplier A"]
 
     res = client.post("/api/rfq-by-token/invalid_token/messages", json={
         "sender": "supplier", "sender_name": "X", "text": "test"})

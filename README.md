@@ -91,7 +91,7 @@ State is saved to **SQLite (WAL)** at `api/data/app.db` on a laptop, or to a **S
 | `BALANCED_TOLERANCE` (0.05) | How far above the cheapest "balanced" mode will pay to arrive sooner. An assumption |
 | `DEMO_AUTOPILOT` (on) | Synthetic demo sellers answer by themselves so quotes land in seconds |
 | `DEMO_WINDOW_MINUTES` (off) | Shorten every quote window for a demo; the UI says "demo timing" |
-| `ALLOW_DEMO_SELLERS` (true) | Let any seller-role user act as a synthetic demo seller |
+| `ALLOW_DEMO_SELLERS` (false) | Single-laptop demos only: let any seller account also act as the synthetic demo sellers. Leave it off when people test, so every account is isolated |
 | `PERSIST` (on), `PERSIST_BACKEND`, `CROSSOVER_DB` | Saving: SQLite file by default, `supabase` in production |
 | `CORS_ORIGINS` | Extra allowed browser origins (localhost and private networks are always allowed) |
 

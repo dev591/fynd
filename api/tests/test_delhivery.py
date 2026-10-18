@@ -148,6 +148,7 @@ def test_estimate_uses_both_saved_pincodes_and_never_returns_them():
     client.post("/api/profile", json=_profile("buyer", "122001", company="Buyer Works", city="Gurugram", state="Haryana"))
     rid = client.post("/api/rfqs", json={"item": "pin widget", "qty": 10, "need_in_days": 5, "buyer_company": "b", "buyer_name": "b"}).json()["id"]
     tok = tokens_of(rid)["pin-seller"]
+    as_user("pin-seller")                                   # only the seller the request went to can use its link
     r = client.post(f"/api/rfq-by-token/{tok}/shipping-estimate", json={"weight_kg": 20})
     assert r.status_code == 200 and r.json()["freight"] == 250 + 14 * 20 and r.json()["basis"] == "rate_card"   # national zone
     assert "400069" not in r.text and "122001" not in r.text
@@ -156,5 +157,6 @@ def test_estimate_uses_both_saved_pincodes_and_never_returns_them():
     as_user("pin-buyer-2")
     client.post("/api/profile", json=_profile("buyer", ""))
     rid2 = client.post("/api/rfqs", json={"item": "pin widget", "qty": 10, "need_in_days": 5, "buyer_company": "b", "buyer_name": "b"}).json()["id"]
+    as_user("pin-seller")
     r2 = client.post(f"/api/rfq-by-token/{tokens_of(rid2)['pin-seller']}/shipping-estimate", json={"weight_kg": 5})
     assert r2.status_code == 409 and "pincode is missing" in r2.json()["detail"]

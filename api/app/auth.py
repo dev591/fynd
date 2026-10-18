@@ -152,3 +152,10 @@ def get_current_user(request: Request) -> AuthUser:
     if not user:
         raise _unauthorized("Your session is invalid or expired. Please sign in again.")
     return user
+
+
+def optional_user(request: Request) -> Optional[AuthUser]:
+    """The signed-in user if the request carries a login, else None. A bad login is still refused (401)."""
+    if not request.headers.get("Authorization", "").startswith("Bearer "):
+        return None
+    return get_current_user(request)

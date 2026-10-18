@@ -38,7 +38,7 @@ export function SupplierDashboard() {
     }
   }, [sellers, me, supplierId, setSupplierId]);
   const { data: inbox, loading: inboxLoading, error: inboxError, refetch: refetchInbox } = useApiPoll<NotificationDTO[]>(
-    () => getNotifications(supplierId), 2000, [supplierId],
+    () => supplierId ? getNotifications(supplierId) : Promise.resolve([]), 2000, [supplierId],
   );
 
   // A request landing while the seller watches pops up here too (the OS notification covers other tabs)
@@ -49,17 +49,17 @@ export function SupplierDashboard() {
   })));
 
   // Supplier profile
-  const { data: profile } = useApiOnce<SupplierProfileDTO>(
-    () => getSupplierProfile(supplierId), [supplierId],
+  const { data: profile } = useApiOnce<SupplierProfileDTO | null>(
+    () => supplierId ? getSupplierProfile(supplierId) : Promise.resolve(null), [supplierId],
   );
 
   // Products
   const { data: products, refetch: refetchProducts } = useApiPoll<SupplierProductDTO[]>(
-    () => getSupplierProducts(supplierId), 5000, [supplierId],
+    () => supplierId ? getSupplierProducts(supplierId) : Promise.resolve([]), 5000, [supplierId],
   );
 
   const [activeTab, setActiveTab] = useState<"rfqs" | "products">("rfqs")
-  const { data: autopilot, refetch: refetchAutopilot } = useApiPoll(() => getAutopilot(supplierId), 5000, [supplierId]);
+  const { data: autopilot, refetch: refetchAutopilot } = useApiPoll(() => supplierId ? getAutopilot(supplierId) : Promise.resolve(null), 5000, [supplierId]);
   const toggleAutopilot = async () => {
     try {
       await setAutopilot(supplierId, !autopilot?.enabled);
@@ -149,7 +149,7 @@ export function SupplierDashboard() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <select
+            {(sellers?.length ?? 0) > 1 && <select
               value={supplierId}
               onChange={e => setSupplierId(e.target.value)}
               title="Demo: act as this seller"
@@ -158,7 +158,7 @@ export function SupplierDashboard() {
               {(sellers || [{ supplier_id: supplierId, business_name: `Seller ${supplierId}` } as SellerSummary]).map(sl => (
                 <option key={sl.supplier_id} value={sl.supplier_id}>{sl.supplier_id} · {sl.business_name}</option>
               ))}
-            </select>
+            </select>}
             <button
               type="button"
               onClick={() => setActiveTab("rfqs")}
@@ -416,8 +416,8 @@ export function SupplierDashboard() {
             </div>
 
             {showAddProduct && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 backdrop-blur-sm p-4">
-                <div className="w-full max-w-md rounded-2xl border border-line bg-surface p-6 shadow-2xl">
+              <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-ink/70 p-4 backdrop-blur-sm sm:items-center">
+                <div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-6 shadow-2xl">
                   <h3 className="display text-xl text-bone mb-1">Add Product</h3>
                   <p className="text-[13px] text-muted mb-4">Enables 1-tap quote generation.</p>
                   <form onSubmit={handleAddProduct} className="space-y-4">

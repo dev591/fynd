@@ -57,7 +57,7 @@ from .engine import evaluate, run_case_checks, negotiation
 from .rfq_store import store
 from . import persist
 from starlette.concurrency import run_in_threadpool
-from .auth import AuthUser, get_current_user
+from .auth import AuthUser, get_current_user, optional_user
 from . import views
 from . import importer
 from fastapi.responses import JSONResponse
@@ -100,7 +100,9 @@ def _gst_policy(user: AuthUser, chosen: Optional[bool]) -> bool:
 
 
 def _demo_sellers_allowed() -> bool:
-    return os.environ.get("ALLOW_DEMO_SELLERS", "true").lower() != "false"
+    """Off unless ALLOW_DEMO_SELLERS=true: then any seller account may also act as the synthetic demo sellers (a single-
+    laptop demo). Off, every account sees only its own seller."""
+    return os.environ.get("ALLOW_DEMO_SELLERS", "false").lower() == "true"
 
 
 def _seller_for(user: AuthUser, supplier_id: str) -> str:
@@ -679,8 +681,21 @@ def list_recommendations(user: AuthUser = Depends(buyer_only)):
 
 
 # --- 5. Supplier Sealed Bids (Token Routes) ---
+def token_guard(token: str, user: Optional[AuthUser] = Depends(optional_user)) -> str:
+    """A quote link works only for the seller it was sent to. A real seller account must be signed in as itself;
+    a synthetic demo seller's link works only while demo sellers are allowed."""
+    sid = store.token_to_supplier_id.get(token)
+    if not sid:
+        raise HTTPException(status_code=404, detail="This link isn't valid or has expired.")
+    owner = store.supplier_owner.get(sid)
+    if owner is not None and (user is None or user.id != owner):
+        raise HTTPException(status_code=403, detail={"code": "not_your_request",
+                            "message": "Sign in as the seller this request was sent to."})
+    if owner is None and not _demo_sellers_allowed() and sid in store.supplier_profiles and store.supplier_profiles[sid].synthetic:
+        raise HTTPException(status_code=403, detail={"code": "not_your_request", "message": "This demo seller's link is switched off."})
+    return sid
 @app.get("/api/rfq-by-token/{token}")
-def get_rfq_by_token(token: str):
+def get_rfq_by_token(token: str, _seller: str = Depends(token_guard)):
     data = views.seller_request(store, token)
     if not data:
         raise HTTPException(status_code=404, detail="This link isn't valid or has expired.")
@@ -688,7 +703,7 @@ def get_rfq_by_token(token: str):
 
 
 @app.post("/api/rfq-by-token/{token}/quotes", response_model=QuoteVersion)
-def submit_supplier_quote(token: str, payload: QuoteSubmitIn):
+def submit_supplier_quote(token: str, payload: QuoteSubmitIn, _seller: str = Depends(token_guard)):
     try:
         return store.submit_quote(
             token=token,
@@ -710,7 +725,7 @@ def submit_supplier_quote(token: str, payload: QuoteSubmitIn):
 
 
 @app.get("/api/rfq-by-token/{token}/draft", response_model=DraftQuote)
-def get_draft_quote(token: str):
+def get_draft_quote(token: str, _seller: str = Depends(token_guard)):
     draft = store.draft_for_token(token)
     if not draft:
         raise HTTPException(status_code=404, detail="No catalog match for this request.")
@@ -718,7 +733,7 @@ def get_draft_quote(token: str):
 
 
 @app.get("/api/rfq-by-token/{token}/assist")
-def seller_assist(token: str):
+def seller_assist(token: str, _seller: str = Depends(token_guard)):
     """Catalog draft plus wording. Numbers come from the catalog; AI text is dropped if any number is unsupported."""
     draft = store.draft_for_token(token)
     rfq = store.get_rfq(store.token_to_rfq_id.get(token, ""))
@@ -738,7 +753,7 @@ class ItemMatchIn(BaseModel):
 
 
 @app.post("/api/rfq-by-token/{token}/item-match")
-def seller_item_match(token: str, payload: ItemMatchIn):
+def seller_item_match(token: str, payload: ItemMatchIn, _seller: str = Depends(token_guard)):
     rfq = store.get_rfq(store.token_to_rfq_id.get(token, ""))
     sid = store.token_to_supplier_id.get(token)
     prod = next((p for p in store.supplier_products.get(sid, []) if p.id == payload.product_id), None) if sid else None
@@ -752,7 +767,7 @@ def seller_item_match(token: str, payload: ItemMatchIn):
 
 
 @app.post("/api/rfq-by-token/{token}/decline", status_code=204)
-def decline_request(token: str, payload: DeclineIn):
+def decline_request(token: str, payload: DeclineIn, _seller: str = Depends(token_guard)):
     """The seller can't supply. That is an answer, so the buyer's activity strip counts it."""
     rfq = store.get_rfq(store.token_to_rfq_id.get(token, ""))
     if not rfq:
@@ -764,7 +779,7 @@ def decline_request(token: str, payload: DeclineIn):
 
 
 @app.post("/api/rfq-by-token/{token}/quoting", status_code=204)
-def mark_quoting(token: str):
+def mark_quoting(token: str, _seller: str = Depends(token_guard)):
     if token not in store.token_to_rfq_id:
         raise HTTPException(status_code=404, detail="This link isn't valid or has expired.")
     store.touch_token(token, "quoting")
@@ -778,7 +793,7 @@ def rfq_activity(rfq_id: str, user: AuthUser = Depends(buyer_only)):
 
 
 @app.get("/api/rfq-by-token/{token}/quotes/mine")
-def get_my_quotes(token: str):
+def get_my_quotes(token: str, _seller: str = Depends(token_guard)):
     return views.seller_my_quotes(store, token)
 
 
@@ -842,27 +857,39 @@ def get_supplier_profile_for_buyer(rfq_id: str, alias: str, user: AuthUser = Dep
 @app.get("/api/rfqs/{rfq_id}/threads/{alias}/messages", response_model=List[ChatMessage])
 def get_chat_messages(rfq_id: str, alias: str, user: AuthUser = Depends(buyer_only)):
     rfq = _rfq_for(user, rfq_id)
-    return views.chat_for_buyer(store, rfq, _seller_by_alias(rfq_id, alias))
+    sid = _seller_by_alias(rfq_id, alias)
+    msgs = views.chat_for_buyer(store, rfq, sid)
+    # Free chat opens only after the buyer reveals this seller; engine targets the buyer sent still show.
+    return msgs if store.is_revealed(rfq_id, sid) else [x for x in msgs if x.get("target")]
 
 
 @app.post("/api/rfqs/{rfq_id}/threads/{alias}/messages", response_model=ChatMessage, status_code=201)
 def post_chat_message(rfq_id: str, alias: str, payload: ChatMessageIn, user: AuthUser = Depends(buyer_only)):
     _rfq_for(user, rfq_id)
     sid = _networked_seller(rfq_id, alias)
+    if not store.is_revealed(rfq_id, sid):
+        raise HTTPException(status_code=403, detail={"code": "reveal_required", "message": "Reveal this seller to chat."})
     # The signed-in buyer is always the buyer here; the request body cannot pick the sender.
     return store.add_chat_message(rfq_id, sid, "buyer", payload.sender_name, payload.text)
 
 
 @app.get("/api/rfq-by-token/{token}/messages", response_model=List[ChatMessage])
-def get_chat_by_token(token: str):
+def get_chat_by_token(token: str, _seller: str = Depends(token_guard)):
     rfq_id, sid = store.token_to_rfq_id.get(token), store.token_to_supplier_id.get(token)
     rfq = store.rfqs.get(rfq_id) if rfq_id else None
-    return views.chat_for_seller(store, rfq, sid) if rfq and sid else []
+    if not (rfq and sid):
+        return []
+    msgs = views.chat_for_seller(store, rfq, sid)
+    # Free chat is locked until the buyer reveals this seller; the buyer's targets still show.
+    return msgs if store.is_revealed(rfq_id, sid) else [x for x in msgs if x.get("target")]
 
 
 @app.post("/api/rfq-by-token/{token}/messages", response_model=ChatMessage, status_code=201)
-def post_chat_by_token(token: str, payload: ChatMessageIn):
+def post_chat_by_token(token: str, payload: ChatMessageIn, _seller: str = Depends(token_guard)):
     # A supplier link can only ever speak as the supplier, whatever the body says.
+    rfq_id = store.token_to_rfq_id.get(token)
+    if rfq_id and not store.is_revealed(rfq_id, _seller):
+        raise HTTPException(status_code=403, detail={"code": "reveal_required", "message": "Chat opens when the buyer reveals you."})
     msg = store.add_chat_by_token(token, "supplier", payload.sender_name, payload.text)
     if msg is None:
         raise HTTPException(status_code=404, detail="Invalid or expired link.")
@@ -936,7 +963,7 @@ class ShippingEstimateIn(BaseModel):
 
 
 @app.post("/api/rfq-by-token/{token}/shipping-estimate")
-def shipping_estimate(token: str, payload: ShippingEstimateIn):
+def shipping_estimate(token: str, payload: ShippingEstimateIn, _seller: str = Depends(token_guard)):
     """Freight and delivery days for this quote link, from the two pincodes saved at sign-up. The pincodes stay on the
     server; the seller only sees the result, which they apply by hand."""
     if payload.weight_kg <= 0:

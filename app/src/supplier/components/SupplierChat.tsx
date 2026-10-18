@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Send, User, MessageSquare, Zap } from "lucide-react";
+import { Lock, Send, User, MessageSquare, Zap } from "lucide-react";
 import type { ChatMessageDTO } from "../../api/client";
 import { NegotiationTargetCard } from "./NegotiationTargetCard";
 
@@ -9,10 +9,12 @@ interface SupplierChatProps {
   currentUserName: string;
   onSendMessage: (text: string) => void;
   onReviseFromTarget?: () => void;
+  /** When set, typing is locked and this explains why (chat opens after the buyer reveals the seller). */
+  locked?: string;
   className?: string;
 }
 
-export function SupplierChat({ messages, currentRole, currentUserName, onSendMessage, onReviseFromTarget, className = "" }: SupplierChatProps) {
+export function SupplierChat({ messages, currentRole, currentUserName, onSendMessage, onReviseFromTarget, locked, className = "" }: SupplierChatProps) {
   const [text, setText] = useState("");
 
   const handleSend = (e: React.FormEvent) => {
@@ -94,7 +96,10 @@ export function SupplierChat({ messages, currentRole, currentUserName, onSendMes
         </div>
       )}
 
-      {/* Input */}
+      {/* Input, or why it is locked */}
+      {locked ? (
+        <p className="flex items-center gap-2 border-t border-line p-3 text-[12px] text-muted"><Lock size={13} className="shrink-0" />{locked}</p>
+      ) : (
       <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-line p-3">
         <input type="text" value={text}
           onChange={e => setText(e.target.value)}
@@ -106,6 +111,7 @@ export function SupplierChat({ messages, currentRole, currentUserName, onSendMes
           <Send size={14} />
         </button>
       </form>
+      )}
     </div>
   );
 }

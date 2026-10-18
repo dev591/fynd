@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
-import { AlertTriangle, Check, MessageSquare, Minus, Plus, ShieldCheck, Sparkles, Trophy, Truck, Unlock, Upload, X, Zap } from "lucide-react";
+import { AlertTriangle, Check, Lock, MessageSquare, Minus, Plus, ShieldCheck, Sparkles, Trophy, Truck, Unlock, Upload, X, Zap } from "lucide-react";
 import { inr, type Mode, type Row } from "../landing/engine";
 import type { QuoteVersionDTO, RFQDetailsDTO } from "../api/client";
 
@@ -223,11 +223,15 @@ function Column({ row, rank, cheapest, fastest, ...p }: BoardProps & { row: Row;
             Choose this
           </button>
         )}
-        {!imported && (
+        {!imported && (identity ? (
           <button type="button" onClick={() => p.onChat(id)} className="flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11px] text-muted hover:text-bone" aria-label={`Chat with ${id}`}>
             <MessageSquare size={11} />Chat
           </button>
-        )}
+        ) : (
+          <span title="Reveal this seller to chat" className="flex cursor-not-allowed items-center gap-1 rounded-full border border-dashed border-line px-2.5 py-1 text-[11px] text-muted/70">
+            <Lock size={11} />Chat
+          </span>
+        ))}
         {imported ? (
           <span className="flex items-center gap-1 rounded-full bg-raised px-2.5 py-1 text-[11px] text-muted"><Upload size={11} />Imported</span>
         ) : identity ? (

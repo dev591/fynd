@@ -3,7 +3,7 @@ import { Ambient } from "../components/Ambient";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Building2, Clock, History, RotateCcw, MessageSquare,
-  Share2, AlertTriangle, CheckCircle2, XCircle,
+  Share2, AlertTriangle, CheckCircle2, XCircle, Lock,
 } from "lucide-react";
 import { QuoteForm } from "./components/QuoteForm";
 import { StatusChip } from "./components/StatusChip";
@@ -341,7 +341,7 @@ export function SupplierQuotePage() {
               activeTab === "chat" ? "border-signal text-bone font-semibold" : "border-transparent text-muted hover:text-bone"
             }`}
           >
-            <MessageSquare size={14} /><span>Negotiation Thread</span>
+            {rfq.unlocked ? <MessageSquare size={14} /> : <Lock size={13} />}<span>Negotiation Thread</span>
             {(chatMessages?.length || 0) > 0 && (
               <span className="rounded-full bg-signal text-ink px-1.5 py-0.2 text-[10px] font-bold">
                 {chatMessages!.length}
@@ -538,6 +538,7 @@ export function SupplierQuotePage() {
             currentUserName={sellerName}
             onSendMessage={handleSendMessage}
             onReviseFromTarget={() => { setActiveTab("quote"); setIsRevising(true); }}
+            locked={rfq.unlocked ? undefined : "Chat opens when the buyer reveals you. Their price targets still show here."}
           />
         )}
       </main>

@@ -6,9 +6,9 @@ const KEY = "crossover_supplier_id";
 export function useSupplierId(): [string, (id: string) => void] {
   const [id, setId] = useState<string>(() => {
     try {
-      return localStorage.getItem(KEY) || "A";
+      return localStorage.getItem(KEY) || "";
     } catch {
-      return "A";
+      return "";
     }
   });
   const set = useCallback((next: string) => {

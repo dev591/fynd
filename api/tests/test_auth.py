@@ -197,6 +197,7 @@ def test_chat_sender_cannot_be_spoofed():
         "item": "M10 bolt", "qty": 100, "need_in_days": 5, "buyer_company": "C", "buyer_name": "B"}).json()
     rid, tk = res["id"], tokens_of(res["id"])["A"]
     client.post(f"/api/rfq-by-token/{tk}/quotes", json={"supplier_name": "x", "pack_price": 10, "pack_size": 1, "freight": 100, "lead_days": 3})
+    client.post(f"/api/rfqs/{rid}/quotes/Seller 1/reveal", headers=hdr(alice))      # chat opens after the reveal
     m1 = client.post(f"/api/rfqs/{rid}/threads/Seller 1/messages", headers=hdr(alice),
                      json={"sender": "supplier", "sender_name": "Alice", "text": "from the buyer"}).json()
     m2 = client.post(f"/api/rfq-by-token/{tk}/messages",
