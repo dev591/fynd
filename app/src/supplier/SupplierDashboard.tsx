@@ -118,7 +118,7 @@ export function SupplierDashboard() {
       setNewProdFreight(""); setNewProdFreeAbove(""); setNewProdPerUnitFreight(""); setNewProdTiers([]);
       setAddError(null);
     } catch (e) {
-      setAddError(/422/.test(String(e)) ? "Check the price tiers: a bigger order cannot cost more per pack, and each tier needs its own quantity." : "Could not add the product.");
+      setAddError(/422/.test(String(e)) ? "Check the numbers: prices and pack sizes must be above zero and nothing can be negative. Price tiers must get cheaper as quantity grows." : "Could not add the product.");
     }
   };
 

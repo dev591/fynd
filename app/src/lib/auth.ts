@@ -50,6 +50,20 @@ function save(s: Session | null) {
 
 export const getSession = () => current;
 
+/** Re-read the saved session. A page restored from the back/forward cache still holds the old one in memory,
+ *  so after a sign-out in another page or tab it must look at storage again before showing anything. */
+export function resyncSession() {
+  const saved = load();
+  if (JSON.stringify(saved) !== JSON.stringify(current)) {
+    current = saved;
+    listeners.forEach(l => l());
+  }
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("pageshow", e => { if ((e as PageTransitionEvent).persisted) resyncSession(); });
+  window.addEventListener("storage", e => { if (e.key === STORE) resyncSession(); });
+}
+
 export function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => { listeners.delete(listener); };

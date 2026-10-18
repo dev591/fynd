@@ -320,8 +320,8 @@ export function QuoteForm({
             <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
             <input
               type="number"
-              min="1"
-              max="30"
+              min="0"
+              max="365"
               step="1"
               required
               value={leadDays}

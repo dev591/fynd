@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
-import { authConfigured } from "../lib/auth";
+import { authConfigured, getSession } from "../lib/auth";
 import { useSession } from "../lib/useSession";
 import { useApiOnce } from "../lib/useApi";
 import { addRole, getMe, type AppRole } from "../api/client";
@@ -15,9 +15,34 @@ const Frame = ({ children }: { children: React.ReactNode }) => (
 export function RequireAuth({ children, role }: { children: React.ReactNode; role?: AppRole }) {
   const session = useSession();
   const loc = useLocation();
+
+  // bfcache guard: when the browser restores a page from the back/forward cache the React tree is not
+  // re-mounted, so useSyncExternalStore does not re-read the session. A pageshow(persisted) event fires
+  // instead. Force a re-check by reading from the store synchronously; if the session is now gone the
+  // component will redirect on the next render tick.
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    const handler = (e: PageTransitionEvent) => {
+      if (e.persisted) forceUpdate(n => n + 1);
+    };
+    window.addEventListener("pageshow", handler);
+    return () => window.removeEventListener("pageshow", handler);
+  }, []);
+
+  // Also re-check on popstate (standard back/forward without bfcache) in case the in-memory
+  // session was cleared while on another page.
+  useEffect(() => {
+    const handler = () => {
+      if (!getSession()) forceUpdate(n => n + 1);
+    };
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
   const { data: me, loading, refetch } = useApiOnce(
     () => (session && role ? getMe() : Promise.resolve(null)), [session?.user.id, role]);
   const [busy, setBusy] = useState(false);
+  const [addRoleError, setAddRoleError] = useState<string | null>(null);
+  const [needsProfile, setNeedsProfile] = useState(false);
 
   if (!authConfigured) {
     return (
@@ -38,7 +63,22 @@ export function RequireAuth({ children, role }: { children: React.ReactNode; rol
   const have = me.roles[0] ?? "buyer";
   const add = async () => {
     setBusy(true);
-    try { await addRole(role); setActiveRole(role); refetch(); } finally { setBusy(false); }
+    setAddRoleError(null);
+    setNeedsProfile(false);
+    try {
+      await addRole(role);
+      setActiveRole(role);
+      refetch();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/409/.test(msg)) {
+        setNeedsProfile(true);
+      } else {
+        setAddRoleError(msg.replace(/^API \d+: /, "").slice(0, 120));
+      }
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <Frame>
@@ -54,6 +94,15 @@ export function RequireAuth({ children, role }: { children: React.ReactNode; rol
             Stay as {have}
           </Link>
         </div>
+        {needsProfile && (
+          <p className="text-[13px] text-warn text-center">
+            Finish your profile first.{" "}
+            <Link to="/login" className="underline hover:text-bone">Finish your profile</Link>
+          </p>
+        )}
+        {addRoleError && (
+          <p className="text-[13px] text-error text-center">{addRoleError}</p>
+        )}
       </div>
     </Frame>
   );

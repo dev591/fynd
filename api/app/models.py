@@ -160,8 +160,8 @@ class CompareResult(BaseModel):
 # RFQ Lifecycle Models
 class RFQCreate(BaseModel):
     item: str
-    qty: int
-    need_in_days: int
+    qty: int = Field(gt=0, le=1_000_000)
+    need_in_days: int = Field(gt=0, le=365)
     buyer_company: str
     buyer_name: str
     buyer_city: str = ""      # filled from the buyer's profile when blank; never invented
@@ -206,12 +206,12 @@ class RFQ(BaseModel):
 
 class QuoteSubmitIn(BaseModel):
     supplier_name: str = "Supplier"
-    pack_price: float
-    pack_size: int
-    freight: float
-    lead_days: int
-    moq: int | None = None
-    max_qty: int | None = None
+    pack_price: float = Field(gt=0)
+    pack_size: int = Field(gt=0)
+    freight: float = Field(ge=0)
+    lead_days: int = Field(ge=0, le=365)
+    moq: int | None = Field(default=None, ge=1)
+    max_qty: int | None = Field(default=None, gt=0)
     notes: str | None = None
     origin: QuoteOrigin = "manual"
     tax_rate: float | None = Field(default=None, ge=0, le=100)     # GST rate in percent, only if the seller states it
@@ -262,9 +262,9 @@ class QuoteVersion(BaseModel):
 
 class NegotiationTargetIn(BaseModel):
     supplier_id: str
-    cut_needed: float
-    target_freight: float | None = None
-    target_per_unit: float | None = None
+    cut_needed: float = Field(ge=0)
+    target_freight: float | None = Field(default=None, ge=0)
+    target_per_unit: float | None = Field(default=None, ge=0)
     concession_type: Literal["freight", "unit_price"] = "freight"
     message: str | None = None
     sent_by: str = Field(min_length=1)  # a named person sends every target; the system never does
@@ -302,14 +302,14 @@ class DecisionIn(BaseModel):
 class SupplierProductIn(BaseModel):
     name: str
     category: str = "general"
-    pack_price: float
-    pack_size: int
-    moq: int = 1
-    usual_lead_days: int = 3
-    capacity_cap: int | None = None
+    pack_price: float = Field(gt=0)
+    pack_size: int = Field(gt=0)
+    moq: int = Field(default=1, ge=1)
+    usual_lead_days: int = Field(default=3, ge=0, le=365)
+    capacity_cap: int | None = Field(default=None, gt=0)
     unit: str = "pc"
-    stock: int | None = None  # snapshot, not reserved; None = not tracked
-    freight: float = 0.0
+    stock: int | None = Field(default=None, ge=0)
+    freight: float = Field(default=0.0, ge=0)
     per_unit_freight: float | None = Field(default=None, gt=0)      # per-unit freight component
     price_breaks: list[PriceBreak] = Field(default_factory=list)
     free_freight_above: float | None = Field(default=None, gt=0)    # free delivery when goods are worth at least this
