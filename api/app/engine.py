@@ -60,8 +60,9 @@ def order(q: Quote, qty: int) -> Optional[OrderCalc]:
     units = packs * q.pack_size
     overbuy = units - qty
     price = tier_price(q, units)
-    landed = packs * price + q.freight
-    return OrderCalc(packs=packs, units=units, overbuy=overbuy, landed=landed, pack_price=price)
+    goods = packs * price
+    freight = 0.0 if q.free_freight_above is not None and goods >= q.free_freight_above else q.freight
+    return OrderCalc(packs=packs, units=units, overbuy=overbuy, landed=goods + freight, pack_price=price, freight=freight)
 
 
 def is_valid_exception(e: Optional[ExceptionRecord]) -> bool:
@@ -166,7 +167,7 @@ def evaluate(
                 lead_days=q.lead_days,
                 pack_price=o.pack_price if o.pack_price is not None else q.pack_price,
                 pack_size=q.pack_size,
-                freight=q.freight,
+                freight=o.freight if o.freight is not None else q.freight,
                 fill_qty=q.max_qty if short else None,
             )
         )

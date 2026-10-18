@@ -23,6 +23,7 @@ interface QuoteFormProps {
     freight?: number;
     leadDays?: number;
     priceBreaks?: PriceBreakDTO[];
+    freeFreightAbove?: number;
     moq?: number;
     maxQty?: number;
     taxRate?: number;
@@ -42,6 +43,7 @@ interface QuoteFormProps {
     shipping?: "own" | "delhivery";
     shippingBasis?: "delhivery" | "rate_card";
     priceBreaks?: PriceBreakDTO[];
+    freeFreightAbove?: number;
   }) => void;
   /** Freight and delivery days from the pincodes saved at sign-up. Rejects when none can be worked out. */
   onEstimate?: (weightKg: number) => Promise<ShippingEstimate>;
@@ -84,6 +86,7 @@ export function QuoteForm({
   // Volume pricing from the catalog travels with the quote. Typing a different price overrides it, so it is dropped.
   const [tiers, setTiers] = useState<PriceBreakDTO[]>(initialValues?.priceBreaks ?? []);
   const [tiersDropped, setTiersDropped] = useState(false);
+  const [freeAbove, setFreeAbove] = useState<number | "">(initialValues?.freeFreightAbove ?? "");
 
   // Shipping: own shipment, or Delhivery. The estimate only reaches the quote when the seller presses "Use this".
   const [shipping, setShipping] = useState<"own" | "delhivery">("own");
@@ -147,6 +150,7 @@ export function QuoteForm({
         leadDays: typeof leadDays === "number" ? leadDays : 3,
         moq: numMoq,
         priceBreaks: tiers.map(t => ({ minQty: t.min_qty, packPrice: t.pack_price })),
+        freeFreightAbove: typeof freeAbove === "number" && freeAbove > 0 ? freeAbove : undefined,
         raw: "",
         channel: "Portal",
       },
@@ -154,7 +158,7 @@ export function QuoteForm({
     );
 
     return res;
-  }, [packPrice, packSize, freight, moq, leadDays, rfq.item, rfq.qty, tiers]);
+  }, [packPrice, packSize, freight, moq, leadDays, rfq.item, rfq.qty, tiers, freeAbove]);
 
   const isValid =
     typeof packPrice === "number" &&
@@ -181,6 +185,7 @@ export function QuoteForm({
       priceIncludesTax: basis === "unstated" || typeof taxRate !== "number" ? undefined : basis === "incl",
       notes: notes.trim() || undefined,
       priceBreaks: tiers.length ? tiers : undefined,
+      freeFreightAbove: typeof freeAbove === "number" && freeAbove > 0 ? freeAbove : undefined,
       shipping,
       shippingBasis: shipping === "delhivery" && applied ? applied.basis : undefined,
     });
@@ -397,6 +402,20 @@ export function QuoteForm({
                   placeholder="Unlimited"
                   className="num w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-bone"
                 />
+              </div>
+
+              {/* Free delivery above */}
+              <div>
+                <label className="label mb-1 block text-muted">Free delivery above (₹ of goods, optional)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={freeAbove}
+                  onChange={(e) => setFreeAbove(e.target.value === "" ? "" : Number(e.target.value))}
+                  placeholder="e.g. 5000"
+                  className="num w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-bone"
+                />
+                <span className="mt-1 block text-[11px] text-muted">Same GST basis as your price. Freight is waived when the order reaches it.</span>
               </div>
             </div>
 

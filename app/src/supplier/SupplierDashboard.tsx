@@ -71,6 +71,12 @@ export function SupplierDashboard() {
   const [newProdMoq, setNewProdMoq] = useState<number | "">(50);
   const [newProdLead, setNewProdLead] = useState<number | "">(2);
   const [newProdStock, setNewProdStock] = useState<number | "">("");
+  const [newProdFreight, setNewProdFreight] = useState<number | "">("");
+  const [newProdFreeAbove, setNewProdFreeAbove] = useState<number | "">("");
+  const [newProdGst, setNewProdGst] = useState<number | "">(18);
+  const [newProdGstIncl, setNewProdGstIncl] = useState<"excl" | "incl" | "unstated">("excl");
+  const [newProdTiers, setNewProdTiers] = useState<{ min: number | ""; price: number | "" }[]>([]);
+  const [addError, setAddError] = useState<string | null>(null);
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,13 +91,22 @@ export function SupplierDashboard() {
         usual_lead_days: typeof newProdLead === "number" ? newProdLead : 3,
         unit: Number(newProdPackSize) > 1 ? "box" : "pc",
         stock: typeof newProdStock === "number" ? newProdStock : null,
+        freight: typeof newProdFreight === "number" ? newProdFreight : 0,
+        free_freight_above: typeof newProdFreeAbove === "number" && newProdFreeAbove > 0 ? newProdFreeAbove : null,
+        tax_rate: newProdGstIncl !== "unstated" && typeof newProdGst === "number" ? newProdGst : null,
+        price_includes_tax: newProdGstIncl === "unstated" ? null : newProdGstIncl === "incl",
+        price_breaks: newProdTiers
+          .filter((t): t is { min: number; price: number } => typeof t.min === "number" && typeof t.price === "number")
+          .map(t => ({ min_qty: t.min, pack_price: t.price })),
       });
       refetchProducts();
       setShowAddProduct(false);
       setNewProdName("");
       setNewProdStock("");
+      setNewProdFreight(""); setNewProdFreeAbove(""); setNewProdTiers([]);
+      setAddError(null);
     } catch (e) {
-      console.error("Failed to add product:", e);
+      setAddError(/422/.test(String(e)) ? "Check the price tiers: a bigger order cannot cost more per pack, and each tier needs its own quantity." : "Could not add the product.");
     }
   };
 
@@ -429,6 +444,56 @@ export function SupplierDashboard() {
                         className="num w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-bone" />
                       <p className="mt-1 text-[11px] text-muted">A snapshot, not reserved. Orders above stock become a partial fill.</p>
                     </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="label mb-1 block text-bone">Freight (₹)</label>
+                        <input type="number" min="0" value={newProdFreight} placeholder="0 = free"
+                          onChange={e => setNewProdFreight(e.target.value === "" ? "" : Number(e.target.value))}
+                          className="num w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-bone" />
+                      </div>
+                      <div>
+                        <label className="label mb-1 block text-bone">Free delivery above (₹)</label>
+                        <input type="number" min="1" value={newProdFreeAbove} placeholder="optional"
+                          onChange={e => setNewProdFreeAbove(e.target.value === "" ? "" : Number(e.target.value))}
+                          className="num w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-bone" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="label mb-1 block text-bone">GST on your price</label>
+                        <select value={newProdGstIncl} onChange={e => setNewProdGstIncl(e.target.value as "excl" | "incl" | "unstated")}
+                          className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-bone">
+                          <option value="excl">Price excludes GST</option>
+                          <option value="incl">Price includes GST</option>
+                          <option value="unstated">Not stated</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label mb-1 block text-bone">GST rate (%)</label>
+                        <input type="number" min="0" max="100" value={newProdGst} disabled={newProdGstIncl === "unstated"}
+                          onChange={e => setNewProdGst(e.target.value === "" ? "" : Number(e.target.value))}
+                          className="num w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-bone disabled:opacity-40" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label mb-1 block text-bone">Volume pricing (optional)</label>
+                      {newProdTiers.map((t, i) => (
+                        <div key={i} className="mb-1.5 flex items-center gap-2">
+                          <input type="number" min="1" value={t.min} placeholder="from units" aria-label={`Tier ${i + 1} quantity`}
+                            onChange={e => setNewProdTiers(newProdTiers.map((x, j) => j === i ? { ...x, min: e.target.value === "" ? "" : Number(e.target.value) } : x))}
+                            className="num w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-bone" />
+                          <input type="number" min="0.01" step="any" value={t.price} placeholder="₹ per pack" aria-label={`Tier ${i + 1} price`}
+                            onChange={e => setNewProdTiers(newProdTiers.map((x, j) => j === i ? { ...x, price: e.target.value === "" ? "" : Number(e.target.value) } : x))}
+                            className="num w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-bone" />
+                          <button type="button" onClick={() => setNewProdTiers(newProdTiers.filter((_, j) => j !== i))}
+                            className="text-[12px] text-muted hover:text-bone">Remove</button>
+                        </div>
+                      ))}
+                      <button type="button" disabled={newProdTiers.length >= 5} onClick={() => setNewProdTiers([...newProdTiers, { min: "", price: "" }])}
+                        className="text-[12px] text-signal underline disabled:opacity-40">+ Add a price tier</button>
+                      <p className="mt-1 text-[11px] text-muted">Cheaper per pack from a higher quantity, for example from 500 units at ₹9.</p>
+                    </div>
+                    {addError && <p className="text-[12px] text-error">{addError}</p>}
                     <div className="flex justify-end gap-2 pt-2">
                       <button type="button" onClick={() => setShowAddProduct(false)}
                         className="rounded-full border border-line px-4 py-1.5 text-[13px] text-muted hover:text-bone">

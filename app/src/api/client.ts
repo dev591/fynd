@@ -185,6 +185,8 @@ export interface QuoteVersionDTO {
   shipping_basis?: "delhivery" | "rate_card" | null;
   price_breaks?: PriceBreakDTO[];
   compare_breaks?: PriceBreakDTO[];
+  free_freight_above?: number | null;
+  compare_free_freight_above?: number | null;
   landed_cost: number | null;
   units: number;
   packs: number;
@@ -596,6 +598,7 @@ export interface QuoteSubmitPayload {
   shipping?: "own" | "delhivery";
   shipping_basis?: "delhivery" | "rate_card";
   price_breaks?: PriceBreakDTO[];
+  free_freight_above?: number;
 }
 
 export interface ShippingEstimate {
@@ -630,6 +633,7 @@ export interface DraftQuoteDTO {
   max_qty?: number | null;
   price_break_applied?: number | null;
   price_breaks?: PriceBreakDTO[];
+  free_freight_above?: number | null;
   tax_rate?: number | null;
   price_includes_tax?: boolean | null;
   verdict: VerdictDTO;
@@ -721,6 +725,9 @@ export interface SupplierProductDTO {
   /** Snapshot, not reserved. */
   stock?: number | null;
   freight?: number;
+  free_freight_above?: number | null;
+  tax_rate?: number | null;
+  price_includes_tax?: boolean | null;
   price_breaks?: Array<{ min_qty: number; pack_price: number }>;
   aliases?: string[];
 }

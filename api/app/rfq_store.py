@@ -122,7 +122,8 @@ class RFQStore:
                 self.submit_quote(token=token, supplier_name=self._supplier_name(sid), pack_price=d.pack_price,
                                   pack_size=d.pack_size, freight=d.freight, lead_days=d.lead_days, moq=d.moq,
                                   max_qty=d.max_qty, notes="Sample quote (synthetic demo data).",
-                                  tax_rate=d.tax_rate, price_includes_tax=d.price_includes_tax, price_breaks=d.price_breaks)
+                                  tax_rate=d.tax_rate, price_includes_tax=d.price_includes_tax, price_breaks=d.price_breaks,
+                                  free_freight_above=d.free_freight_above)
         return rfq
 
     def _seed_supplier_profiles(self):
@@ -601,6 +602,7 @@ class RFQStore:
             pack_size=draft.pack_size, freight=draft.freight, lead_days=draft.lead_days, moq=draft.moq,
             max_qty=draft.max_qty, notes=template_message(rfq, draft), origin="auto",
             tax_rate=draft.tax_rate, price_includes_tax=draft.price_includes_tax, price_breaks=draft.price_breaks,
+            free_freight_above=draft.free_freight_above,
         )
         qv.origin = "auto"
         return qv
@@ -753,6 +755,7 @@ class RFQStore:
         shipping: Optional[str] = None,
         shipping_basis: Optional[str] = None,
         price_breaks: Optional[list[PriceBreak]] = None,
+        free_freight_above: Optional[float] = None,
     ) -> QuoteVersion:
         rfq_id = self.token_to_rfq_id.get(token)
         if not rfq_id or rfq_id not in self.rfqs:
@@ -777,10 +780,12 @@ class RFQStore:
         stated_breaks = check_tiers(list(price_breaks or []))
         compare_breaks = [PriceBreak(min_qty=b.min_qty, pack_price=normalise_price(b.pack_price, tax_rate, price_includes_tax, rfq.gst_claimable)[0])
                           for b in stated_breaks]
+        # the threshold is a goods value, so it moves to the buyer's GST basis by the same factor as the price
+        compare_ffa = free_freight_above * (compare_price / pack_price) if free_freight_above and pack_price else None
         q_obj = Quote(
             id=supplier_id, supplier=supplier_name, item=rfq.item,
             pack_price=compare_price, pack_size=pack_size, freight=freight,
-            lead_days=lead_days, moq=moq, max_qty=max_qty, price_breaks=compare_breaks,
+            lead_days=lead_days, moq=moq, max_qty=max_qty, price_breaks=compare_breaks, free_freight_above=compare_ffa,
         )
         calc = order(q_obj, min(rfq.qty, max_qty) if max_qty else rfq.qty)
         landed = calc.landed if calc else compare_price * pack_size + freight
@@ -795,6 +800,7 @@ class RFQStore:
             landed_cost=landed, units=units, packs=packs,
             shipping=shipping, shipping_basis=shipping_basis if shipping == "delhivery" else None,
             price_breaks=stated_breaks, compare_breaks=compare_breaks,
+            free_freight_above=free_freight_above, compare_free_freight_above=compare_ffa,
             submitted_at=datetime.now().strftime("%I:%M %p"),
         )
         issued = self.assists.get(token)
@@ -904,7 +910,7 @@ class RFQStore:
                 pack_price=latest.compare_price if latest.compare_price is not None else latest.pack_price,
                 pack_size=latest.pack_size,
                 freight=latest.freight, lead_days=latest.lead_days,
-                moq=latest.moq, max_qty=latest.max_qty, price_breaks=latest.compare_breaks,
+                moq=latest.moq, max_qty=latest.max_qty, price_breaks=latest.compare_breaks, free_freight_above=latest.compare_free_freight_above,
                 raw=f"v{latest.version}: ₹{latest.pack_price} + ₹{latest.freight}",
             ))
         return res
@@ -955,6 +961,7 @@ class RFQStore:
             moq=payload.moq, usual_lead_days=payload.usual_lead_days,
             capacity_cap=payload.capacity_cap, unit=payload.unit,
             stock=payload.stock, freight=payload.freight, price_breaks=payload.price_breaks,
+            free_freight_above=payload.free_freight_above,
             aliases=payload.aliases, tax_rate=payload.tax_rate, price_includes_tax=payload.price_includes_tax,
         )
         self.supplier_products.setdefault(supplier_id, []).append(prod)
@@ -975,6 +982,7 @@ class RFQStore:
                 p.stock = payload.stock
                 p.freight = payload.freight
                 p.price_breaks = payload.price_breaks
+                p.free_freight_above = payload.free_freight_above
                 p.aliases = payload.aliases
                 p.tax_rate = payload.tax_rate
                 p.price_includes_tax = payload.price_includes_tax

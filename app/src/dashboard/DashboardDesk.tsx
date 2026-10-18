@@ -467,6 +467,11 @@ export function DashboardDesk() {
                               Volume pricing as quoted: {versions[latestVer - 1].price_breaks!.filter(b => b.min_qty > 1).map(b => `${b.min_qty}+ units ${inr(b.pack_price)} a pack`).join(" · ")}
                             </p>
                           )}
+                          {versions[latestVer - 1]?.free_freight_above != null && (
+                            <p className="mt-1 text-[11px] text-muted">
+                              Free delivery when goods reach {inr(versions[latestVer - 1].free_freight_above as number)} (as quoted)
+                            </p>
+                          )}
                           {versions[latestVer - 1]?.shipping && (
                             <p className="mt-1 text-[11px] text-muted">
                               {versions[latestVer - 1].shipping === "own"
@@ -1159,7 +1164,7 @@ function WhyCard({ row, qty, needInDays, mode }: { row: EngineRow; qty: number; 
   ];
   const facts: Array<{ label: string; value: string; tag: "observed" | "derived" | "assumed" }> = [
     { label: "Pack price", value: inr(row.packPrice ?? q.packPrice), tag: "observed" },
-    { label: "Freight", value: inr(q.freight), tag: "observed" },
+    { label: "Freight", value: inr(row.freight ?? q.freight), tag: "observed" },
     { label: "Lead time", value: `${q.leadDays} days`, tag: "observed" },
     { label: "Packs ordered", value: String(row.packs), tag: "derived" },
     { label: "Landed cost", value: inr(row.landed ?? 0), tag: "derived" },

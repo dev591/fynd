@@ -21,6 +21,8 @@ export type Quote = {
   maxQty?: number
   /** Volume tiers on the buyer's GST basis. Empty or missing = a flat price. */
   priceBreaks?: { minQty: number; packPrice: number }[]
+  /** Goods value (buyer's GST basis) at or above which delivery is free. Missing = freight always applies. */
+  freeFreightAbove?: number
   /** The quote as it arrived, for the messy card. */
   raw: string
   channel: string
@@ -46,6 +48,8 @@ export type Row = {
   landed: number | null
   /** The pack price applied at this quantity (a volume tier, or the quote's own price). */
   packPrice?: number
+  /** The freight actually charged (0 when the free-delivery threshold is met). */
+  freight?: number
   /** Units the seller can cover when stock is below the need. */
   fillQty?: number
 }
@@ -64,7 +68,9 @@ export function order(q: Quote, qty: number) {
   const packs = Math.ceil(Math.max(qty, q.moq ?? 0) / q.packSize)
   const units = packs * q.packSize
   const packPrice = tierPrice(q, units)
-  return { packs, units, overbuy: units - qty, landed: packs * packPrice + q.freight, packPrice }
+  const goods = packs * packPrice
+  const freight = q.freeFreightAbove !== undefined && goods >= q.freeFreightAbove ? 0 : q.freight
+  return { packs, units, overbuy: units - qty, landed: goods + freight, packPrice, freight }
 }
 
 export const landed = (q: Quote, qty: number) => order(q, qty)?.landed ?? null

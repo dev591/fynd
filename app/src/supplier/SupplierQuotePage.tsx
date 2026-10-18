@@ -96,6 +96,7 @@ export function SupplierQuotePage() {
         maxQty: latestQuote?.max_qty,
         notes: `Revised to match buyer counter-offer: ${target.message}`,
         priceBreaks: latestQuote?.price_breaks,
+        freeFreightAbove: latestQuote?.free_freight_above ?? undefined,
       };
     }
     if (latestQuote) {
@@ -107,6 +108,7 @@ export function SupplierQuotePage() {
         moq: latestQuote.moq,
         maxQty: latestQuote.max_qty,
         priceBreaks: latestQuote.price_breaks,
+        freeFreightAbove: latestQuote.free_freight_above ?? undefined,
         notes: latestQuote.notes,
       };
     }
@@ -121,6 +123,7 @@ export function SupplierQuotePage() {
         taxRate: draft.tax_rate ?? undefined,
         priceIncludesTax: draft.price_includes_tax ?? undefined,
         priceBreaks: draft.price_breaks,
+        freeFreightAbove: draft.free_freight_above ?? undefined,
         notes: assist?.message.text,
       };
     }
@@ -130,7 +133,7 @@ export function SupplierQuotePage() {
   const handleQuoteSubmit = async (data: {
     packPrice: number; packSize: number; freight: number; leadDays: number;
     moq?: number; maxQty?: number; taxRate?: number; priceIncludesTax?: boolean; notes?: string;
-    shipping?: "own" | "delhivery"; shippingBasis?: "delhivery" | "rate_card"; priceBreaks?: { min_qty: number; pack_price: number }[];
+    shipping?: "own" | "delhivery"; shippingBasis?: "delhivery" | "rate_card"; priceBreaks?: { min_qty: number; pack_price: number }[]; freeFreightAbove?: number;
   }) => {
     setSubmitting(true);
     setSubmitError(null);
@@ -149,6 +152,7 @@ export function SupplierQuotePage() {
         shipping: data.shipping,
         shipping_basis: data.shippingBasis,
         price_breaks: data.priceBreaks,
+        free_freight_above: data.freeFreightAbove,
       });
       setIsRevising(false);
       refetchMine();

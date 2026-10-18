@@ -683,7 +683,7 @@ def submit_supplier_quote(token: str, payload: QuoteSubmitIn):
             max_qty=payload.max_qty,
             tax_rate=payload.tax_rate, price_includes_tax=payload.price_includes_tax,
             shipping=payload.shipping, shipping_basis=payload.shipping_basis,
-            price_breaks=payload.price_breaks,
+            price_breaks=payload.price_breaks, free_freight_above=payload.free_freight_above,
         )   # origin is decided by the server, never taken from the client
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
